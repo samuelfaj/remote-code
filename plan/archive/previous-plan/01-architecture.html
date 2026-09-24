@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#f5f7f6">
+  <title>Arquitetura e dados</title>
+  <style>
+:root {
+  color-scheme: light;
+  --brand: #0f6b5c;
+  --brand-strong: #0b5247;
+  --lime: #c6f06c;
+  --ink: #14201f;
+  --muted: #5f6f6c;
+  --line: #d9e4e1;
+  --bg: #f5f7f6;
+  --card: #ffffff;
+  --warn: #9c6a00;
+  --danger: #a5272f;
+  --ok: #107c41;
+  --info: #1a6ca8;
+}
+* { box-sizing: border-box; }
+html { color-scheme: light; background: var(--bg); }
+body {
+  margin: 0;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  line-height: 1.52;
+  color: var(--ink);
+  background: var(--bg);
+}
+header {
+  background: linear-gradient(135deg, #ffffff 0%, #eef7f4 100%);
+  border-bottom: 1px solid var(--line);
+  padding: 32px 5vw 20px;
+}
+header h1 { margin: 0; font-size: clamp(28px, 4vw, 48px); }
+header p { margin: 10px 0 0; color: var(--muted); max-width: 980px; font-size: 17px; }
+.meta { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px; }
+nav {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 12px 5vw;
+  background: #ffffff;
+  border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+nav a {
+  flex: 0 0 auto;
+  color: var(--brand);
+  text-decoration: none;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 12px;
+  background: #fff;
+}
+nav a[aria-current="page"] {
+  background: #e7f6f1;
+  border-color: #b9dcd3;
+  font-weight: 600;
+}
+main { padding: 24px 5vw 64px; max-width: 1440px; margin: 0 auto; }
+section {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 22px;
+  margin: 0 0 18px;
+}
+h2 { margin: 0 0 14px; font-size: 24px; }
+h3 { margin: 18px 0 8px; font-size: 17px; }
+p { margin: 8px 0; }
+ul, ol { margin: 8px 0 8px 22px; padding: 0; }
+li { margin: 6px 0; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0;
+  background: #fff;
+  font-size: 14px;
+}
+th, td {
+  border: 1px solid var(--line);
+  padding: 10px;
+  vertical-align: top;
+  text-align: left;
+}
+th { background: #eef8f5; color: #143c38; }
+code, pre {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: #f2f6f5;
+  border: 1px solid #dce7e5;
+  border-radius: 8px;
+}
+code { padding: 1px 5px; }
+pre { padding: 14px; overflow: auto; white-space: pre-wrap; }
+.callout {
+  border-left: 4px solid var(--brand);
+  background: #f3fbf9;
+  padding: 12px 14px;
+  border-radius: 8px;
+  margin: 10px 0;
+}
+.callout.danger { border-left-color: var(--danger); background: #fff4f4; }
+.callout.warn { border-left-color: var(--warn); background: #fff9ec; }
+.callout.ok { border-left-color: var(--ok); background: #f0fff5; }
+.callout.decision { border-left-color: #7aa312; background: #fbfff3; }
+.tag {
+  display: inline-block;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 2px 8px;
+  margin: 2px;
+  background: #fff;
+  font-size: 12px;
+  color: var(--muted);
+}
+.tag.strong { color: var(--brand-strong); border-color: #b9dcd3; background: #eef8f5; }
+.small { color: var(--muted); font-size: 13px; }
+@media (max-width: 760px) {
+  header { padding: 24px 18px 16px; }
+  nav { padding: 10px 18px; }
+  main { padding: 18px; }
+  section { padding: 16px; }
+}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Arquitetura e dados</h1>
+    <p>Quem executa, quem manda e como o estado sobrevive.</p>
+    <div class="meta"><span class="tag strong">status:NOT_CONFIDENT</span><span class="tag strong">depth:deep</span><span class="tag strong">case:PRODUCT</span></div>
+  </header>
+  <nav aria-label="Plan files"><a href="./00-overview.html">00-overview</a><a href="./01-architecture.html" aria-current="page">01-architecture</a><a href="./02-features.html">02-features</a><a href="./03-scheduling.html">03-scheduling</a><a href="./04-push.html">04-push</a><a href="./05-delivery.html">05-delivery</a><a href="./06-decisions.html">06-decisions</a></nav>
+  <main>
+<section><h2>Arquitetura e dados</h2>
+<p class="small">Quem executa, quem manda e como o estado sobrevive.</p>
+<h3>Mapa de componentes</h3>
+<table><thead><tr><th>Camada</th><th>Responsabilidade</th><th>Regra de confiança</th></tr></thead><tbody><tr><td>Web / PWA / iOS</td><td>Interface visual, navegação e comandos do usuário</td><td>Mostra apenas dados confirmados pelo backend do container</td></tr><tr><td>Gateway + conta</td><td>Login, sessão e roteamento de API/eventos ao container certo</td><td>Validar conta e workspace em cada pedido e stream</td></tr><tr><td>Container por usuário</td><td>Backend do RemoteCode e GUI desktop Linux; workspaces, Bots, threads, arquivos, PTYs, providers, browser e scheduler</td><td>Backend é autoridade dos dados e ações; sem porta pública direta; processos com quotas</td></tr><tr><td>Persistência</td><td>Volume do usuário com arquivos, banco e estado restaurável; backups versionados</td><td>Dados fora do ciclo de vida do container; transação para estado e outbox; restore ensaiado</td></tr><tr><td>Push dispatcher</td><td>APNs e Web Push a partir da outbox do backend</td><td>Não recebe conteúdo sensível bruto; retry idempotente</td></tr></tbody></table>
+<h3>Duas formas de operar</h3>
+<p>A instalação autogerenciada entrega o container com backend e GUI desktop Linux do RemoteCode, a interface web e um volume persistente no host do usuário. Na hospedagem paga, a mesma imagem do container roda inicialmente em uma VPS por usuário; nós operamos conta, provisionamento, atualizações, backups e monitoramento. O container não é a única fronteira de isolamento entre clientes no piloto. Web e iOS acessam o backend do container via gateway autenticado.</p>
+<h3>Web ligado ao container</h3>
+<p>O frontend web desenha a interface inspirada nas referências, solicita listas e detalhes pela API do backend do usuário e acompanha runs, threads e notificações por eventos em tempo real. Comandos como abrir workspace, iniciar Bot, enviar mensagem, editar arquivo ou parar run vão ao container; a resposta do backend determina o estado exibido. O gateway resolve conta→container e impede que o navegador precise conhecer o endereço interno do Docker. Na instalação própria, o frontend usa o mesmo contrato de API apontado ao container local.</p>
+<h3>GUI desktop no container</h3>
+<p>A GUI desktop Linux roda dentro do container e usa o mesmo backend, IDs, eventos e volume que o web e o iOS. Alterações feitas nela aparecem nos outros clientes após sincronização; cada interface mantém apenas sua seleção e disposição visual local. A janela desktop não é a API do web nem a fonte de verdade. O porte da GUI macOS baseada em AppKit/SwiftUI para uma GUI Linux equivalente é uma entrega própria e precisa ser validado com arquivos, terminal, browser, Agent App e Bots reais.</p>
+<h3>Fonte de verdade e sincronização</h3>
+<ul><li>O backend do container é a única autoridade para comandos e resultados; GUI desktop, web e iOS não inventam sucesso.</li><li>As três interfaces consultam os mesmos IDs de workspace, Bot, thread e run; fechar uma interface não encerra agentes, terminal ou tarefas.</li><li>Arquivos, banco, histórico, runs, tarefas e preferências sobrevivem à recriação do container no volume.</li><li>Seleção de workspace/thread, abas e disposição da interface podem ser locais a cada interface; dados e execução são compartilhados.</li><li>Ao reiniciar o container, restaurar estado durável e informar claramente quais processos interativos terminaram. Scheduler e runs não dependem de nenhuma janela aberta.</li></ul>
+<h3>Browser e localhost</h3>
+<p>O browser automatizado roda no container; o web apresenta seus resultados e o preview por endpoints autorizados do backend. Serviços locais expostos por preview usam proxy privado com autenticação por conta e proteção contra acesso arbitrário à rede. A automação de Bots usa perfil Linux próprio; logins do Chrome do Mac não são copiados.</p>
+<h3>Token Saver e provedores</h3>
+<p>Provar Claude, Codex e Grok no Linux antes da promessa de paridade. O caminho MLX/Core ML local do Mac não é portável diretamente ao Linux: escolher implementação cloud compatível somente após benchmark/licenciamento. Até lá, indicar capacidade indisponível sem alterar a fórmula nem afirmar economia não medida.</p>
+<h3>Fronteira de execução</h3>
+<p>Executar terminal e agentes como usuário Linux sem acesso aos segredos e sockets do plano de controle. O gateway associa cada RPC, stream, upload e preview ao container autorizado e não expõe sua porta diretamente. Testar troca de conta, IDs de workspace adulterados, root e portas de preview adulteradas. Preview fica em origem separada do app web, sem cookies compartilhados; credenciais de provider são entregues apenas ao run autorizado.</p>
+<h3>Contrato de cliente e eventos</h3>
+<ul><li>Negociar versão da API e capacidades; cliente antigo recebe erro explícito de operação indisponível.</li><li>Snapshot versionado com cursor e eventos em sequência permitem reconexão sem perder mudanças; se o cursor expirar, refazer snapshot.</li><li>Cada mutação usa ID estável e recibo de resultado; após timeout, consultar o resultado antes de tentar novamente.</li><li>Eventos duráveis alimentam interfaces, inbox e push; cliente lento refaz snapshot sem alterar o estado do container.</li></ul>
+</section>
+  </main>
+</body>
+</html>

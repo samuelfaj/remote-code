@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#f5f7f6">
+  <title>Roadmap, gates e operação</title>
+  <style>
+:root {
+  color-scheme: light;
+  --brand: #0f6b5c;
+  --brand-strong: #0b5247;
+  --lime: #c6f06c;
+  --ink: #14201f;
+  --muted: #5f6f6c;
+  --line: #d9e4e1;
+  --bg: #f5f7f6;
+  --card: #ffffff;
+  --warn: #9c6a00;
+  --danger: #a5272f;
+  --ok: #107c41;
+  --info: #1a6ca8;
+}
+* { box-sizing: border-box; }
+html { color-scheme: light; background: var(--bg); }
+body {
+  margin: 0;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  line-height: 1.52;
+  color: var(--ink);
+  background: var(--bg);
+}
+header {
+  background: linear-gradient(135deg, #ffffff 0%, #eef7f4 100%);
+  border-bottom: 1px solid var(--line);
+  padding: 32px 5vw 20px;
+}
+header h1 { margin: 0; font-size: clamp(28px, 4vw, 48px); }
+header p { margin: 10px 0 0; color: var(--muted); max-width: 980px; font-size: 17px; }
+.meta { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px; }
+nav {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 12px 5vw;
+  background: #ffffff;
+  border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+nav a {
+  flex: 0 0 auto;
+  color: var(--brand);
+  text-decoration: none;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 12px;
+  background: #fff;
+}
+nav a[aria-current="page"] {
+  background: #e7f6f1;
+  border-color: #b9dcd3;
+  font-weight: 600;
+}
+main { padding: 24px 5vw 64px; max-width: 1440px; margin: 0 auto; }
+section {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 22px;
+  margin: 0 0 18px;
+}
+h2 { margin: 0 0 14px; font-size: 24px; }
+h3 { margin: 18px 0 8px; font-size: 17px; }
+p { margin: 8px 0; }
+ul, ol { margin: 8px 0 8px 22px; padding: 0; }
+li { margin: 6px 0; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0;
+  background: #fff;
+  font-size: 14px;
+}
+th, td {
+  border: 1px solid var(--line);
+  padding: 10px;
+  vertical-align: top;
+  text-align: left;
+}
+th { background: #eef8f5; color: #143c38; }
+code, pre {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: #f2f6f5;
+  border: 1px solid #dce7e5;
+  border-radius: 8px;
+}
+code { padding: 1px 5px; }
+pre { padding: 14px; overflow: auto; white-space: pre-wrap; }
+.callout {
+  border-left: 4px solid var(--brand);
+  background: #f3fbf9;
+  padding: 12px 14px;
+  border-radius: 8px;
+  margin: 10px 0;
+}
+.callout.danger { border-left-color: var(--danger); background: #fff4f4; }
+.callout.warn { border-left-color: var(--warn); background: #fff9ec; }
+.callout.ok { border-left-color: var(--ok); background: #f0fff5; }
+.callout.decision { border-left-color: #7aa312; background: #fbfff3; }
+.tag {
+  display: inline-block;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 2px 8px;
+  margin: 2px;
+  background: #fff;
+  font-size: 12px;
+  color: var(--muted);
+}
+.tag.strong { color: var(--brand-strong); border-color: #b9dcd3; background: #eef8f5; }
+.small { color: var(--muted); font-size: 13px; }
+@media (max-width: 760px) {
+  header { padding: 24px 18px 16px; }
+  nav { padding: 10px 18px; }
+  main { padding: 18px; }
+  section { padding: 16px; }
+}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Roadmap, gates e operação</h1>
+    <p>Ordem de implementação e definição de pronto.</p>
+    <div class="meta"><span class="tag strong">status:NOT_CONFIDENT</span><span class="tag strong">depth:deep</span><span class="tag strong">case:PRODUCT</span></div>
+  </header>
+  <nav aria-label="Plan files"><a href="./00-overview.html">00-overview</a><a href="./01-architecture.html">01-architecture</a><a href="./02-features.html">02-features</a><a href="./03-scheduling.html">03-scheduling</a><a href="./04-push.html">04-push</a><a href="./05-delivery.html" aria-current="page">05-delivery</a><a href="./06-decisions.html">06-decisions</a></nav>
+  <main>
+<section><h2>Roadmap, gates e operação</h2>
+<p class="small">Ordem de implementação e definição de pronto.</p>
+<h3>Ondas</h3>
+<table><thead><tr><th>Onda</th><th>Entrega</th><th>Gate para avançar</th></tr></thead><tbody><tr><td>0 — validação</td><td>Prova do backend e GUI desktop Linux no container, mais frontend web conectado a ele; providers, browser, carga e custo</td><td>GUI desktop operável e listas, threads e comandos reais via API do container; compatibilidade dos providers e capacidade 4/8 GB avaliadas antes da infraestrutura permanente</td></tr><tr><td>1 — fundação</td><td>Imagem com backend e GUI desktop completos, frontend web, instalação autogerenciada, volume persistente, gateway e provisionamento hospedado</td><td>Mesma imagem com backend e GUI nas duas ofertas; restaurar dados em container novo; isolamento entre contas hospedadas</td></tr><tr><td>2 — trabalho base</td><td>Files/Git/Terminal/browser na GUI desktop e no backend; interface web nas três regiões das referências e acesso iOS</td><td>Editar→testar→commit na GUI desktop e retomar no web com os mesmos dados</td></tr><tr><td>3 — agentes</td><td>Agent App e Bots no container; web/iOS acompanham o mesmo run por eventos</td><td>Run longo, stop, falha e reconexão corretos com navegador fechado</td></tr><tr><td>4 — autonomia</td><td>Scheduled Tasks e rotinas no container Linux</td><td>DST, crash, duplicação e execução sem frontend conectado provados</td></tr><tr><td>5 — atenção</td><td>Inbox no backend e no web/iOS, APNs, Web Push, deep links e preferências</td><td>Notificação abre thread, Bot ou tarefa corretos após autorização</td></tr><tr><td>6 — migração/beta</td><td>Importação ensaiada, canário, suporte, métricas, rollback</td><td>Usuários piloto aceitam; custo/latência/recuperação dentro de limites</td></tr></tbody></table>
+<h3>Gates mensuráveis propostos para o piloto</h3>
+<table><thead><tr><th>Prova</th><th>Limiar proposto antes do beta</th><th>Se falhar</th></tr></thead><tbody><tr><td>Backend Linux</td><td>Files, Git, Terminal, Agent App, Bots e browser respondem pela API do container com dados reais</td><td>Bloquear promessa de paridade e corrigir o backend</td></tr><tr><td>GUI desktop Linux</td><td>Files, Git, Terminal, Agent App, Bots e browser funcionam na janela do container e compartilham estado com web/iOS</td><td>Corrigir a GUI Linux antes de prometer paridade</td></tr><tr><td>Interface web</td><td>Workspaces/Bots, threads e área principal mostram dados do container; abrir, enviar, parar e reconectar funcionam sem estado falso</td><td>Corrigir contrato e fluxo web antes do beta</td></tr><tr><td>Run real em Linux</td><td>Claude, Codex e Grok: 1 fluxo completo de arquivo+terminal+resposta cada; falha/recovery exercitados</td><td>Listar recurso como indisponível e não prometer paridade</td></tr><tr><td>Capacidade</td><td>Backend + GUI desktop + agente + build + browser por 60 min: zero OOM; medir p95 de API/stream e pico RSS em 4/8 GB</td><td>Usar 8 GB ou reduzir concorrência e repetir prova</td></tr><tr><td>Reconexão</td><td>Após rede cair: snapshot e eventos recompõem threads/runs; após recriar container: dados restaurados, processos mortos indicados</td><td>Corrigir sessão/persistência antes do beta</td></tr><tr><td>Scheduler</td><td>100 ocorrências simuladas com crash, DST e duas instâncias: zero execução duplicada; incertos marcados</td><td>Bloquear autonomia pública</td></tr><tr><td>Push</td><td>10/10 eventos de ação/falha por canal abrem o objeto correto no frontend; zero vazamento em troca de conta</td><td>Corrigir entrega; manter inbox como fallback</td></tr><tr><td>Segurança</td><td>Zero acesso cruzado a RPC, streams, arquivos, preview e push; sessão revogada não envia comandos</td><td>Bloquear beta</td></tr><tr><td>Migração</td><td>Checksums e contagens batem; retorno após escrita no container sem perda ou bloqueio claro</td><td>Manter conta no estado anterior</td></tr><tr><td>PWA iPhone real</td><td>Instalada na Tela de Início, fechada: push, quiet hours, dedupe e tap na thread em 10/10 cenários</td><td>Bloquear promessa de push web no iPhone</td></tr><tr><td>App iOS real</td><td>App fechado: APNs, quiet hours, dedupe e tap no objeto em 10/10 cenários</td><td>Bloquear push nativo</td></tr><tr><td>Restauração</td><td>Volume restaurado em container novo: workspaces, Bots, threads e histórico corretos; medir RPO/RTO</td><td>Bloquear expansão</td></tr><tr><td>Falha de infraestrutura</td><td>Parar worker/container entre claim, efeito, evento e push; zero efeito externo repetido; nenhum evento desaparece do inbox</td><td>Bloquear autonomia pública</td></tr></tbody></table>
+<h3>Operação</h3>
+<ul><li>Na instalação autogerenciada, documentar volume, atualização, backup, restauração e exportação. Na hospedada, executar backup cifrado automático com retenção definida e restore testado por conta.</li><li>Painel operacional: saúde VPS/container/API, memória/OOM, espaço, latência de RPC e streams, jobs atrasados, fila push, erros APNs/Web Push, tempo de provisão e custo.</li><li>Limites por conta: CPU/RAM/disco, processos/agents simultâneos, minutos de execução e egress; erro claro quando excedidos.</li><li>Atualização versionada da imagem/runtime com canário e rollback; nenhum update apaga volume do usuário.</li><li>Desligamento e exclusão de conta com exportação e janela de recuperação definidas; sem retenção oculta de segredos.</li><li>Excluir conta revoga sessões, tokens APNs/Web Push e segredos; apagar volume ativo, definir prazo de expiração de backup e testar o fim da retenção.</li><li>Operação deve identificar conta afetada, tarefa atrasada, lease preso e outbox velho; runbook nomeia responsável, reconciliação e escalonamento.</li><li>Metas iniciais de RPO/RTO devem ser aprovadas com restore real; sem medição, não há promessa de disponibilidade.</li><li>Antes do beta, comparar custo mensal ativo e ocioso, 4 GB versus 8 GB e sempre ligada versus acordar sob demanda; manter sempre ligada só como escolha de piloto até medir.</li><li>Cada provider precisa de validação de uso hospedado, titularidade da credencial, limites de quota e gasto, e interrupção segura ao atingir teto.</li></ul>
+<h3>Provas E2E necessárias</h3>
+<ul><li>Duas contas tentam ler workspaces, Bots e threads ou enviar comandos ao container alheio: sempre negado.</li><li>GUI desktop, web e iOS leem o mesmo estado do backend; seleções de tela locais não mudam a navegação das outras interfaces.</li><li>Thread e terminal em execução sobrevivem fechamento do frontend; reconexão recompõe estado sem trocar identidade.</li><li>Tarefa e Bot disparam sem clientes conectados; duas instâncias do scheduler não duplicam ocorrência.</li><li>Push chega no app iOS e PWA instalada; sem permissão, inbox permanece; tap abre o objeto certo; logout revoga.</li><li>Rede cai entre comando e confirmação; frontend consulta o resultado antes de repetir a ação.</li><li>Restaurar backup em container novo, medir recuperação, comparar checksums, workspaces, Bots e histórico.</li><li>PWA iOS instalada e app iOS nativo são testados em aparelho real com navegação, rede ruim, push e deep link.</li><li>Injetar falha entre claim, efeito, commit, evento e envio; inspecionar uma conversa por ocorrência e nenhum efeito externo refeito automaticamente.</li></ul>
+<h3>Cutover e retorno sem perda</h3>
+<p>Inventário e ensaio de importação precedem definição final do esquema. No corte por conta, congelar escrita local do workspace antigo, guardar checkpoint e importar para o volume do container. Após o corte, o RemoteCode no container é a única autoridade, seja autogerenciado ou hospedado. Se for necessário voltar, exportar e reconciliar as escritas do container; se isso não puder ser provado, impedir o retorno automático e oferecer exportação para recuperação manual. O corte inclui bloquear claims de tarefas no Mac, exportar até watermark final de eventos e só então ligar scheduler no container. UID, usuário e caminhos locais são traduzidos; tarefas sem mapeamento ficam desativadas com motivo e não disparam. A interface rotula claramente se a fonte ativa é Mac ou container; em retorno ao cliente antigo, alterações do container continuam acessíveis para exportação ou reconciliação.</p>
+</section>
+  </main>
+</body>
+</html>

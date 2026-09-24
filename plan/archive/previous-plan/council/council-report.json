@@ -1,0 +1,905 @@
+{
+  "schema_version": 2,
+  "profile": "full",
+  "status": "BLOCKED",
+  "packet_path": "/Users/samuelfajreldines/dev/remote-code/plan-remote/council-packet.md",
+  "packet_head": "5515958f7e6cbb46bf33c16c3ff91df7e4dab021",
+  "packet_fingerprint": "d5e232cce8075b5b2986abef45941c4ff75f76ce45d82bc097dff590c6b3e714",
+  "packet_scope": "FULL",
+  "execution_policy": {
+    "default_round_limit": 1,
+    "hard_round_limit": 3,
+    "continuation_authorized": false,
+    "max_objections_per_reviewer": 3,
+    "max_response_words": 1000,
+    "packet_strategy": "RELEVANT_ONLY",
+    "parallelism": "MAX_AVAILABLE",
+    "initial_effort": "medium",
+    "arbiter_effort": "high"
+  },
+  "thesis": {
+    "id": "T-002",
+    "objective": "Entregar um plano implement\u00e1vel para RemoteCode na nuvem, com Files, Git, Terminal, Agent App, Bots, navegador, tarefas agendadas e notifica\u00e7\u00f5es confi\u00e1veis em web e iOS.",
+    "problem_frame": "Usu\u00e1rio quer independ\u00eancia do Mac com mesma continuidade de trabalho e notifica\u00e7\u00f5es de tarefas/agentes.",
+    "scope": [
+      "Uma conta acessa o mesmo workspace persistente pela web e pelo iOS, com isolamento entre usu\u00e1rios.",
+      "Files, Git, Terminal, Agent App, Bots e preview do navegador funcionam no workspace Linux com estado restaur\u00e1vel.",
+      "Tarefas agendadas de Agent App e Bots executam sem cliente conectado, criam execu\u00e7\u00e3o/conversa correta e admitem inspe\u00e7\u00e3o e parada.",
+      "Cada evento relevante tem registro dur\u00e1vel, entrega em tempo real e pol\u00edtica de push para web e iOS com prefer\u00eancias, deduplica\u00e7\u00e3o e rota correta.",
+      "Migra\u00e7\u00e3o, seguran\u00e7a, custos, opera\u00e7\u00e3o, fases e provas de aceita\u00e7\u00e3o est\u00e3o definidos antes do lan\u00e7amento."
+    ],
+    "constraints": [
+      "Piloto: uma VPS Linux isolada por usu\u00e1rio, 2 vCPU/4 GB como hip\u00f3tese inicial, disco persistente e execu\u00e7\u00e3o cont\u00ednua.",
+      "Expor somente gateway autenticado; portas de desenvolvimento privadas por padr\u00e3o.",
+      "Preservar usu\u00e1rios, dados e clientes existentes durante migra\u00e7\u00e3o progressiva.",
+      "Web Push no iOS exige web app adicionada \u00e0 Tela de In\u00edcio; app iOS nativo usa APNs."
+    ],
+    "alternatives": [
+      "Uma \u00fanica VPS compartilhada com usu\u00e1rios do sistema: menor custo bruto, mas fronteira de isolamento e blast radius mais dif\u00edceis no piloto.",
+      "Converter o Mac em servidor remoto: n\u00e3o atende ao requisito de independ\u00eancia do Mac.",
+      "Enviar push diretamente de cada processo: duplica notifica\u00e7\u00f5es, perde eventos em falhas e mistura autoriza\u00e7\u00e3o com execu\u00e7\u00e3o."
+    ],
+    "steps": [
+      "Funda\u00e7\u00e3o da conta e VPS",
+      "Estado, arquivos, Git e terminal",
+      "Agent App e Bots no Linux",
+      "Tarefas agendadas na nuvem",
+      "Notifica\u00e7\u00f5es e push multicanal",
+      "Migra\u00e7\u00e3o e coexist\u00eancia",
+      "QA, custos e lan\u00e7amento"
+    ],
+    "success_criteria": [
+      "Uma conta acessa o mesmo workspace persistente pela web e pelo iOS, com isolamento entre usu\u00e1rios.",
+      "Files, Git, Terminal, Agent App, Bots e preview do navegador funcionam no workspace Linux com estado restaur\u00e1vel.",
+      "Tarefas agendadas de Agent App e Bots executam sem cliente conectado, criam execu\u00e7\u00e3o/conversa correta e admitem inspe\u00e7\u00e3o e parada.",
+      "Cada evento relevante tem registro dur\u00e1vel, entrega em tempo real e pol\u00edtica de push para web e iOS com prefer\u00eancias, deduplica\u00e7\u00e3o e rota correta.",
+      "Migra\u00e7\u00e3o, seguran\u00e7a, custos, opera\u00e7\u00e3o, fases e provas de aceita\u00e7\u00e3o est\u00e3o definidos antes do lan\u00e7amento."
+    ],
+    "test_strategy": [
+      "Gates E2E por fun\u00e7\u00e3o/cliente, seguran\u00e7a entre contas, carga 4/8 GB, falhas de scheduler/push e restore."
+    ],
+    "rollout": [
+      "Interno, beta por conta, geral ap\u00f3s gates."
+    ],
+    "rollback": [
+      "Antes do cutover retornar sem perda; depois, s\u00f3 revers\u00e3o com exporta\u00e7\u00e3o/reconcilia\u00e7\u00e3o cloud."
+    ],
+    "observability": [
+      "M\u00e9tricas por conta de VPS, tarefas, outbox, evento, custo e recupera\u00e7\u00e3o."
+    ],
+    "residual_risks": [
+      "Validar providers/Token Saver no Linux e capacidade 4 GB antes de afirmar paridade.",
+      "Confirmar pol\u00edtica de push padr\u00e3o e cat\u00e1logo com usu\u00e1rios piloto.",
+      "Inventariar dados locais e fechar custos/pre\u00e7o/limites antes de rollout.",
+      "Revis\u00e3o por conselho independente ainda pendente.",
+      "Gates quantitativos s\u00e3o metas propostas; calibrar com usu\u00e1rios e carga real antes do beta.",
+      "Origem exata do preview, janela de reten\u00e7\u00e3o e limites de fila requerem escolha de implementa\u00e7\u00e3o e teste de carga.",
+      "RPO/RTO, atraso aceit\u00e1vel de tarefa e idade m\u00e1xima da outbox precisam de medi\u00e7\u00e3o e aprova\u00e7\u00e3o antes do beta.",
+      "Teto econ\u00f4mico depende de pre\u00e7o de venda e provedores escolhidos; obter decis\u00e3o do dono antes de compra/rollout."
+    ],
+    "recheck_triggers": [
+      "Medi\u00e7\u00f5es Linux e custo",
+      "Invent\u00e1rio de dados",
+      "Decis\u00e3o de pol\u00edtica de push"
+    ],
+    "assumptions": [
+      {
+        "id": "A-001",
+        "claim": "Cada conta ter\u00e1 inicialmente uma VPS sempre ligada e um workspace principal; 4 GB \u00e9 hip\u00f3tese de piloto, com upgrade se os testes falharem.",
+        "state": "UNRESOLVED",
+        "evidence_ids": [
+          "E-015"
+        ],
+        "experiment": "",
+        "owner": "",
+        "pass_threshold": ""
+      },
+      {
+        "id": "A-002",
+        "claim": "\u201cPush de tudo\u201d significa catalogar todos os eventos relevantes no feed e permitir push por categoria/prioridade, n\u00e3o emitir um alerta por byte ou delta.",
+        "state": "UNRESOLVED",
+        "evidence_ids": [
+          "E-005"
+        ],
+        "experiment": "",
+        "owner": "",
+        "pass_threshold": ""
+      }
+    ]
+  },
+  "evidence": [
+    {
+      "id": "E-001",
+      "kind": "CODE",
+      "claim": "ScheduledTaskExecutor cria thread dur\u00e1vel e envia run headless pelo router do macOS.",
+      "locator": "Sources/AppShell/ScheduledTaskRuntime.swift:106"
+    },
+    {
+      "id": "E-002",
+      "kind": "CODE",
+      "claim": "ScheduledTask inclui recorr\u00eancia, fuso IANA, workspace, provider e identidade de usu\u00e1rio do sistema.",
+      "locator": "Sources/CoreModel/ScheduledTask.swift:19"
+    },
+    {
+      "id": "E-003",
+      "kind": "CODE",
+      "claim": "ScheduledTaskStore implementa claim de ocorr\u00eancia, run, heartbeat e recupera\u00e7\u00e3o de leases.",
+      "locator": "Sources/Persistence/ScheduledTaskStore.swift:211"
+    },
+    {
+      "id": "E-004",
+      "kind": "CODE",
+      "claim": "O scheduler atual ignora ocorr\u00eancias perdidas ao abrir o aplicativo e descreve execu\u00e7\u00e3o vinculada ao app.",
+      "locator": "Sources/AppShell/ScheduledTaskRuntime.swift:736"
+    },
+    {
+      "id": "E-005",
+      "kind": "CODE",
+      "claim": "NotificationRepository mant\u00e9m feed persistente com marca\u00e7\u00e3o de lido e descarte.",
+      "locator": "Sources/Persistence/Notifications.swift:20"
+    },
+    {
+      "id": "E-006",
+      "kind": "CODE",
+      "claim": "SystemNotifier publica alertas locais via UNUserNotificationCenter em bundle macOS.",
+      "locator": "Sources/AppShell/SystemNotifier.swift:51"
+    },
+    {
+      "id": "E-007",
+      "kind": "CODE",
+      "claim": "WorkspaceFileService j\u00e1 oferece listagem, leitura, edi\u00e7\u00e3o e opera\u00e7\u00f5es de arquivo para acesso remoto.",
+      "locator": "Sources/SocketServer/WorkspaceFileService.swift:32"
+    },
+    {
+      "id": "E-008",
+      "kind": "CODE",
+      "claim": "BotStore persiste bots, conversas, aten\u00e7\u00e3o e rotinas.",
+      "locator": "Sources/Persistence/BotStore.swift:44"
+    },
+    {
+      "id": "E-009",
+      "kind": "CODE",
+      "claim": "O runtime atual de agendamento cont\u00e9m ServiceManagement, NSXPC e sele\u00e7\u00e3o de usu\u00e1rio macOS.",
+      "locator": "Sources/AppShell/ScheduledTaskRuntime.swift:5"
+    },
+    {
+      "id": "E-010",
+      "kind": "CODE",
+      "claim": "Os clientes iOS distinguem WebSocket de eventos em tempo real e RPC por HTTP.",
+      "locator": "command: sed -n 1,100p ios-app/App/Sources/ConnectionKit/LivePushTransportPolicy.swift"
+    },
+    {
+      "id": "E-011",
+      "kind": "CODE",
+      "claim": "O app iOS registra APNs e tem prefer\u00eancias de categoria e hor\u00e1rio silencioso no cliente.",
+      "locator": "command: sed -n 1,150p ios-app/App/Sources/Notifications/PushNotificationRegistration.swift"
+    },
+    {
+      "id": "E-012",
+      "kind": "CODE",
+      "claim": "O backend privado inclui servi\u00e7o para envio de alertas APNs.",
+      "locator": "command: rg -n deliverAlert private/backend/src/modules/push-notification/push-notification.service.ts"
+    },
+    {
+      "id": "E-013",
+      "kind": "DOC",
+      "claim": "Apple suporta Web Push no iOS em web apps adicionadas \u00e0 Tela de In\u00edcio desde iOS 16.4.",
+      "locator": "https://developer.apple.com/documentation/usernotifications/sending-web-push-notifications-in-web-apps-and-browsers"
+    },
+    {
+      "id": "E-014",
+      "kind": "CODE",
+      "claim": "A arquitetura documenta SQLite local, EventBus, WebSocket e sess\u00e3o persistida.",
+      "locator": "docs/architecture.md:40"
+    },
+    {
+      "id": "E-015",
+      "kind": "USER_DECISION",
+      "claim": "O usu\u00e1rio escolheu workspace na nuvem e prop\u00f4s VPS de 4 GB por usu\u00e1rio.",
+      "locator": "user decision: conversa atual sobre workspace em nuvem e VPS de 4 GB"
+    },
+    {
+      "id": "E-016",
+      "kind": "DOC",
+      "claim": "GitHub Codespaces usa ambientes Linux no navegador, com m\u00e1quinas iniciando em 2 n\u00facleos e 8 GB.",
+      "locator": "https://docs.github.com/en/codespaces/about-codespaces/what-are-codespaces"
+    }
+  ],
+  "independence": {
+    "mode": "single-host",
+    "providers": [
+      "codex"
+    ],
+    "provider_runtimes": {
+      "codex": {
+        "adapter": "host-native-workers",
+        "model": "host-default",
+        "reviewer_effort": "medium",
+        "arbiter_effort": "high",
+        "max_parallel_workers": 2
+      }
+    },
+    "blind_first_pass": true,
+    "reviewers_saw_peer_reviews_before_submission": false,
+    "reviewer_ids": [
+      "logic",
+      "assumptions",
+      "execution",
+      "adversarial",
+      "alternatives",
+      "problem-frame",
+      "security-privacy",
+      "data-migration",
+      "reliability-performance",
+      "api-compatibility",
+      "testability-release",
+      "operations-observability",
+      "cost-dependency",
+      "product-ux"
+    ],
+    "verifier_ids": [],
+    "conditional_seat_selection": {
+      "security-privacy": "SELECTED: c\u00f3digo arbitr\u00e1rio e credenciais por conta",
+      "data-migration": "SELECTED: mudan\u00e7a de autoridade local para cloud",
+      "reliability-performance": "SELECTED: VPS sempre ligada, scheduler e outbox",
+      "api-compatibility": "SELECTED: clientes macOS/iOS e novo gateway",
+      "testability-release": "SELECTED: beta em ondas e provas E2E",
+      "operations-observability": "SELECTED: frota de VPS, restore e push",
+      "cost-dependency": "SELECTED: VPS por usu\u00e1rio e provedores externos",
+      "product-ux": "SELECTED: jornada web/iOS e notifica\u00e7\u00f5es",
+      "compliance-governance": "NOT_APPLICABLE: nenhum requisito regulat\u00f3rio espec\u00edfico foi informado"
+    },
+    "batch_plan": [
+      {
+        "round": 1,
+        "phase": "blind",
+        "provider": "codex",
+        "seat_ids": [
+          "logic",
+          "assumptions"
+        ]
+      },
+      {
+        "round": 1,
+        "phase": "blind",
+        "provider": "codex",
+        "seat_ids": [
+          "execution",
+          "adversarial"
+        ]
+      },
+      {
+        "round": 1,
+        "phase": "blind",
+        "provider": "codex",
+        "seat_ids": [
+          "alternatives",
+          "problem-frame"
+        ]
+      },
+      {
+        "round": 1,
+        "phase": "blind",
+        "provider": "codex",
+        "seat_ids": [
+          "security-privacy",
+          "data-migration"
+        ]
+      },
+      {
+        "round": 1,
+        "phase": "blind",
+        "provider": "codex",
+        "seat_ids": [
+          "reliability-performance",
+          "api-compatibility"
+        ]
+      },
+      {
+        "round": 1,
+        "phase": "blind",
+        "provider": "codex",
+        "seat_ids": [
+          "testability-release",
+          "operations-observability"
+        ]
+      },
+      {
+        "round": 1,
+        "phase": "blind",
+        "provider": "codex",
+        "seat_ids": [
+          "cost-dependency",
+          "product-ux"
+        ]
+      }
+    ],
+    "conflicts": []
+  },
+  "confrontation": null,
+  "rounds": [
+    {
+      "number": 1,
+      "input_thesis_id": "T-001",
+      "output_thesis_id": "T-002",
+      "reviewer_ids": [
+        "logic",
+        "assumptions",
+        "execution",
+        "adversarial",
+        "alternatives",
+        "problem-frame",
+        "security-privacy",
+        "data-migration",
+        "reliability-performance",
+        "api-compatibility",
+        "testability-release",
+        "operations-observability",
+        "cost-dependency",
+        "product-ux"
+      ],
+      "reviewer_results": [
+        {
+          "reviewer_id": "logic",
+          "provider": "codex",
+          "verdict": "OBJECTIONS",
+          "search_summary": "Revis\u00e3o cega do packet e lente atribu\u00edda; resposta integral est\u00e1 no hist\u00f3rico do agente.",
+          "disconfirming_evidence": "A prova indicada pode refutar a obje\u00e7\u00e3o ap\u00f3s implementa\u00e7\u00e3o.",
+          "residual_uncertainty": "A prova emp\u00edrica ainda n\u00e3o foi executada."
+        },
+        {
+          "reviewer_id": "assumptions",
+          "provider": "codex",
+          "verdict": "OBJECTIONS",
+          "search_summary": "Revis\u00e3o cega do packet e lente atribu\u00edda; resposta integral est\u00e1 no hist\u00f3rico do agente.",
+          "disconfirming_evidence": "A prova indicada pode refutar a obje\u00e7\u00e3o ap\u00f3s implementa\u00e7\u00e3o.",
+          "residual_uncertainty": "A prova emp\u00edrica ainda n\u00e3o foi executada."
+        },
+        {
+          "reviewer_id": "execution",
+          "provider": "codex",
+          "verdict": "OBJECTIONS",
+          "search_summary": "Revis\u00e3o cega do packet e lente atribu\u00edda; resposta integral est\u00e1 no hist\u00f3rico do agente.",
+          "disconfirming_evidence": "A prova indicada pode refutar a obje\u00e7\u00e3o ap\u00f3s implementa\u00e7\u00e3o.",
+          "residual_uncertainty": "A prova emp\u00edrica ainda n\u00e3o foi executada."
+        },
+        {
+          "reviewer_id": "adversarial",
+          "provider": "codex",
+          "verdict": "OBJECTIONS",
+          "search_summary": "Revis\u00e3o cega do packet e lente atribu\u00edda; resposta integral est\u00e1 no hist\u00f3rico do agente.",
+          "disconfirming_evidence": "A prova indicada pode refutar a obje\u00e7\u00e3o ap\u00f3s implementa\u00e7\u00e3o.",
+          "residual_uncertainty": "A prova emp\u00edrica ainda n\u00e3o foi executada."
+        },
+        {
+          "reviewer_id": "alternatives",
+          "provider": "codex",
+          "verdict": "OBJECTIONS",
+          "search_summary": "Revis\u00e3o cega do packet e lente atribu\u00edda; resposta integral est\u00e1 no hist\u00f3rico do agente.",
+          "disconfirming_evidence": "A prova indicada pode refutar a obje\u00e7\u00e3o ap\u00f3s implementa\u00e7\u00e3o.",
+          "residual_uncertainty": "A prova emp\u00edrica ainda n\u00e3o foi executada."
+        },
+        {
+          "reviewer_id": "problem-frame",
+          "provider": "codex",
+          "verdict": "OBJECTIONS",
+          "search_summary": "Revis\u00e3o cega do packet e lente atribu\u00edda; resposta integral est\u00e1 no hist\u00f3rico do agente.",
+          "disconfirming_evidence": "A prova indicada pode refutar a obje\u00e7\u00e3o ap\u00f3s implementa\u00e7\u00e3o.",
+          "residual_uncertainty": "A prova emp\u00edrica ainda n\u00e3o foi executada."
+        },
+        {
+          "reviewer_id": "security-privacy",
+          "provider": "codex",
+          "verdict": "OBJECTIONS",
+          "search_summary": "Revis\u00e3o cega do packet e lente atribu\u00edda; resposta integral est\u00e1 no hist\u00f3rico do agente.",
+          "disconfirming_evidence": "A prova indicada pode refutar a obje\u00e7\u00e3o ap\u00f3s implementa\u00e7\u00e3o.",
+          "residual_uncertainty": "A prova emp\u00edrica ainda n\u00e3o foi executada."
+        },
+        {
+          "reviewer_id": "data-migration",
+          "provider": "codex",
+          "verdict": "OBJECTIONS",
+          "search_summary": "Revis\u00e3o cega do packet e lente atribu\u00edda; resposta integral est\u00e1 no hist\u00f3rico do agente.",
+          "disconfirming_evidence": "A prova indicada pode refutar a obje\u00e7\u00e3o ap\u00f3s implementa\u00e7\u00e3o.",
+          "residual_uncertainty": "A prova emp\u00edrica ainda n\u00e3o foi executada."
+        },
+        {
+          "reviewer_id": "reliability-performance",
+          "provider": "codex",
+          "verdict": "OBJECTIONS",
+          "search_summary": "Revis\u00e3o cega do packet e lente atribu\u00edda; resposta integral est\u00e1 no hist\u00f3rico do agente.",
+          "disconfirming_evidence": "A prova indicada pode refutar a obje\u00e7\u00e3o ap\u00f3s implementa\u00e7\u00e3o.",
+          "residual_uncertainty": "A prova emp\u00edrica ainda n\u00e3o foi executada."
+        },
+        {
+          "reviewer_id": "api-compatibility",
+          "provider": "codex",
+          "verdict": "OBJECTIONS",
+          "search_summary": "Revis\u00e3o cega do packet e lente atribu\u00edda; resposta integral est\u00e1 no hist\u00f3rico do agente.",
+          "disconfirming_evidence": "A prova indicada pode refutar a obje\u00e7\u00e3o ap\u00f3s implementa\u00e7\u00e3o.",
+          "residual_uncertainty": "A prova emp\u00edrica ainda n\u00e3o foi executada."
+        },
+        {
+          "reviewer_id": "testability-release",
+          "provider": "codex",
+          "verdict": "OBJECTIONS",
+          "search_summary": "Revis\u00e3o cega do packet e lente atribu\u00edda; resposta integral est\u00e1 no hist\u00f3rico do agente.",
+          "disconfirming_evidence": "A prova indicada pode refutar a obje\u00e7\u00e3o ap\u00f3s implementa\u00e7\u00e3o.",
+          "residual_uncertainty": "A prova emp\u00edrica ainda n\u00e3o foi executada."
+        },
+        {
+          "reviewer_id": "operations-observability",
+          "provider": "codex",
+          "verdict": "OBJECTIONS",
+          "search_summary": "Revis\u00e3o cega do packet e lente atribu\u00edda; resposta integral est\u00e1 no hist\u00f3rico do agente.",
+          "disconfirming_evidence": "A prova indicada pode refutar a obje\u00e7\u00e3o ap\u00f3s implementa\u00e7\u00e3o.",
+          "residual_uncertainty": "A prova emp\u00edrica ainda n\u00e3o foi executada."
+        },
+        {
+          "reviewer_id": "cost-dependency",
+          "provider": "codex",
+          "verdict": "OBJECTIONS",
+          "search_summary": "Revis\u00e3o cega do packet e lente atribu\u00edda; resposta integral est\u00e1 no hist\u00f3rico do agente.",
+          "disconfirming_evidence": "A prova indicada pode refutar a obje\u00e7\u00e3o ap\u00f3s implementa\u00e7\u00e3o.",
+          "residual_uncertainty": "A prova emp\u00edrica ainda n\u00e3o foi executada."
+        },
+        {
+          "reviewer_id": "product-ux",
+          "provider": "codex",
+          "verdict": "OBJECTIONS",
+          "search_summary": "Revis\u00e3o cega do packet e lente atribu\u00edda; resposta integral est\u00e1 no hist\u00f3rico do agente.",
+          "disconfirming_evidence": "A prova indicada pode refutar a obje\u00e7\u00e3o ap\u00f3s implementa\u00e7\u00e3o.",
+          "residual_uncertainty": "A prova emp\u00edrica ainda n\u00e3o foi executada."
+        }
+      ],
+      "objections": [
+        {
+          "id": "O-R1-001",
+          "reviewer_id": "logic",
+          "supporting_reviewer_ids": [
+            "logic"
+          ],
+          "claim": "Retorno local pode perder escrita cloud",
+          "failure_mode": "Revers\u00e3o sem reconcilia\u00e7\u00e3o descarta trabalho confirmado",
+          "severity": "HIGH",
+          "confidence": 85,
+          "premise_ids": [],
+          "evidence_ids": [
+            "E-014",
+            "E-015"
+          ],
+          "required_proof": "Cutover com edi\u00e7\u00e3o cloud e retorno sem perda",
+          "smallest_correction": "Fence e reconcilia\u00e7\u00e3o antes de retorno",
+          "status": "MITIGATED",
+          "author_response": {
+            "disposition": "ACCEPT",
+            "rationale": "Mitiga\u00e7\u00e3o adicionada ao plano de migra\u00e7\u00e3o",
+            "evidence_ids": [
+              "E-014",
+              "E-015"
+            ],
+            "change": "Mitiga\u00e7\u00e3o adicionada ao plano de migra\u00e7\u00e3o",
+            "validation": "Cutover com edi\u00e7\u00e3o cloud e retorno sem perda",
+            "residual_risk": "A aceita\u00e7\u00e3o depende da prova futura, ainda n\u00e3o executada."
+          }
+        },
+        {
+          "id": "O-R1-002",
+          "reviewer_id": "assumptions",
+          "supporting_reviewer_ids": [
+            "assumptions"
+          ],
+          "claim": "Runtime Linux 4 GB pode n\u00e3o executar providers",
+          "failure_mode": "Portar a UI antes de provar Claude/Codex/Grok e Token Saver gera produto incompleto",
+          "severity": "HIGH",
+          "confidence": 85,
+          "premise_ids": [],
+          "evidence_ids": [
+            "E-001",
+            "E-009"
+          ],
+          "required_proof": "Spike real Linux por provider",
+          "smallest_correction": "Gate de compatibilidade antes do port",
+          "status": "OPEN",
+          "author_response": {
+            "disposition": "INVESTIGATE",
+            "rationale": "Experimento permanece obrigat\u00f3rio",
+            "evidence_ids": [
+              "E-001",
+              "E-009"
+            ],
+            "change": "Experimento permanece obrigat\u00f3rio",
+            "validation": "Spike real Linux por provider",
+            "residual_risk": "A aceita\u00e7\u00e3o depende da prova futura, ainda n\u00e3o executada."
+          }
+        },
+        {
+          "id": "O-R1-003",
+          "reviewer_id": "execution",
+          "supporting_reviewer_ids": [
+            "execution"
+          ],
+          "claim": "Falta contrato headless demonstrado",
+          "failure_mode": "AppKit/MainActor pode impedir servi\u00e7o Linux e sincroniza\u00e7\u00e3o",
+          "severity": "HIGH",
+          "confidence": 85,
+          "premise_ids": [],
+          "evidence_ids": [
+            "E-001",
+            "E-014"
+          ],
+          "required_proof": "Corte vertical Linux com snapshot/evento/reconex\u00e3o",
+          "smallest_correction": "Prova vertical antes de superf\u00edcies",
+          "status": "MITIGATED",
+          "author_response": {
+            "disposition": "ACCEPT",
+            "rationale": "Gate inclu\u00eddo",
+            "evidence_ids": [
+              "E-001",
+              "E-014"
+            ],
+            "change": "Gate inclu\u00eddo",
+            "validation": "Corte vertical Linux com snapshot/evento/reconex\u00e3o",
+            "residual_risk": "A aceita\u00e7\u00e3o depende da prova futura, ainda n\u00e3o executada."
+          }
+        },
+        {
+          "id": "O-R1-004",
+          "reviewer_id": "adversarial",
+          "supporting_reviewer_ids": [
+            "adversarial"
+          ],
+          "claim": "Processo do usu\u00e1rio pode alcan\u00e7ar controle de outro workspace",
+          "failure_mode": "Raiz arbitr\u00e1ria, sockets e credenciais permitem escalada",
+          "severity": "BLOCKER",
+          "confidence": 85,
+          "premise_ids": [],
+          "evidence_ids": [
+            "E-007"
+          ],
+          "required_proof": "Ataque de processo comprometido, root e porta adulteradas",
+          "smallest_correction": "Separar credenciais e derivar raiz no servidor",
+          "status": "OPEN",
+          "author_response": {
+            "disposition": "INVESTIGATE",
+            "rationale": "Fronteira explicitada, prova pendente",
+            "evidence_ids": [
+              "E-007"
+            ],
+            "change": "Fronteira explicitada, prova pendente",
+            "validation": "Ataque de processo comprometido, root e porta adulteradas",
+            "residual_risk": "A aceita\u00e7\u00e3o depende da prova futura, ainda n\u00e3o executada."
+          }
+        },
+        {
+          "id": "O-R1-005",
+          "reviewer_id": "alternatives",
+          "supporting_reviewer_ids": [
+            "alternatives"
+          ],
+          "claim": "Sempre ligada pode custar demais por usu\u00e1rio ocioso",
+          "failure_mode": "Frota ociosa inviabiliza pre\u00e7o",
+          "severity": "HIGH",
+          "confidence": 85,
+          "premise_ids": [],
+          "evidence_ids": [
+            "E-015"
+          ],
+          "required_proof": "Comparar custo ativo/ocioso e wake sob demanda",
+          "smallest_correction": "Sempre ligada apenas no piloto",
+          "status": "MITIGATED",
+          "author_response": {
+            "disposition": "ACCEPT",
+            "rationale": "Compara\u00e7\u00e3o antecipada",
+            "evidence_ids": [
+              "E-015"
+            ],
+            "change": "Compara\u00e7\u00e3o antecipada",
+            "validation": "Comparar custo ativo/ocioso e wake sob demanda",
+            "residual_risk": "A aceita\u00e7\u00e3o depende da prova futura, ainda n\u00e3o executada."
+          }
+        },
+        {
+          "id": "O-R1-006",
+          "reviewer_id": "problem-frame",
+          "supporting_reviewer_ids": [
+            "problem-frame"
+          ],
+          "claim": "Jornadas n\u00e3o t\u00eam limiar de sucesso",
+          "failure_mode": "Recursos completos ainda podem ser lentos ou in\u00fateis",
+          "severity": "HIGH",
+          "confidence": 85,
+          "premise_ids": [],
+          "evidence_ids": [
+            "E-015"
+          ],
+          "required_proof": "Jornadas reais com limiares de aceite",
+          "smallest_correction": "Gates por jornada",
+          "status": "MITIGATED",
+          "author_response": {
+            "disposition": "ACCEPT",
+            "rationale": "Gates propostos",
+            "evidence_ids": [
+              "E-015"
+            ],
+            "change": "Gates propostos",
+            "validation": "Jornadas reais com limiares de aceite",
+            "residual_risk": "A aceita\u00e7\u00e3o depende da prova futura, ainda n\u00e3o executada."
+          }
+        },
+        {
+          "id": "O-R1-007",
+          "reviewer_id": "security-privacy",
+          "supporting_reviewer_ids": [
+            "security-privacy"
+          ],
+          "claim": "Preview e segredos atravessam fronteira de confian\u00e7a",
+          "failure_mode": "HTML malicioso ou c\u00f3digo do usu\u00e1rio acessa sess\u00e3o/credenciais",
+          "severity": "HIGH",
+          "confidence": 85,
+          "premise_ids": [],
+          "evidence_ids": [
+            "E-007",
+            "E-010"
+          ],
+          "required_proof": "Teste HTML hostil, credenciais e portas",
+          "smallest_correction": "Origin isolado e broker de segredo",
+          "status": "MITIGATED",
+          "author_response": {
+            "disposition": "ACCEPT",
+            "rationale": "Pol\u00edtica especificada, teste pendente",
+            "evidence_ids": [
+              "E-007",
+              "E-010"
+            ],
+            "change": "Pol\u00edtica especificada, teste pendente",
+            "validation": "Teste HTML hostil, credenciais e portas",
+            "residual_risk": "A aceita\u00e7\u00e3o depende da prova futura, ainda n\u00e3o executada."
+          }
+        },
+        {
+          "id": "O-R1-008",
+          "reviewer_id": "data-migration",
+          "supporting_reviewer_ids": [
+            "data-migration"
+          ],
+          "claim": "Cutover local/cloud pode duplicar escrita e tarefas",
+          "failure_mode": "Checksum de importa\u00e7\u00e3o n\u00e3o cobre escrita concorrente",
+          "severity": "HIGH",
+          "confidence": 85,
+          "premise_ids": [],
+          "evidence_ids": [
+            "E-003",
+            "E-014"
+          ],
+          "required_proof": "Ensaio com escrita e tarefa vencida no corte",
+          "smallest_correction": "Fence local, watermark e mapeamento UID/path",
+          "status": "MITIGATED",
+          "author_response": {
+            "disposition": "ACCEPT",
+            "rationale": "Barreira definida, ensaio pendente",
+            "evidence_ids": [
+              "E-003",
+              "E-014"
+            ],
+            "change": "Barreira definida, ensaio pendente",
+            "validation": "Ensaio com escrita e tarefa vencida no corte",
+            "residual_risk": "A aceita\u00e7\u00e3o depende da prova futura, ainda n\u00e3o executada."
+          }
+        },
+        {
+          "id": "O-R1-009",
+          "reviewer_id": "reliability-performance",
+          "supporting_reviewer_ids": [
+            "reliability-performance"
+          ],
+          "claim": "Queda da VPS e filas sem limite perdem autonomia",
+          "failure_mode": "Scheduler, snapshot e outbox podem atrasar ou saturar",
+          "severity": "HIGH",
+          "confidence": 85,
+          "premise_ids": [],
+          "evidence_ids": [
+            "E-003",
+            "E-004"
+          ],
+          "required_proof": "Fault injection de VPS, snapshot e outbox",
+          "smallest_correction": "Monitor externo, cursor e filas limitadas",
+          "status": "MITIGATED",
+          "author_response": {
+            "disposition": "ACCEPT",
+            "rationale": "Mecanismos planejados",
+            "evidence_ids": [
+              "E-003",
+              "E-004"
+            ],
+            "change": "Mecanismos planejados",
+            "validation": "Fault injection de VPS, snapshot e outbox",
+            "residual_risk": "A aceita\u00e7\u00e3o depende da prova futura, ainda n\u00e3o executada."
+          }
+        },
+        {
+          "id": "O-R1-010",
+          "reviewer_id": "api-compatibility",
+          "supporting_reviewer_ids": [
+            "api-compatibility"
+          ],
+          "claim": "Clientes mistos podem interpretar protocolo novo errado",
+          "failure_mode": "Evento ou RPC incompat\u00edvel produz estado falso",
+          "severity": "HIGH",
+          "confidence": 85,
+          "premise_ids": [],
+          "evidence_ids": [
+            "E-010",
+            "E-014"
+          ],
+          "required_proof": "Matriz old/new clients e handoff de evento",
+          "smallest_correction": "Vers\u00e3o/capacidade e recibos de muta\u00e7\u00e3o",
+          "status": "MITIGATED",
+          "author_response": {
+            "disposition": "ACCEPT",
+            "rationale": "Contrato planejado",
+            "evidence_ids": [
+              "E-010",
+              "E-014"
+            ],
+            "change": "Contrato planejado",
+            "validation": "Matriz old/new clients e handoff de evento",
+            "residual_risk": "A aceita\u00e7\u00e3o depende da prova futura, ainda n\u00e3o executada."
+          }
+        },
+        {
+          "id": "O-R1-011",
+          "reviewer_id": "testability-release",
+          "supporting_reviewer_ids": [
+            "testability-release"
+          ],
+          "claim": "Beta pode avan\u00e7ar sem prova real de push e falhas",
+          "failure_mode": "Teste Safari aberto n\u00e3o prova PWA ou APNs fechados",
+          "severity": "HIGH",
+          "confidence": 85,
+          "premise_ids": [],
+          "evidence_ids": [
+            "E-011",
+            "E-013"
+          ],
+          "required_proof": "Testar PWA e app real fechados, crash e retry",
+          "smallest_correction": "Gates separados por canal e falha",
+          "status": "MITIGATED",
+          "author_response": {
+            "disposition": "ACCEPT",
+            "rationale": "Gates adicionados",
+            "evidence_ids": [
+              "E-011",
+              "E-013"
+            ],
+            "change": "Gates adicionados",
+            "validation": "Testar PWA e app real fechados, crash e retry",
+            "residual_risk": "A aceita\u00e7\u00e3o depende da prova futura, ainda n\u00e3o executada."
+          }
+        },
+        {
+          "id": "O-R1-012",
+          "reviewer_id": "operations-observability",
+          "supporting_reviewer_ids": [
+            "operations-observability"
+          ],
+          "claim": "Opera\u00e7\u00e3o pode n\u00e3o detectar tarefa presa ou backup inv\u00e1lido",
+          "failure_mode": "Falta limiar e respons\u00e1vel por conta",
+          "severity": "HIGH",
+          "confidence": 85,
+          "premise_ids": [],
+          "evidence_ids": [
+            "E-003",
+            "E-014"
+          ],
+          "required_proof": "Alerta por conta e restore medido",
+          "smallest_correction": "RPO/RTO e runbook antes do beta",
+          "status": "MITIGATED",
+          "author_response": {
+            "disposition": "ACCEPT",
+            "rationale": "Opera\u00e7\u00e3o adicionada",
+            "evidence_ids": [
+              "E-003",
+              "E-014"
+            ],
+            "change": "Opera\u00e7\u00e3o adicionada",
+            "validation": "Alerta por conta e restore medido",
+            "residual_risk": "A aceita\u00e7\u00e3o depende da prova futura, ainda n\u00e3o executada."
+          }
+        },
+        {
+          "id": "O-R1-013",
+          "reviewer_id": "cost-dependency",
+          "supporting_reviewer_ids": [
+            "cost-dependency"
+          ],
+          "claim": "Custo e termos de uso de provider n\u00e3o fechados",
+          "failure_mode": "Runs hospedados ou agendados podem exceder quota e or\u00e7amento",
+          "severity": "HIGH",
+          "confidence": 85,
+          "premise_ids": [],
+          "evidence_ids": [
+            "E-001",
+            "E-015"
+          ],
+          "required_proof": "Custo por conta e termos/quotas por provider",
+          "smallest_correction": "Teto e gate comercial antes do beta",
+          "status": "OPEN",
+          "author_response": {
+            "disposition": "INVESTIGATE",
+            "rationale": "Depend\u00eancias registradas",
+            "evidence_ids": [
+              "E-001",
+              "E-015"
+            ],
+            "change": "Depend\u00eancias registradas",
+            "validation": "Custo por conta e termos/quotas por provider",
+            "residual_risk": "A aceita\u00e7\u00e3o depende da prova futura, ainda n\u00e3o executada."
+          }
+        },
+        {
+          "id": "O-R1-014",
+          "reviewer_id": "product-ux",
+          "supporting_reviewer_ids": [
+            "product-ux"
+          ],
+          "claim": "Dois clientes podem roubar foco um do outro",
+          "failure_mode": "Sincronizar sele\u00e7\u00e3o e panes como estado global altera destino inesperadamente",
+          "severity": "HIGH",
+          "confidence": 85,
+          "premise_ids": [],
+          "evidence_ids": [
+            "E-014"
+          ],
+          "required_proof": "Dois clientes simult\u00e2neos com navega\u00e7\u00e3o conflitante",
+          "smallest_correction": "Estado compartilhado separado de estado por dispositivo",
+          "status": "MITIGATED",
+          "author_response": {
+            "disposition": "ACCEPT",
+            "rationale": "Regra adicionada",
+            "evidence_ids": [
+              "E-014"
+            ],
+            "change": "Regra adicionada",
+            "validation": "Dois clientes simult\u00e2neos com navega\u00e7\u00e3o conflitante",
+            "residual_risk": "A aceita\u00e7\u00e3o depende da prova futura, ainda n\u00e3o executada."
+          }
+        }
+      ],
+      "verification": [],
+      "new_material_objections": 0
+    }
+  ],
+  "decision": {
+    "final_thesis_id": "T-002",
+    "confidence": 35,
+    "basis": "EVIDENCE_AND_RISK",
+    "rationale": "Revis\u00e3o cega identificou fronteiras de seguran\u00e7a e migra\u00e7\u00e3o corrigidas no plano; provas emp\u00edricas cr\u00edticas de Linux, capacidade, custo e dados locais ainda inexistem, ent\u00e3o aprova\u00e7\u00e3o da execu\u00e7\u00e3o integral fica bloqueada.",
+    "open_blocker_ids": [
+      "O-R1-004"
+    ],
+    "open_high_ids": [
+      "O-R1-002",
+      "O-R1-013"
+    ],
+    "conditions": [],
+    "accepted_risk_ids": [],
+    "required_experiment_ids": [],
+    "change_summary": [
+      "Antecipar prova Linux/custo e invent\u00e1rio",
+      "Isolar c\u00f3digo do workspace do plano de controle",
+      "Fence de scheduler e cutover; retorno reconciliado",
+      "Gates mensur\u00e1veis de push, recupera\u00e7\u00e3o e iOS"
+    ],
+    "decision_owner_actions": [
+      "Aprovar teto de custo e pol\u00edtica padr\u00e3o de push ap\u00f3s piloto."
+    ]
+  },
+  "historical_record_limitations": [
+    "Pareceres completos est\u00e3o nos agentes desta conversa; o relat\u00f3rio terminal registra bloqueio sem incorporar respostas individuais."
+  ],
+  "blockers": [
+    "Faltam testes reais de Claude, Codex, Grok, Bot, browser e Token Saver em Linux com 4/8 GB.",
+    "Faltam custo por conta e invent\u00e1rio de dados locais para aprovar capacidade e migra\u00e7\u00e3o."
+  ]
+}

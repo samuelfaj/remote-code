@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#f5f7f6">
+  <title>RemoteCode — visão</title>
+  <style>
+:root {
+  color-scheme: light;
+  --brand: #0f6b5c;
+  --brand-strong: #0b5247;
+  --lime: #c6f06c;
+  --ink: #14201f;
+  --muted: #5f6f6c;
+  --line: #d9e4e1;
+  --bg: #f5f7f6;
+  --card: #ffffff;
+  --warn: #9c6a00;
+  --danger: #a5272f;
+  --ok: #107c41;
+  --info: #1a6ca8;
+}
+* { box-sizing: border-box; }
+html { color-scheme: light; background: var(--bg); }
+body {
+  margin: 0;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  line-height: 1.52;
+  color: var(--ink);
+  background: var(--bg);
+}
+header {
+  background: linear-gradient(135deg, #ffffff 0%, #eef7f4 100%);
+  border-bottom: 1px solid var(--line);
+  padding: 32px 5vw 20px;
+}
+header h1 { margin: 0; font-size: clamp(28px, 4vw, 48px); }
+header p { margin: 10px 0 0; color: var(--muted); max-width: 980px; font-size: 17px; }
+.meta { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px; }
+nav {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 12px 5vw;
+  background: #ffffff;
+  border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+nav a {
+  flex: 0 0 auto;
+  color: var(--brand);
+  text-decoration: none;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 12px;
+  background: #fff;
+}
+nav a[aria-current="page"] {
+  background: #e7f6f1;
+  border-color: #b9dcd3;
+  font-weight: 600;
+}
+main { padding: 24px 5vw 64px; max-width: 1440px; margin: 0 auto; }
+section {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 22px;
+  margin: 0 0 18px;
+}
+h2 { margin: 0 0 14px; font-size: 24px; }
+h3 { margin: 18px 0 8px; font-size: 17px; }
+p { margin: 8px 0; }
+ul, ol { margin: 8px 0 8px 22px; padding: 0; }
+li { margin: 6px 0; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0;
+  background: #fff;
+  font-size: 14px;
+}
+th, td {
+  border: 1px solid var(--line);
+  padding: 10px;
+  vertical-align: top;
+  text-align: left;
+}
+th { background: #eef8f5; color: #143c38; }
+code, pre {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: #f2f6f5;
+  border: 1px solid #dce7e5;
+  border-radius: 8px;
+}
+code { padding: 1px 5px; }
+pre { padding: 14px; overflow: auto; white-space: pre-wrap; }
+.callout {
+  border-left: 4px solid var(--brand);
+  background: #f3fbf9;
+  padding: 12px 14px;
+  border-radius: 8px;
+  margin: 10px 0;
+}
+.callout.danger { border-left-color: var(--danger); background: #fff4f4; }
+.callout.warn { border-left-color: var(--warn); background: #fff9ec; }
+.callout.ok { border-left-color: var(--ok); background: #f0fff5; }
+.callout.decision { border-left-color: #7aa312; background: #fbfff3; }
+.tag {
+  display: inline-block;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 2px 8px;
+  margin: 2px;
+  background: #fff;
+  font-size: 12px;
+  color: var(--muted);
+}
+.tag.strong { color: var(--brand-strong); border-color: #b9dcd3; background: #eef8f5; }
+.small { color: var(--muted); font-size: 13px; }
+@media (max-width: 760px) {
+  header { padding: 24px 18px 16px; }
+  nav { padding: 10px 18px; }
+  main { padding: 18px; }
+  section { padding: 16px; }
+}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>RemoteCode — visão</h1>
+    <p>Um backend por usuário; web e iOS acessam os mesmos dados e ações.</p>
+    <div class="meta"><span class="tag strong">status:NOT_CONFIDENT</span><span class="tag strong">depth:deep</span><span class="tag strong">case:PRODUCT</span></div>
+  </header>
+  <nav aria-label="Plan files"><a href="./00-overview.html" aria-current="page">00-overview</a><a href="./01-architecture.html">01-architecture</a><a href="./02-features.html">02-features</a><a href="./03-scheduling.html">03-scheduling</a><a href="./04-push.html">04-push</a><a href="./05-delivery.html">05-delivery</a><a href="./06-decisions.html">06-decisions</a></nav>
+  <main>
+<section><h2>RemoteCode — visão</h2>
+<p class="small">Um backend por usuário; web e iOS acessam os mesmos dados e ações.</p>
+<h3>Promessa de produto</h3>
+<p>Cada usuário tem um container Linux com o backend e uma GUI desktop do RemoteCode. Workspaces, Bots, threads, arquivos, Git, terminal, browser, tarefas e histórico pertencem a esse container. O web apresenta uma interface própria como nas referências visuais: barra lateral de Workspaces/Bots, lista de threads e área de conversa/trabalho. Web e iOS consultam e comandam o mesmo backend por API; o web não transmite vídeo da GUI desktop.</p>
+<p>O RemoteCode será aberto para instalação pelo próprio usuário. A oferta paga executa a mesma imagem de container com provisionamento, atualizações, backups e operação feitos por nós. Os dados do usuário ficam em volume persistente, fora do ciclo de vida do container.</p>
+<p>No piloto hospedado, cada usuário tem uma VPS com seu container, sempre ligada para agentes e tarefas autônomas. 2 vCPU e 4 GB são hipótese de piloto, não capacidade prometida. O número final depende de carga real com agente, build e preview concorrentes.</p>
+<h3>Jornadas que definem sucesso</h3>
+<ul><li>Abrir um workspace ou Bot na GUI desktop do container, continuar pelo web ou iPhone nos mesmos dados.</li><li>Lançar um agente, fechar qualquer interface e receber resultado/atenção por push; abrir a thread correta.</li><li>Agendar tarefa ou rotina de Bot, dormir, receber alerta e consultar histórico/artefatos pela GUI desktop, web ou iOS.</li><li>Recriar o container, remontar o volume e recuperar workspaces, Bots, threads e tarefas sem mostrar sucesso falso nem repetir efeitos incertos.</li></ul>
+<h3>Escopo e limite da paridade</h3>
+<p>O backend do container é a autoridade para Files, Git, Terminal, Agent App, Bots, browser/preview, Scheduled Tasks, inbox e push. A GUI desktop Linux, o web e o iOS são interfaces para esse mesmo backend, cada uma com sua apresentação. A GUI macOS atual usa AppKit/SwiftUI e não roda diretamente em Linux; uma GUI desktop Linux equivalente precisa ser provada antes de prometer paridade.</p>
+</section>
+  </main>
+</body>
+</html>

@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#f5f7f6">
+  <title>Notificações: cobertura total sem ruído</title>
+  <style>
+:root {
+  color-scheme: light;
+  --brand: #0f6b5c;
+  --brand-strong: #0b5247;
+  --lime: #c6f06c;
+  --ink: #14201f;
+  --muted: #5f6f6c;
+  --line: #d9e4e1;
+  --bg: #f5f7f6;
+  --card: #ffffff;
+  --warn: #9c6a00;
+  --danger: #a5272f;
+  --ok: #107c41;
+  --info: #1a6ca8;
+}
+* { box-sizing: border-box; }
+html { color-scheme: light; background: var(--bg); }
+body {
+  margin: 0;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  line-height: 1.52;
+  color: var(--ink);
+  background: var(--bg);
+}
+header {
+  background: linear-gradient(135deg, #ffffff 0%, #eef7f4 100%);
+  border-bottom: 1px solid var(--line);
+  padding: 32px 5vw 20px;
+}
+header h1 { margin: 0; font-size: clamp(28px, 4vw, 48px); }
+header p { margin: 10px 0 0; color: var(--muted); max-width: 980px; font-size: 17px; }
+.meta { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px; }
+nav {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 12px 5vw;
+  background: #ffffff;
+  border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+nav a {
+  flex: 0 0 auto;
+  color: var(--brand);
+  text-decoration: none;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 12px;
+  background: #fff;
+}
+nav a[aria-current="page"] {
+  background: #e7f6f1;
+  border-color: #b9dcd3;
+  font-weight: 600;
+}
+main { padding: 24px 5vw 64px; max-width: 1440px; margin: 0 auto; }
+section {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 22px;
+  margin: 0 0 18px;
+}
+h2 { margin: 0 0 14px; font-size: 24px; }
+h3 { margin: 18px 0 8px; font-size: 17px; }
+p { margin: 8px 0; }
+ul, ol { margin: 8px 0 8px 22px; padding: 0; }
+li { margin: 6px 0; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0;
+  background: #fff;
+  font-size: 14px;
+}
+th, td {
+  border: 1px solid var(--line);
+  padding: 10px;
+  vertical-align: top;
+  text-align: left;
+}
+th { background: #eef8f5; color: #143c38; }
+code, pre {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: #f2f6f5;
+  border: 1px solid #dce7e5;
+  border-radius: 8px;
+}
+code { padding: 1px 5px; }
+pre { padding: 14px; overflow: auto; white-space: pre-wrap; }
+.callout {
+  border-left: 4px solid var(--brand);
+  background: #f3fbf9;
+  padding: 12px 14px;
+  border-radius: 8px;
+  margin: 10px 0;
+}
+.callout.danger { border-left-color: var(--danger); background: #fff4f4; }
+.callout.warn { border-left-color: var(--warn); background: #fff9ec; }
+.callout.ok { border-left-color: var(--ok); background: #f0fff5; }
+.callout.decision { border-left-color: #7aa312; background: #fbfff3; }
+.tag {
+  display: inline-block;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 2px 8px;
+  margin: 2px;
+  background: #fff;
+  font-size: 12px;
+  color: var(--muted);
+}
+.tag.strong { color: var(--brand-strong); border-color: #b9dcd3; background: #eef8f5; }
+.small { color: var(--muted); font-size: 13px; }
+@media (max-width: 760px) {
+  header { padding: 24px 18px 16px; }
+  nav { padding: 10px 18px; }
+  main { padding: 18px; }
+  section { padding: 16px; }
+}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Notificações: cobertura total sem ruído</h1>
+    <p>Todo evento relevante tem registro; alertas seguem prioridade.</p>
+    <div class="meta"><span class="tag strong">status:NOT_CONFIDENT</span><span class="tag strong">depth:deep</span><span class="tag strong">case:PRODUCT</span></div>
+  </header>
+  <nav aria-label="Plan files"><a href="./00-overview.html">00-overview</a><a href="./01-architecture.html">01-architecture</a><a href="./02-features.html">02-features</a><a href="./03-scheduling.html">03-scheduling</a><a href="./04-push.html" aria-current="page">04-push</a><a href="./05-delivery.html">05-delivery</a><a href="./06-decisions.html">06-decisions</a></nav>
+  <main>
+<section><h2>Notificações: cobertura total sem ruído</h2>
+<p class="small">Todo evento relevante tem registro; alertas seguem prioridade.</p>
+<h3>Contrato do evento</h3>
+<p>Gerar evento canônico só depois de transição durável: eventId, accountId, workspaceId, objectId, kind, occurredAt, actor, outcome, deepLink, sensitivity, priority, collapseKey. Inserir inbox e outbox na mesma transação. Dispatcher processa por dispositivo com recibo/estado, retry com backoff e dedupe por eventId+deviceId.</p>
+<h3>Catálogo de eventos e política proposta</h3>
+<table><thead><tr><th>Categoria</th><th>Eventos que entram no feed</th><th>Push padrão</th></tr></thead><tbody><tr><td>Agentes</td><td>run terminou/falhou/parou; precisa de entrada/aprovação; limite/quota; provider indisponível</td><td>Imediato para ação/falha/conclusão; progresso só em UI</td></tr><tr><td>Bots</td><td>resposta, atenção, rotina iniciou/terminou/falhou, ação bloqueada</td><td>Imediato para atenção/falha/conclusão; início opcional</td></tr><tr><td>Tarefas</td><td>criada/editada/pausada; disparou; concluída/falhou/skipped; perdeu janela</td><td>Falha/skipped/ação imediatos; conclusão configurável</td></tr><tr><td>Git</td><td>push/pull/merge concluído ou falhou, conflito, revisão solicitada</td><td>Falha/conflito imediato; sucesso opcional</td></tr><tr><td>Arquivos e transferências</td><td>upload/download concluído/falhou, conflito de edição, mudança externa relevante</td><td>Falha/conflito imediato; sucesso opcional</td></tr><tr><td>Terminal</td><td>processo longo terminou/falhou, sessão morreu, comando requer atenção</td><td>Falha/atenção imediata; stdout contínuo somente WS</td></tr><tr><td>Browser/preview</td><td>preview ficou pronto/falhou, automação requer login/atenção</td><td>Falha/atenção imediata; pronto opcional</td></tr><tr><td>Conta/segurança</td><td>novo login/dispositivo, mudança de credencial, quota/cobrança, backup/restore</td><td>Segurança imediata; cobrança conforme gravidade</td></tr></tbody></table>
+<h3>Entrega e controle</h3>
+<ul><li>O backend do container persiste unread/read/dismiss; GUI desktop, web e iOS apresentam a mesma Inbox a partir desses dados. Negar permissão do SO não apaga eventos.</li><li>Com qualquer interface aberta, eventos em tempo real atualizam toast/inbox; com web/iOS fechados, Web Push ou APNs alertam quando suportados e permitidos. Evitar alerta duplicado no mesmo dispositivo.</li><li>Preferências por categoria, canal e dispositivo; horário silencioso em fuso da conta, exceção explícita para segurança e ações urgentes, agrupamento por thread/run.</li><li>Push contém apenas texto seguro, ID opaco e deep link; após login, o frontend consulta o objeto autorizado no container e abre sua thread, Bot ou tarefa. Logout/revogação remove token/assinatura.</li><li>Falha do provedor de push fica no estado de entrega; reenvio não duplica inbox. Medir latência, taxa de entrega aceita pelo provedor e abertura; não confundir aceite com visualização humana.</li><li>Revalidar vínculo dispositivo→conta imediatamente antes de enviar e autorização objeto→conta quando o usuário toca; logout/troca de conta revoga associação anterior.</li><li>Dispatcher tem retry com backoff e retenção limitada; esgotamento registra falha de entrega, preserva inbox e aciona observabilidade.</li><li>Estados por entrega: pendente, em tentativa, aceita pelo provedor, falha temporária, terminal/revogada. Aceite do provedor não prova visualização humana.</li><li>Operação mede idade da outbox, taxa de falha, retries e destino do tap; alerta quando passar limiar e fornece replay seguro com mesmo ID.</li></ul>
+<h3>Limites da plataforma</h3>
+<p>Apple documenta Web Push em web apps iOS adicionadas à Tela de Início desde 16.4. Navegação normal em aba Safari no iPhone não deve ser apresentada como garantia de push. Fonte: https://developer.apple.com/documentation/usernotifications/sending-web-push-notifications-in-web-apps-and-browsers . O app iOS usa token APNs: https://developer.apple.com/documentation/usernotifications/registering-your-app-with-apns .</p>
+</section>
+  </main>
+</body>
+</html>
