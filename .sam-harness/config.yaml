@@ -1,0 +1,61 @@
+schema_version: "1"
+harness_version: 0.10.0
+profile: baseline
+repository: new-remote-code
+stacks: []
+gates:
+    - name: documentation-links
+      stage: local
+      phase: static
+      workdir: .
+      command:
+          - python3
+          - scripts/check-doc-links.py
+      required: true
+authority:
+    write_repository: true
+    network: false
+    commit: false
+    push: false
+    release: false
+    deploy: false
+evidence:
+    receipt_directory: .sam-harness/evidence
+    required_states:
+        - source
+        - local_checks
+        - commit
+        - remote
+        - review
+        - ci
+        - artifact
+        - deployment
+        - live_proof
+ci:
+    providers:
+        - github
+    managed: true
+    branch_protection_required: false
+release:
+    immutable_artifact: false
+    sbom: false
+    provenance: false
+    promotion_required: false
+migration:
+    required: false
+    reconciliation_gate: false
+    restore_test: false
+design:
+    applicable: false
+    browser_proof: false
+    human_labels: false
+    accessibility: false
+    localization: false
+governance:
+    approvers:
+        - repository owner
+    criticality: low
+    data_sensitivity: public
+    standardize_commits: true
+metadata:
+    generated_by: sam-harness

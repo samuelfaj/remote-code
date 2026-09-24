@@ -1,0 +1,7 @@
+# Bounded correction
+
+Review repair is bounded by one frozen manifest. The repair branch may receive the prior JSON receipt as an optional convergence input on its re-review; the initial full review is never weakened. Receipts are emitted as paired JSON and standalone escaped HTML artifacts containing the same lineage, finding, resolution, and patch identities.
+
+Correction is opt-in. Every enabled correction command must carry `filesystem_sandboxed: true`; provider-secret repair also requires `trusted_external_command: true`. `trusted_config_arguments` contains actual zero-based argv positions, never index 0, for safe relative helper paths that runtime resolves from the trusted config directory rather than the target checkout. Sam-harness does not OS-sandbox arbitrary argv. It receives a failed receipt on stdin; failed review receipts must contain an intact, conflict-free repair manifest. The repair independently verifies and applies every manifest action in one coherent correction, may write only inside its sandboxed local workspace, must stay inside cumulative file and line budgets measured from the frozen baseline, and must rerun static and test phases after every attempt. Automatic review repair is limited to one pass; the repair branch is re-reviewed but cannot spawn another automatic repair branch. Independent re-review remains required. Provider credentials and remote authority remain read-only until a separate trusted publisher boundary.
+
+Correction is disabled. No repair command, branch, commit, push, or change request may be created.

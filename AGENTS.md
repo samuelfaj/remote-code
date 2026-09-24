@@ -35,3 +35,28 @@ Call a task **accepted** only when its delivery, executable proof, and relevant 
 ## Boundaries
 
 Get explicit confirmation before an irreversible or destructive operation. Do not discard unrelated changes. When an important RemoteCode milestone is verified, read local `TWITTER.md` if present and follow its X posting instructions; it is intentionally ignored by Git. Its absence must not block engineering work.
+
+<!-- sam-harness:start -->
+## Sam Harness
+
+This repository uses sam-harness 0.10.0 with the baseline profile.
+
+Read these files before changing code:
+
+- [.sam-harness/config.yaml](.sam-harness/config.yaml) for commands, profile, and authority.
+- [.sam-harness/WORKFLOW.md](.sam-harness/WORKFLOW.md) for the executable lifecycle.
+- [.sam-harness/REVIEWERS.md](.sam-harness/REVIEWERS.md) for independent review roles.
+- [.sam-harness/CHANGE_BUDGET.md](.sam-harness/CHANGE_BUDGET.md) for bounded correction.
+- [.sam-harness/INVARIANTS.md](.sam-harness/INVARIANTS.md) for conditions that must stay true.
+- [.sam-harness/GATES.md](.sam-harness/GATES.md) for the evidence required before promotion.
+- [.sam-harness/DELEGATION.md](.sam-harness/DELEGATION.md) before delegating or crossing a permission boundary.
+- [.sam-harness/UX_GATES.md](.sam-harness/UX_GATES.md) for user-facing work.
+
+Pull and merge request descriptions must follow the managed GitHub and GitLab templates: Description, Type of Change, Behavior, Business Rules, Validation, Tests, and the Sam Harness evidence ladder. Use Not applicable or Not verified instead of filling gaps.
+
+Do not treat an edit, test, commit, push, review, CI run, artifact, deployment, or live observation as the same state. Report each state only with its own evidence. Preserve unrelated work. Do not commit, push, release, deploy, alter credentials, or perform an irreversible operation unless the user has granted that exact authority.
+
+After install or upgrade, unify redundant host CI: keep generated `sam-harness-*` jobs as the canonical gates and remove host jobs that only repeat those lint, typecheck, unit, contract, build, or browser commands. Suggested stages: check → test → build → deploy → verify → release → monitor. Exception path: failure → repair / rollback → verify.
+
+When the user has granted commit authority, write commit subjects in Conventional Commits form: `feat:`, `fix:` (bugs), `docs:`, `test:`, `refactor:`, `perf:`, `chore:`, `ci:`, `build:`, or `revert:`. Read [.sam-harness/COMMIT.md](.sam-harness/COMMIT.md).
+<!-- sam-harness:end -->

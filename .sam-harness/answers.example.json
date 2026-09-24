@@ -1,0 +1,31 @@
+{
+  "criticality": "medium",
+  "data_sensitivity": "internal",
+  "deploys_to_production": true,
+  "persistent_data": true,
+  "irreversible_actions": false,
+  "design_source_of_truth": "src/components and the documented design tokens",
+  "approvers": ["engineering-owner"],
+  "allow_ci_changes": true,
+  "ci_providers": ["github"],
+  "ci_agent_runtime": {
+    "host": "codex",
+    "login_method": "api_key",
+    "login_environment": "OPENAI_API_KEY",
+    "login_secret": "OPENAI_API_KEY"
+  },
+  "standardize_commits": false,
+  "allowed_actions": ["write_repository"],
+  "command_overrides": {},
+  "command_waivers": {},
+  "ci_setup_commands": {
+    "github": [
+      {"workdir": ".", "command": ["npm", "ci"]}
+    ]
+  },
+  "ci_setup_waivers": {},
+  "risk_acceptance": "",
+  "observation_window": "calibrate with service traffic and SLOs",
+  "rollback_owner": "engineering-owner",
+  "production_environment": "production"
+}
