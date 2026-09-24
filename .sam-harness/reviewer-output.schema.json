@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "findings": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "acceptance": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "evidence": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "id": {
+            "minLength": 1,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "line": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "path": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "required_change": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "architecture",
+              "security",
+              "correctness",
+              "test_quality",
+              "business_rules",
+              "simplicity"
+            ]
+          },
+          "severity": {
+            "enum": [
+              "P0",
+              "P1",
+              "P2",
+              "P3"
+            ]
+          },
+          "summary": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "severity",
+          "summary",
+          "evidence",
+          "path",
+          "line",
+          "required_change",
+          "acceptance",
+          "id"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "review_complete": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "review_complete",
+    "findings"
+  ],
+  "type": "object"
+}

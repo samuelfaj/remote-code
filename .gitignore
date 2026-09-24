@@ -1,2 +1,6 @@
 .DS_Store
 /TWITTER.md
+
+# sam-harness:start
+.sam-harness/evidence/
+# sam-harness:end
