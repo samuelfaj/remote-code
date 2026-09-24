@@ -14,6 +14,6 @@ Open `plan/index.html` in a browser to read the plan locally. The three pages li
 
 ## Proposed implementation
 
-The host uses TypeScript and Elysia, with Eden sharing API types with the clients. Web, desktop, iOS, and Android share connection and service code. Distill is the sole agent harness. The Linux GUI and Bot computer sessions run in the user's container; clients view and control them remotely when needed.
+The TypeScript monorepo groups backend, web, and mobile code by product feature. The modular Elysia backend owns data and actions; Eden shares its API types through one client package. Web, desktop, iOS, and Android share connection and service code while keeping device-specific screens. The main Distill project is the sole agent harness, integrated as a separate process. The Linux GUI and Bot computer sessions run in the user's container; clients view and control them remotely when needed.
 
 The older material in [`plan/archive/previous-plan`](plan/archive/previous-plan) records an earlier direction and is kept for reference. Start with the three documents above for the current scope.
