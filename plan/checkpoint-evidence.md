@@ -23,7 +23,7 @@ This file records local observations for the current backlog checkpoint. It dist
 
 ### RC-002 reconciliation check — 2026-09-25
 
-- **Result:** The artifacts inspected for this check contained no authoritative Distill session or provider usage receipt. The earlier ACP probe did not retain the `session/new` identifier or protocol transcript, and the prompt wrapper terminated after its 360-second timeout. The local `usage.json` belongs to this Grok harness session; it is not a Distill provider receipt and cannot establish whether the external prompt was processed or billed.
+- **Result:** The artifacts inspected for this check contained no authoritative Distill session or provider usage receipt. A local `distill sessions search 'rc002-created.txt' --limit 5` returned `Total: 0`. This local CLI result is not an authoritative provider usage receipt and does not establish whether the provider processed or billed the prompt. The earlier ACP probe did not retain the `session/new` identifier or protocol transcript, and the prompt wrapper terminated after its 360-second timeout. The local `usage.json` belongs to this Grok harness session; it is not a Distill provider receipt and cannot establish whether the external prompt was processed or billed.
 - **Boundary:** No prompt was resent and no Distill account was authenticated to investigate usage. The effect and provider usage remain unknown. This does not satisfy RC-002's file creation, interruption, restart, or reconciliation proof, so RC-002 remains blocked and RC-004 remains gated on it.
 - **Resume condition:** Proceed only when an authoritative Distill session/usage receipt is available through an already authorized source. Otherwise, keep the uncertain operation unresolved; do not retry it.
 
