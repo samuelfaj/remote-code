@@ -14,9 +14,9 @@ gates:
       required: true
 authority:
     write_repository: true
-    network: false
-    commit: false
-    push: false
+    network: true
+    commit: true
+    push: true
     release: false
     deploy: false
 evidence:
