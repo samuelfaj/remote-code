@@ -55,4 +55,11 @@ Keep safe, evidence-backed work moving when a task encounters a blocker. A pivot
 - **Acceptance boundary:** This is progress, not RC-008 acceptance. The full task still requires workspace/history/profile storage and container destroy/recreate proof with the same volume. The task remains in progress until all of its delivery, failure, and executable proof criteria pass.
 - **Unchanged gate:** RC-002 remains unverified and no uncertain Distill request is repeated. RC-007 and live Distill work stay gated on RC-002.
 - **Observed proof:** Built `remotecode-rc008:local` as Linux amd64 emulation and ran it with named volume `rc008-proof-data-20260925`. A receipt survived container removal and recreation with the same volume; the rebuilt image also restored the same ID/content. Under a SQLite exclusive lock, readiness returned 503 in 0.423 seconds while liveness returned 200, and readiness recovered after unlock. A locked action write returned 500 and was absent from action history. See `plan/checkpoint-evidence.md` for IDs and commands/results.
-- **Next work:** Implement and verify workspace, run-history, and persistent-profile storage on the named volume. RC-008 remains in progress until its full data scope and failure criteria pass.
+- **Next work at that checkpoint:** Implement workspace, run-history, and persistent-profile storage; the initial RC-008 scope remained open.
+
+## Correction — preserve RC-008 acceptance — 2026-09-25
+
+- **Decision:** The prior proposal to narrow RC-008 was rejected because it weakened the task's frozen delivery and failure criteria. RC-008 remains in progress; it still requires database, workspace, history, and persistent-profile data on a named volume and verified restoration.
+- **Verified progress only:** Linux amd64-emulated container proof showed the SQLite/action-receipt substrate and failure behavior; it did not implement or prove workspace, run-history, or profile persistence. See `plan/checkpoint-evidence.md`.
+- **Dependency order:** Do not mark RC-008 complete. RC-010 remains gated by its declared RC-006 and RC-008 dependencies unless a separately justified, explicitly reviewed dependency change is made. Continue with RC-008's original missing persistence scope; do not infer acceptance from substrate evidence.
+- **Unchanged external uncertainty:** RC-002 remains unknown. Do not retry the earlier Distill request; RC-007 and live Distill work remain gated.
