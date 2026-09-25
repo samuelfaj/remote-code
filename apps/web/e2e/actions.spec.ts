@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { expect, test } from "@playwright/test";
 
-const apiUrl = process.env.RC003_API_URL ?? "http://127.0.0.1:33100";
+const apiUrl = process.env.RC003_API_URL ?? "http://127.0.0.1:37117";
 
 async function confirmedIds() {
   const response = await fetch(`${apiUrl}/api/actions`);

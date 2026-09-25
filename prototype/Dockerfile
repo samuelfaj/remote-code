@@ -5,7 +5,10 @@ ARG LINUX_USE_COMMIT=fe6b2048f71685672ceeec34a8e765540bc8ba55
 
 ENV DISPLAY=:99 \
     XDG_SESSION_TYPE=x11 \
-    API_PORT=3000
+    API_PORT=3000 \
+    DATABASE_PATH=/var/lib/remotecode/remotecode.sqlite
+
+VOLUME ["/var/lib/remotecode"]
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates chromium curl git nodejs openbox python3 wmctrl x11-utils xdotool xvfb \

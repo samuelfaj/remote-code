@@ -1,11 +1,17 @@
 import { Elysia } from "elysia";
 import { actionsFeature } from "./features/actions";
-import { healthFeature } from "./features/health";
+import { checkDatabase, healthFeature, initializeDatabase, type ReadinessCheck } from "./features/health";
 
-export function createApi() {
+const databasePath = process.env.DATABASE_PATH ?? "/tmp/remotecode.sqlite";
+
+export function createApi(
+  configuredDatabasePath = databasePath,
+  readinessCheck: ReadinessCheck = () => checkDatabase(configuredDatabasePath),
+) {
+  initializeDatabase(configuredDatabasePath);
   return new Elysia()
-    .use(healthFeature())
-    .use(actionsFeature());
+    .use(healthFeature(readinessCheck))
+    .use(actionsFeature(configuredDatabasePath));
 }
 
 export const app = createApi();

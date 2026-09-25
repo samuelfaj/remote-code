@@ -1,0 +1,15 @@
+services:
+  remotecode:
+    build:
+      context: ..
+      dockerfile: prototype/Dockerfile
+    ports:
+      - "3000:3000"
+      - "5173:5173"
+    environment:
+      DATABASE_PATH: /var/lib/remotecode/remotecode.sqlite
+    volumes:
+      - remotecode-data:/var/lib/remotecode
+
+volumes:
+  remotecode-data:

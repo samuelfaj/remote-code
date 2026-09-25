@@ -1,8 +1,8 @@
 import { defineConfig } from "@playwright/test";
 
 const remoteWeb = process.env.RC003_WEB_URL;
-const apiPort = "33100";
-const webPort = "35173";
+const apiPort = "37117";
+const webPort = "37118";
 const localApi = `http://127.0.0.1:${apiPort}`;
 const localWeb = `http://127.0.0.1:${webPort}`;
 
@@ -19,7 +19,7 @@ export default defineConfig({
   webServer: remoteWeb ? undefined : [
     {
       command: "bun run dev:api",
-      url: `${localApi}/api/health`,
+      url: `${localApi}/api/health/ready`,
       env: { API_PORT: apiPort },
       reuseExistingServer: !process.env.CI,
       timeout: 30_000,

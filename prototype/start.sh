@@ -59,7 +59,7 @@ bun run dev:api >/var/log/rc003-api.log 2>&1 &
 API_PID=$!
 node node_modules/vite/bin/vite.js --config apps/web/vite.config.ts --host 0.0.0.0 >/var/log/rc003-web.log 2>&1 &
 WEB_PID=$!
-wait_for http://127.0.0.1:3000/api/health
+wait_for http://127.0.0.1:3000/api/health/ready
 wait_for http://127.0.0.1:5173/
 
 mkdir -p /var/lib/rc003
