@@ -1,0 +1,14 @@
+{
+  "name": "@remotecode/web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "vite --config vite.config.ts --host 0.0.0.0"
+  },
+  "dependencies": {
+    "@remotecode/client": "workspace:*",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "react-native-web": "0.21.2"
+  }
+}

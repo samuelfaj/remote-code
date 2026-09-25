@@ -1,0 +1,21 @@
+{
+  "name": "remotecode-linux-proof",
+  "private": true,
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "dev:api": "bun --hot apps/api/src/index.ts",
+    "dev:web": "bunx vite --config apps/web/vite.config.ts --host 0.0.0.0",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test:e2e": "playwright test --config=playwright.config.ts"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "bun-types": "1.3.13",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^5.1.1",
+    "typescript": "^5.9.3",
+    "vite": "^7.1.9"
+  }
+}

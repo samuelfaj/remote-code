@@ -1,0 +1,11 @@
+{
+  "name": "@remotecode/api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "bun src/index.ts"
+  },
+  "dependencies": {
+    "elysia": "1.4.30"
+  }
+}
