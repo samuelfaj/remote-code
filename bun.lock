@@ -20,6 +20,12 @@
         "elysia": "1.4.30",
       },
     },
+    "apps/mobile": {
+      "name": "@remotecode/mobile",
+      "dependencies": {
+        "@remotecode/client": "workspace:*",
+      },
+    },
     "apps/web": {
       "name": "@remotecode/web",
       "dependencies": {
@@ -33,6 +39,7 @@
       "name": "@remotecode/client",
       "dependencies": {
         "@elysiajs/eden": "1.4.9",
+        "@remotecode/api": "workspace:*",
       },
     },
   },
@@ -154,6 +161,8 @@
     "@remotecode/api": ["@remotecode/api@workspace:apps/api"],
 
     "@remotecode/client": ["@remotecode/client@workspace:packages/client"],
+
+    "@remotecode/mobile": ["@remotecode/mobile@workspace:apps/mobile"],
 
     "@remotecode/web": ["@remotecode/web@workspace:apps/web"],
 

@@ -3,7 +3,7 @@ import { actionsFeature } from "./features/actions";
 
 export function createApi() {
   return new Elysia()
-    .get("/api/health", () => ({ status: "ready" }))
+    .get("/api/health", () => ({ status: "ready" as const }))
     .use(actionsFeature());
 }
 

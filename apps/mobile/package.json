@@ -1,0 +1,8 @@
+{
+  "name": "@remotecode/mobile",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@remotecode/client": "workspace:*"
+  }
+}
