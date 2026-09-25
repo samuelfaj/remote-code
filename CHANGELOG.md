@@ -10,7 +10,7 @@
 - **Regression and verification:** Fixed a delayed initial action-list response overwriting newer WebSocket state by merging, deduplicating, and sorting receipts. A deterministic E2E covers that race. Typecheck, API tests (3 tests/7 expectations), Vite production build, default E2E (2 pass, expected guest-only skip), guest-configured E2E (3 pass), Linux-use smoke, Distill MCP doctor, documentation-link check, Python/shell/Node syntax checks, and `git diff --check` passed. The attempted `bun run test:api` referenced no defined script; the repository's defined API test command passed instead.
 - **Next gate:** RC-004 remains not ready because it depends on RC-002. The timed-out Distill prompt has no reconciled result or usage receipt; do not retry. Do not proceed to RC-004 until RC-002 is accepted.
 
-- **Backlog readiness recheck:** Re-read the ticket starts, dependencies, and statuses across all 67 planned tasks. RC-004 remains the next candidate but is not eligible because RC-002's timed-out provider effect remains unknown. No product change or retry was made. Resume only with an authoritative correlated record; otherwise keep the task unaccepted. Evidence: `plan/checkpoint-evidence.md`.
+- **Backlog readiness recheck:** Re-read the ticket starts, dependencies, and statuses across all 67 planned tasks. RC-004 remains the next candidate but is not eligible because RC-002's timed-out provider effect remains unknown. No product change or retry was made. Resume only with an authoritative correlated record; otherwise keep the task unaccepted. The connected MCP inventory has no Distill session, usage, or receipt tool. Evidence: `plan/checkpoint-evidence.md`.
 
 ## 2026-09-24
 

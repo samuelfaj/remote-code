@@ -79,6 +79,7 @@ This file records local observations for the current backlog checkpoint. It dist
 
 ### Backlog readiness recheck — 2026-09-25
 
+- **Authoritative source availability:** The connected MCP tool inventory returned `mac-use` and `tasks` tools, but no Distill session-history, usage, or receipt tool. No authoritative correlated record was available from the currently connected integrations. This inventory check did not access credentials, sign in, or repeat the prompt.
 - **Result:** No implementation ticket is newly eligible. RC-002 is still explicitly `Blocked` in `plan/tasks.html`; RC-004 remains `To do` and requires both RC-001 and RC-002. RC-001's accepted deliverable is the inventory only, and RC-003 is complete against its separate prototype contract.
 - **Check:** Re-parsed all 67 `<details class="ticket">` entries in `plan/tasks.html` and inspected the candidate starts, dependencies, and statuses. The next planned work remains RC-004; its stated start condition (“Product flows and Distill outcome known”) is not satisfied because the prior stdio prompt's external effect remains unknown.
 - **Decision:** No product behavior or tests were changed. Keep RC-002 unaccepted and do not retry the uncertain prompt. Resume only when an authoritative sanitized record correlates the prior attempt; then evaluate all RC-002 proof and failure conditions before starting RC-004. This is a status recheck, not new evidence that RC-002 passed.
