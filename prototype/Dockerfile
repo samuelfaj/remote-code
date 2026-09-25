@@ -24,10 +24,12 @@ WORKDIR /workspace
 COPY package.json bun.lock tsconfig.json ./
 COPY apps/api/package.json apps/api/package.json
 COPY apps/web/package.json apps/web/package.json
+COPY apps/mobile/package.json apps/mobile/package.json
 COPY packages/client/package.json packages/client/package.json
 RUN bun install --frozen-lockfile
 COPY apps/api apps/api
 COPY apps/web apps/web
+COPY apps/mobile apps/mobile
 COPY packages/client packages/client
 COPY playwright.config.ts ./
 COPY scripts/linux-use-smoke.py scripts/linux-use-smoke.py
