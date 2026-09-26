@@ -2,7 +2,11 @@
 
 ## 2026-09-26
 
-- **Historical-head wording follow-up CI passed:** Commit `7619adda0417708122f7aab2566a1c1949f3e5ee` is confirmed as origin and open PR #2 head. Runs `36257519408` and `36257515427` both passed `static` and `test` for that exact SHA. The older receipt claims now identify their checkpoint-time head instead of implying they remain current.
+- **Receipt chronology qualifier corrected:** Reviewer `01a0deb1-0328-7221-a0b9-04aefa10cf9b` found the 7619 checkpoint still used present-tense head wording after it had been superseded by 85ce223. The CHANGELOG and checkpoint evidence now mark 7619's head as historical. Reviewers `01a0deb5-ba2e-7401-9ca1-e3e0ccfeb7ed` and `01a0deb7-4a78-7090-811c-e99ade7eea99` found no concrete defect; the latter reviewed the supplied patch, with live GitHub/CI verification remaining limited to the parent's recorded checks. Local documentation links and whitespace checks passed. This wording correction remains pending publication; no acceptance status changed.
+
+- **Superseded-head wording receipt passed:** Commit `85ce223df07fdc2cf367e796696bfb38c65f6e47` is confirmed as origin and open PR #2 head. GitHub runs `36257852142` and `36257849994` both passed `static` and `test` for that exact SHA. The historical wording correction remains documentation-only; no task acceptance changed.
+
+- **Historical-head wording follow-up CI passed:** At that checkpoint, commit `7619adda0417708122f7aab2566a1c1949f3e5ee` was confirmed as origin and open PR #2 head. Runs `36257519408` and `36257515427` both passed `static` and `test` for that exact SHA. The older receipt claims now identify their checkpoint-time head instead of implying they remain current.
 
 - **Historical PR-head correction verified:** At that checkpoint, commit `0740fb0f615a636b3d089ac6ff8bcc68c60a619c` was confirmed as the open PR #2 head on origin. Runs `36257258259` and `36257256288` both passed `static` and `test` for that exact SHA. The correction keeps older head claims historical; RC-002 remains unknown, RC-011 `REVISE`, and RC-012/014 partial.
 
