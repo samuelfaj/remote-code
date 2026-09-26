@@ -1,0 +1,17 @@
+services:
+  remotecode:
+    build:
+      context: ..
+      dockerfile: prototype/Dockerfile
+    ports:
+      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:5173:5173"
+    environment:
+      DATABASE_PATH: /var/lib/remotecode/remotecode.sqlite
+      REMOTECODE_AUTH_PASSWORD: ${REMOTECODE_AUTH_PASSWORD:?Set a random passphrase with at least 16 characters}
+      REMOTECODE_WEB_ORIGIN: ${REMOTECODE_WEB_ORIGIN:-http://localhost:5173}
+    volumes:
+      - remotecode-data:/var/lib/remotecode
+
+volumes:
+  remotecode-data:
