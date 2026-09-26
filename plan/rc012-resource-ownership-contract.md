@@ -50,6 +50,21 @@ For every implemented read and write route for each resource type:
 
 A resource type without shipped routes is explicitly unverified. Integration tests exercise Elysia plus SQLite and inspect persisted state; user-visible end-to-end proof is added by the task that introduces each usable resource journey. Seeded-session API tests do not substitute for gateway/two-account login proof in RC-011.
 
+## Current source route inventory — partial RC-012 scope
+
+Source audit of `apps/api/src/features/storage.ts` and the composed routes in `apps/api/src/app.ts` found these six persisted-resource endpoints:
+
+| Route | Current owner enforcement | Executable proof |
+| --- | --- | --- |
+| `GET /api/workspaces` | Validated session; SQL filters `workspaces.user_id` to that session. | `apps/api/src/app.test.ts` owner-isolation test: A and B each list only their own workspaces. |
+| `POST /api/workspaces` | Validated session supplies `user_id`; caller-provided `userId` does not select ownership. | Owner-isolation test posts with a spoofed B `userId` under A and reads the durable owner back as A. |
+| `GET /api/profile` | Validated session selects the profile key. | Owner-isolation test reads B's empty/updated profile and A's profile without cross-read. |
+| `PUT /api/profile` | Validated session supplies the upsert key; caller-provided `userId` does not change it. | Owner-isolation test attempts `userId: "user-b"` under A and confirms the response belongs to A; B's own update/read works. |
+| `GET /api/workspaces/:workspaceId/history` | Validated session must own the parent workspace; history query filters by both session owner and workspace. Foreign and nonexistent parent IDs have the same 404 status/body. | Owner-isolation test verifies B cannot read A's history, can read B's, and compares foreign with nonexistent IDs. |
+| `POST /api/workspaces/:workspaceId/history` | Insert-select writes only when the parent workspace belongs to the validated session; zero inserted rows return 404. | Owner-isolation test verifies B cannot create under A's workspace, A/B owner writes work, caller `userId` cannot override A, foreign/nonexistent responses match, and the complete history-row snapshot is unchanged after rejected writes. |
+
+There are no Bot, thread, file, workspace-task, or Bot-routine routes in the current API feature modules. Those resource types remain unimplemented/unverified and must be added to this inventory with real owner-boundary proof when their feature routes ship. `/api/actions` and `/api/events` are separate authenticated action-receipt/event endpoints. The action table has no `user_id`; `GET /api/actions` reads the shared rows and `POST /api/actions` broadcasts to every currently authenticated socket (`apps/api/src/features/actions.ts`). RC-068 did not establish per-user ownership for those records. Their classification against RC-012's named resource categories remains open rather than assumed; do not claim per-user isolation or accept RC-012 until the task criteria and host/container identity model settle this boundary.
+
 ## Scope boundaries and sequencing gate
 
 - No Bot execution, thread run lifecycle, file-content API, schedule execution, account provisioning, container routing, gateway, or UI is introduced by this contract.
