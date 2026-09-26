@@ -2,7 +2,9 @@
 
 ## 2026-09-26
 
-- **Historical PR-head correction verified:** Commit `0740fb0f615a636b3d089ac6ff8bcc68c60a619c` is confirmed as the open PR #2 head on origin. Runs `36257258259` and `36257256288` both passed `static` and `test` for that exact SHA. The correction keeps older head claims historical; RC-002 remains unknown, RC-011 `REVISE`, and RC-012/014 partial.
+- **Historical-head wording follow-up CI passed:** Commit `7619adda0417708122f7aab2566a1c1949f3e5ee` is confirmed as origin and open PR #2 head. Runs `36257519408` and `36257515427` both passed `static` and `test` for that exact SHA. The older receipt claims now identify their checkpoint-time head instead of implying they remain current.
+
+- **Historical PR-head correction verified:** At that checkpoint, commit `0740fb0f615a636b3d089ac6ff8bcc68c60a619c` was confirmed as the open PR #2 head on origin. Runs `36257258259` and `36257256288` both passed `static` and `test` for that exact SHA. The correction keeps older head claims historical; RC-002 remains unknown, RC-011 `REVISE`, and RC-012/014 partial.
 
 - **PR-head chronology wording corrected:** Reasoning reviewer `01a0de9f-4e76-71e0-9ba8-0c358d865a49` found that some earlier receipt bullets still used present tense for commits already superseded on PR #2. Those statements now describe the PR head at the time of each checkpoint. The correction commit `0740fb0f615a636b3d089ac6ff8bcc68c60a619c` superseded `de2405438591048b38707e3e4cd87a4087a42ce3` as the verified remote head; the receipt update for `0740fb0` is recorded above. No product status changed.
 
