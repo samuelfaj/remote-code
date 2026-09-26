@@ -2,7 +2,9 @@
 
 ## 2026-09-26
 
-- **PR-head chronology wording corrected:** Reasoning reviewer `01a0de9f-4e76-71e0-9ba8-0c358d865a49` found that some earlier receipt bullets still used present tense for commits already superseded on PR #2. Those statements now describe the PR head at the time of each checkpoint. The latest verified remote head remains `de2405438591048b38707e3e4cd87a4087a42ce3` until this local wording update is published. No product status changed.
+- **Historical PR-head correction verified:** Commit `0740fb0f615a636b3d089ac6ff8bcc68c60a619c` is confirmed as the open PR #2 head on origin. Runs `36257258259` and `36257256288` both passed `static` and `test` for that exact SHA. The correction keeps older head claims historical; RC-002 remains unknown, RC-011 `REVISE`, and RC-012/014 partial.
+
+- **PR-head chronology wording corrected:** Reasoning reviewer `01a0de9f-4e76-71e0-9ba8-0c358d865a49` found that some earlier receipt bullets still used present tense for commits already superseded on PR #2. Those statements now describe the PR head at the time of each checkpoint. The correction commit `0740fb0f615a636b3d089ac6ff8bcc68c60a619c` superseded `de2405438591048b38707e3e4cd87a4087a42ce3` as the verified remote head; the receipt update for `0740fb0` is recorded above. No product status changed.
 
 - **Latest handoff CI receipt passed:** At that checkpoint, commit `de2405438591048b38707e3e4cd87a4087a42ce3` was confirmed as the open PR #2 head; runs `36256715616` and `36256713352` both passed `static` and `test` for that exact SHA. This is documentation-only evidence; backlog eligibility and product acceptance remain unchanged.
 
