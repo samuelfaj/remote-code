@@ -2,6 +2,8 @@
 
 ## 2026-09-26
 
+- **Historical-head correction CI passed:** At that checkpoint, commit `e876c3957bc181cd29fe9a04b58c56f1dc853a1b` was confirmed as the origin branch and open PR #2 head. Runs `36261369876` and `36261373216` matched that exact SHA and each passed `static` and `test` (four successful jobs). This verifies the documentation receipt checkpoint only; no product acceptance changed.
+
 - **Eligibility receipt follow-up CI passed:** At that checkpoint, commit `e2f924874d9d0a2ae26c83fff42de62a294c1f88` was confirmed on origin and as open PR #2 head. Runs `36261039777` and `36261042836` matched that exact SHA, each with successful `static` and `test` jobs. This documentation-only follow-up corrected the historical-head wording; a further reasoning review caught and corrected two stale present-tense claims about its predecessor. No product status changed.
 
 - **Backlog recheck checkpoint published:** At that checkpoint, commit `15075e546ef28fcc073d8fb2d377b5101335e9f5` was confirmed on origin and as open PR #2 head. Runs `36260691812` and `36260689402` both matched the exact SHA and each passed `static` and `test`. The three-file handoff-only diff records the 68-task/242-edge recheck and preserves the unmet acceptance boundaries; no product task status changed. Follow-up review caught two superseded-head statements and they now identify the earlier SHA as current only at that prior recheck.

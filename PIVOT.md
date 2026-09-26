@@ -232,6 +232,11 @@ Keep safe, evidence-backed work moving when a task encounters a blocker. A pivot
 - At that follow-up checkpoint, commit `e2f924874d9d0a2ae26c83fff42de62a294c1f88` was pushed and confirmed as the origin branch and open PR #2 head.
 - CI runs `36261039777` and `36261042836` matched that exact SHA and each passed both `static` and `test`. This is documentation-only CI evidence; product acceptance is unchanged.
 
+## Publication receipt — historical-head correction CI — 2026-09-26
+
+- At that checkpoint, commit `e876c3957bc181cd29fe9a04b58c56f1dc853a1b` was confirmed as the origin branch and open PR #2 head.
+- Runs `36261369876` and `36261373216` matched that exact SHA, and each passed `static` and `test`. This receipt confirms repository checks for the documentation change only; no product acceptance changed.
+
 ## Backlog eligibility recheck after RC-012 receipt — 2026-09-26
 
 - **Inventory:** Reparsed all 68 task records and compared statuses, explicit Starts, dependencies, and the current blockers recorded in the plan. No new implementation task can be started and accepted under its current contract.

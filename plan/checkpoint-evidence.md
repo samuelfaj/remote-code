@@ -355,3 +355,9 @@ This file records local observations for the current backlog checkpoint. It dist
 
 - At that follow-up checkpoint, commit `e2f924874d9d0a2ae26c83fff42de62a294c1f88` was confirmed as the origin branch and open PR #2 head. Runs `36261039777` and `36261042836` both matched that exact SHA, completed successfully, and each passed `static` and `test` (four successful job instances). The PR status rollup agreed at that checkpoint. This CI validates the handoff correction only and does not change product status or acceptance.
 - The pre-existing `scripts/__pycache__/` remained untracked and excluded. Reasoning reviewer `01a0dee3-2d48-7db1-b4b3-836d136dba47` found that the preceding `15075e5` receipt still sounded current after it was superseded; those statements now explicitly say “at that checkpoint.” The review could not run Git/CI or inspect the exact diff; parent checks remain separate. No product code, task status, dependency, or acceptance criterion changed.
+
+## Historical-head correction CI receipt — 2026-09-26
+
+- At that checkpoint, commit `e876c3957bc181cd29fe9a04b58c56f1dc853a1b` was confirmed by `git ls-remote` and `gh pr view 2` as the origin branch and open PR #2 head. Both exact-SHA runs, `36261369876` and `36261373216`, completed successfully; each passed `static` and `test` (four successful job instances). The PR rollup showed the same results.
+- Reasoning reviewer `01a0deea-3273-75d3-a185-98e3547aa0d1` independently verified both GitHub run and job receipts, found no concrete defect in the receipt wording, and confirmed the historical-head qualification. The reviewer could not certify the full local diff or rerun local checks; parent verification remains separate.
+- This receipt covers a documentation-only chronology correction and does not change product status or acceptance. `scripts/__pycache__/` remains pre-existing, untracked, and excluded.
