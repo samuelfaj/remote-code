@@ -2,6 +2,8 @@
 
 ## 2026-09-26
 
+- **RC-012 route-scope definition reviewed:** Selected a concrete route-family, feature-owner, ownership-chain, and per-route proof matrix without changing RC-012 criteria or creating placeholder endpoints. Reasoning review found three initial scope defects (missing RC-021/RC-024 route owners and a universal 404 oracle that did not fit all route shapes); corrections were independently re-reviewed with no remaining concrete finding. Full handoff review caught this entry under the wrong date heading; it now appears under 2026-09-26. This is planning-only evidence; RC-012 remains partial and no route task is newly eligible. Details: `plan/rc012-resource-ownership-contract.md` and `plan/checkpoint-evidence.md#rc-012-concrete-route-scope-definition--planning-only--2026-09-26`.
+
 - **Historical-head correction CI passed:** At that checkpoint, commit `e876c3957bc181cd29fe9a04b58c56f1dc853a1b` was confirmed as the origin branch and open PR #2 head. Runs `36261369876` and `36261373216` matched that exact SHA and each passed `static` and `test` (four successful jobs). This verifies the documentation receipt checkpoint only; no product acceptance changed.
 
 - **Eligibility receipt follow-up CI passed:** At that checkpoint, commit `e2f924874d9d0a2ae26c83fff42de62a294c1f88` was confirmed on origin and as open PR #2 head. Runs `36261039777` and `36261042836` matched that exact SHA, each with successful `static` and `test` jobs. This documentation-only follow-up corrected the historical-head wording; a further reasoning review caught and corrected two stale present-tense claims about its predecessor. No product status changed.
