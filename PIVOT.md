@@ -159,9 +159,16 @@ Keep safe, evidence-backed work moving when a task encounters a blocker. A pivot
 - **Telemetry limitation:** `distill subagent begin --node council-rc011-logic` failed with exit 2 (`unrecognized subcommand 'begin'`). Recorded one council telemetry proof gap and skipped later telemetry brackets as required by the council procedure. This was not a Distill prompt and did not investigate the unknown RC-002 effect.
 - **Safe next step:** Do not weaken the original RC-011 acceptance/failure clauses. A later explicitly authorized council continuation may validate a further revised thesis; until then, keep RC-011 unaccepted and reassess only if its prerequisites or authoritative evidence change. RC-012/014 remain partial, RC-016 and dependent tasks remain gated, and RC-002 remains unknown, unaccepted, and untouched. No product code, Docker fixture, account, credential, deployment, or X post was created or changed.
 
-## Final handoff publication — 2026-09-26
+## Final handoff review receipt — 2026-09-26
 
-- **Commit and remote:** `b65c9cea79c78ff86af52454ebc9b406000d3d51` (`docs: record RC-011 publication and CI receipt`) is both local `HEAD` and `origin/checkpoint/rc002-linux-runtime-evidence`; PR #2 remains open at that SHA.
+- **Commit and remote:** `76bb2d33713fd7c9fc2fc96c08cb5d76c09698ee` was confirmed as local and origin branch head and the open PR #2 head.
+- **CI:** Runs `36238563016` and `36238566020` both completed successfully for that exact SHA; each `static` and `test` job passed.
+- **Review:** Reviewer `01a0dd71-291b-7ec3-bcff-de4a11a9784e` independently verified the GitHub runs and found no concrete factual defect in the record; exact uncommitted diff and local checks were parent-verified. The commit contained only handoff documentation.
+- **Acceptance:** This receipt does not change product status. RC-011 remains `REVISE` and unaccepted; RC-012/014 remain partial; RC-002 remains unknown and unaccepted.
+
+## Handoff checkpoint — 2026-09-26
+
+- **Commit and remote at this checkpoint:** `b65c9cea79c78ff86af52454ebc9b406000d3d51` (`docs: record RC-011 publication and CI receipt`) was local and remote branch head; PR #2 was open at that SHA. The follow-up review receipt and CI for its commit are recorded in the next section.
 - **CI:** Runs `36238302742` and `36238304823` each completed successfully for that exact SHA. Each run's `static` and `test` jobs succeeded.
 - **Checks and review:** `python3 scripts/check-doc-links.py`, `git diff --check`, and a fresh 67-unique-task parse passed. Reasoning reviewer `01a0dd6d-2d94-7aa3-8f83-ee996710fd5f` found no supported factual/handoff defect from file inspection but could not run Git or checks. Follow-up reviewer `01a0dd71-291b-7ec3-bcff-de4a11a9784e` independently confirmed GitHub job receipts but could not inspect the exact uncommitted diff or rerun local checks. The parent independently ran the exact diff, link, whitespace, parse, remote SHA, and CI checks. Only handoff markdown files were committed. The pre-existing untracked `scripts/__pycache__/` remains untouched.
 - **Next:** No backlog task currently meets both its Start and dependencies. RC-011 requires an approved safe routing design plus existing routing prerequisite; current design review is `REVISE`. RC-012/014 remain partial, dependents remain gated, and RC-002 remains unknown. Keep the goal active and recheck only on new authorized evidence or changed prerequisites.
