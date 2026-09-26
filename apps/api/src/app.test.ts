@@ -1,4 +1,5 @@
 import { Database } from "bun:sqlite";
+import { createHash } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { describe, expect, it } from "bun:test";
 import { createApi } from "./app";
@@ -495,6 +496,120 @@ describe("Elysia health checks", () => {
 });
 
 describe("Elysia persistent workspace data", () => {
+  it("rejects anonymous workspace, profile, and history reads and writes without changing records", async () => {
+    const path = databasePath("anonymous-domain-routes");
+    const app = createApi(path, undefined, { password: testPassword });
+    const requests = [
+      new Request("http://localhost/api/workspaces"),
+      new Request("http://localhost/api/workspaces", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "anonymous" }) }),
+      new Request("http://localhost/api/profile"),
+      new Request("http://localhost/api/profile", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ displayName: "anonymous" }) }),
+      new Request("http://localhost/api/workspaces/not-owned/history"),
+      new Request("http://localhost/api/workspaces/not-owned/history", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ type: "note", content: "anonymous" }) }),
+    ];
+
+    for (const request of requests) expect((await app.handle(request)).status).toBe(401);
+    const stored = new Database(path, { readonly: true });
+    expect(stored.query("SELECT COUNT(*) AS count FROM workspaces").get()).toEqual({ count: 0 });
+    expect(stored.query("SELECT COUNT(*) AS count FROM profiles").get()).toEqual({ count: 0 });
+    expect(stored.query("SELECT COUNT(*) AS count FROM history").get()).toEqual({ count: 0 });
+    stored.close();
+  });
+
+  it("isolates workspace, history, and profile access by persisted session identity", async () => {
+    const path = databasePath("owner-isolation");
+    const app = createApi(path, undefined, { password: testPassword });
+    const userAToken = "a".repeat(64);
+    const userBToken = "b".repeat(64);
+    const database = new Database(path);
+    const insertSession = database.query("INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)");
+    insertSession.run(createHash("sha256").update(userAToken).digest("hex"), "user-a", Date.now() + 60_000);
+    insertSession.run(createHash("sha256").update(userBToken).digest("hex"), "user-b", Date.now() + 60_000);
+    database.close();
+
+    const request = (token: string, route: string, method = "GET", body?: object) => app.handle(new Request(`http://localhost${route}`, {
+      method,
+      headers: { cookie: `remotecode_session=${token}`, ...(body ? { "content-type": "application/json" } : {}) },
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    }));
+
+    const createdWorkspace = await request(userAToken, "/api/workspaces", "POST", { name: "A workspace" });
+    expect(createdWorkspace.status).toBe(201);
+    const workspace = await createdWorkspace.json() as { id: string };
+    expect((await request(userAToken, "/api/workspaces/" + workspace.id + "/history", "POST", {
+      type: "note", content: "A private history entry",
+    })).status).toBe(201);
+    expect((await request(userAToken, "/api/profile", "PUT", { displayName: "User A" })).status).toBe(200);
+
+    const userAWorkspaces = await request(userAToken, "/api/workspaces");
+    expect(userAWorkspaces.status).toBe(200);
+    expect((await userAWorkspaces.json()).workspaces).toEqual([{ ...workspace, name: "A workspace", createdAt: expect.any(String) }]);
+    expect((await (await request(userBToken, "/api/workspaces")).json()).workspaces).toEqual([]);
+    expect((await (await request(userBToken, "/api/profile")).json()).profile).toBeNull();
+    expect((await request(userBToken, `/api/workspaces/${workspace.id}/history`)).status).toBe(404);
+    const ownedEmptyWorkspace = await request(userBToken, "/api/workspaces", "POST", { name: "B empty workspace" });
+    expect(ownedEmptyWorkspace.status).toBe(201);
+    const emptyWorkspace = await ownedEmptyWorkspace.json() as { id: string };
+    expect((await request(userBToken, `/api/workspaces/${emptyWorkspace.id}/history`)).status).toBe(200);
+    expect((await (await request(userBToken, `/api/workspaces/${emptyWorkspace.id}/history`)).json()).history).toEqual([]);
+    expect((await request(userBToken, `/api/workspaces/${workspace.id}/history`, "POST", {
+      type: "note", content: "cross-user write",
+    })).status).toBe(404);
+    expect((await request(userBToken, "/api/profile", "PUT", { displayName: "User B" })).status).toBe(200);
+
+    expect((await (await request(userAToken, "/api/profile")).json()).profile.displayName).toBe("User A");
+    expect((await (await request(userAToken, `/api/workspaces/${workspace.id}/history`)).json()).history).toHaveLength(1);
+    const storedOwner = new Database(path, { readonly: true });
+    expect(storedOwner.query("SELECT user_id FROM workspaces WHERE id = ?").get(workspace.id)).toEqual({ user_id: "user-a" });
+    expect(storedOwner.query("SELECT COUNT(*) AS count FROM history WHERE content = 'cross-user write'").get()).toEqual({ count: 0 });
+    storedOwner.close();
+
+    expect((await request(userAToken, "/api/auth/logout", "POST")).status).toBe(204);
+    expect((await request(userAToken, "/api/auth/session")).status).toBe(401);
+    expect((await request(userBToken, "/api/auth/session")).status).toBe(200);
+  });
+
+  it("revokes only the logging-out user's authenticated WebSockets", async () => {
+    const path = databasePath("owner-socket-isolation");
+    const app = createApi(path, undefined, { password: testPassword });
+    const userAToken = "c".repeat(64);
+    const userBToken = "d".repeat(64);
+    const database = new Database(path);
+    const insertSession = database.query("INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)");
+    insertSession.run(createHash("sha256").update(userAToken).digest("hex"), "user-a", Date.now() + 60_000);
+    insertSession.run(createHash("sha256").update(userBToken).digest("hex"), "user-b", Date.now() + 60_000);
+    database.close();
+
+    const server = app.listen(0);
+    const port = server.server?.port;
+    if (!port) throw new Error("Elysia did not bind an ephemeral WebSocket test port");
+    const socketUrl = `ws://127.0.0.1:${port}/api/events`;
+    const socketA = openSocket(socketUrl, `remotecode_session=${userAToken}`);
+    const socketB = openSocket(socketUrl, `remotecode_session=${userBToken}`);
+    try {
+      await Promise.all([waitForEvent(socketA, "snapshot"), waitForEvent(socketB, "snapshot")]);
+      const userAClose = new Promise<number>((resolve) => socketA.addEventListener("close", (event) => resolve(event.code), { once: true }));
+      const logout = await app.handle(new Request("http://localhost/api/auth/logout", {
+        method: "POST",
+        headers: { cookie: `remotecode_session=${userAToken}` },
+      }));
+      expect(logout.status).toBe(204);
+      expect(await userAClose).toBe(4401);
+      expect(socketB.readyState).toBe(WebSocket.OPEN);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(socketB.readyState).toBe(WebSocket.OPEN);
+      expect((await app.handle(new Request("http://localhost/api/auth/session", {
+        headers: { cookie: `remotecode_session=${userBToken}` },
+      }))).status).toBe(200);
+      const userBResync = waitForEvent(socketB, "snapshot");
+      socketB.send(JSON.stringify({ type: "sync" }));
+      expect((await userBResync).type).toBe("snapshot");
+    } finally {
+      await Promise.all([closeSocket(socketA), closeSocket(socketB)]);
+      await stopTestServer(server.stop.bind(server), port);
+    }
+  });
+
   it("restores workspace, history, and profile IDs and content from the configured database", async () => {
     const path = databasePath("workspace-profile-history");
     const { app, cookie } = await authenticatedApi(path);

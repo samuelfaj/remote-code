@@ -2,9 +2,7 @@ import { Database } from "bun:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { Elysia, t } from "elysia";
-import { isAuthenticated } from "./auth";
-
-const userId = "local";
+import { sessionUserId } from "./auth";
 
 type Workspace = { id: string; name: string; createdAt: string };
 type Profile = { userId: string; displayName: string; updatedAt: string };
@@ -85,7 +83,8 @@ export function storageFeature(databasePath: string) {
   initializeStorage(databasePath);
   return new Elysia()
     .get("/api/workspaces", ({ request, set }) => {
-      if (!isAuthenticated(databasePath, request)) {
+      const userId = sessionUserId(databasePath, request);
+      if (!userId) {
         set.status = 401;
         return { error: "unauthorized" as const };
       }
@@ -100,7 +99,8 @@ export function storageFeature(databasePath: string) {
       }
     })
     .post("/api/workspaces", ({ body, request, set }) => {
-      if (!isAuthenticated(databasePath, request)) {
+      const userId = sessionUserId(databasePath, request);
+      if (!userId) {
         set.status = 401;
         return { error: "unauthorized" as const };
       }
@@ -117,7 +117,8 @@ export function storageFeature(databasePath: string) {
       return workspace;
     }, { body: t.Object({ name: t.String({ minLength: 1, maxLength: 120 }) }) })
     .get("/api/profile", ({ request, set }) => {
-      if (!isAuthenticated(databasePath, request)) {
+      const userId = sessionUserId(databasePath, request);
+      if (!userId) {
         set.status = 401;
         return { error: "unauthorized" as const };
       }
@@ -132,7 +133,8 @@ export function storageFeature(databasePath: string) {
       }
     })
     .put("/api/profile", ({ body, request, set }) => {
-      if (!isAuthenticated(databasePath, request)) {
+      const userId = sessionUserId(databasePath, request);
+      if (!userId) {
         set.status = 401;
         return { error: "unauthorized" as const };
       }
@@ -149,25 +151,32 @@ export function storageFeature(databasePath: string) {
       return profile;
     }, { body: t.Object({ displayName: t.String({ minLength: 1, maxLength: 120 }) }) })
     .get("/api/workspaces/:workspaceId/history", ({ params, request, set }) => {
-      if (!isAuthenticated(databasePath, request)) {
+      const userId = sessionUserId(databasePath, request);
+      if (!userId) {
         set.status = 401;
         return { error: "unauthorized" as const };
       }
       const database = openDatabase(databasePath);
       try {
-        const rows = database.query<unknown, [string, string, string]>(`
-          SELECT h.id, h.type, h.content, h.created_at AS createdAt
-          FROM history h JOIN workspaces w ON w.id = h.workspace_id
-          WHERE h.user_id = ? AND h.workspace_id = ? AND w.user_id = ?
-          ORDER BY h.created_at, h.id
-        `).all(userId, params.workspaceId, userId);
+        const workspace = database.query("SELECT 1 FROM workspaces WHERE id = ? AND user_id = ?").get(params.workspaceId, userId);
+        if (!workspace) {
+          set.status = 404;
+          return { error: "not_found" as const };
+        }
+        const rows = database.query<unknown, [string, string]>(`
+          SELECT id, type, content, created_at AS createdAt
+          FROM history
+          WHERE user_id = ? AND workspace_id = ?
+          ORDER BY created_at, id
+        `).all(userId, params.workspaceId);
         return { history: rows.map(readHistoryEntry) };
       } finally {
         database.close();
       }
     })
     .post("/api/workspaces/:workspaceId/history", ({ body, params, request, set }) => {
-      if (!isAuthenticated(databasePath, request)) {
+      const userId = sessionUserId(databasePath, request);
+      if (!userId) {
         set.status = 401;
         return { error: "unauthorized" as const };
       }

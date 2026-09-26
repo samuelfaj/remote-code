@@ -2,7 +2,7 @@ import { Database } from "bun:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { Elysia, t } from "elysia";
-import { isAuthenticated, sessionExpiresAt } from "./auth";
+import { isAuthenticated, sessionExpiresAt, sessionUserId } from "./auth";
 
 type ActionReceipt = {
   id: string;
@@ -226,8 +226,10 @@ export function actionsFeature(databasePath: string, allowedOrigin: string) {
 
   return {
     routes,
-    revokeSessions() {
-      for (const client of clients) revokeClient(client, "session revoked");
+    revokeSessions(userId: string) {
+      for (const client of clients) {
+        if (sessionUserId(databasePath, client.data.request) === userId) revokeClient(client, "session revoked");
+      }
     },
   };
 }

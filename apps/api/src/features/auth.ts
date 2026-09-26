@@ -69,14 +69,26 @@ export function sessionExpiresAt(databasePath: string, request: Request) {
   }
 }
 
+export function sessionUserId(databasePath: string, request: Request) {
+  let database: Database | undefined;
+  try {
+    database = openDatabase(databasePath);
+    return readSession(database, sessionToken(request))?.userId;
+  } catch {
+    return undefined;
+  } finally {
+    database?.close();
+  }
+}
+
 export function isAuthenticated(databasePath: string, request: Request) {
-  return sessionExpiresAt(databasePath, request) !== undefined;
+  return sessionUserId(databasePath, request) !== undefined;
 }
 
 export function authFeature(
   databasePath: string,
   config: AuthConfig = {},
-  revokeSessions: () => void = () => {},
+  revokeSessions: (userId: string) => void = () => {},
 ) {
   let database: Database | undefined;
   try {
@@ -151,14 +163,16 @@ export function authFeature(
       const token = sessionToken(request);
       if (token) {
         const connection = openDatabase(databasePath);
-        let validSession = false;
+        let userId: string | undefined;
         try {
-          validSession = readSession(connection, token) !== undefined;
-          if (validSession) connection.query("DELETE FROM sessions WHERE user_id = ?").run("local");
+          userId = readSession(connection, token)?.userId;
+          if (userId) {
+            revokeSessions(userId);
+            connection.query("DELETE FROM sessions WHERE user_id = ?").run(userId);
+          }
         } finally {
           connection.close();
         }
-        if (validSession) revokeSessions();
       }
       set.status = 204;
       const secure = usesHttps(request) ? "; Secure" : "";
