@@ -47,6 +47,7 @@ migration:
     restore_test: false
 design:
     applicable: true
+    source_of_truth: plan/mockups.html and the interaction and failure contracts in plan/tasks.html
     browser_proof: true
     human_labels: true
     accessibility: true
