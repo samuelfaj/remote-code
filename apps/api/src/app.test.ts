@@ -188,6 +188,30 @@ describe("Elysia host authentication", () => {
     }
   });
 
+  it("rejects an unsupported WebSocket client before sending a snapshot", async () => {
+    const { app, cookie } = await authenticatedApi(databasePath("websocket-version"));
+    const server = app.listen(0);
+    const port = server.server?.port;
+    if (!port) throw new Error("Elysia did not bind an ephemeral WebSocket test port");
+    const socket = openSocket(`ws://127.0.0.1:${port}/api/events?clientVersion=2`, cookie);
+    let snapshotReceived = false;
+    const closed = new Promise<number>((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error("Incompatible WebSocket stayed open")), 3000);
+      socket.addEventListener("message", () => { snapshotReceived = true; }, { once: true });
+      socket.addEventListener("close", (event) => {
+        clearTimeout(timeout);
+        resolve(event.code);
+      }, { once: true });
+    });
+    try {
+      expect(await closed).toBe(4406);
+      expect(snapshotReceived).toBe(false);
+    } finally {
+      await closeSocket(socket);
+      await stopTestServer(server.stop.bind(server), port);
+    }
+  });
+
   it("revokes an idle authenticated WebSocket as soon as its session expires", async () => {
     const app = createApi(databasePath("websocket-expiry"), undefined, {
       password: testPassword,
@@ -930,5 +954,73 @@ describe("Elysia action receipt", () => {
     expect(rejected.status).toBe(422);
     const readBack = await app.handle(new Request("http://localhost/api/actions", { headers: { cookie } }));
     expect((await readBack.json()).actions).toHaveLength(0);
+  });
+
+  it("rejects incompatible client writes before persistence while retaining the legacy and current clients", async () => {
+    const path = databasePath("client-version");
+    const app = createApi(path, undefined, { password: testPassword });
+    const version = await app.handle(new Request("http://localhost/api/version"));
+    expect(version.status).toBe(200);
+    expect(await version.json()).toEqual({
+      apiVersion: 1,
+      supportedClientVersions: {
+        hosted: { minimum: 0, maximum: 1 },
+        selfManaged: { minimum: 0, maximum: 1 },
+      },
+      capabilities: ["action-receipts", "event-snapshots-v1"],
+    });
+
+    const login = await app.handle(new Request("https://localhost/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-remotecode-client-version": "1" },
+      body: JSON.stringify({ password: testPassword }),
+    }));
+    expect(login.status).toBe(200);
+    const cookie = login.headers.get("set-cookie")?.split(";")[0];
+    expect(cookie).toBeTruthy();
+
+    const rejected = await app.handle(new Request("https://localhost/api/actions", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie: cookie!,
+        "x-remotecode-client-version": "2",
+      },
+      body: JSON.stringify({ action: "must not be written" }),
+    }));
+    expect(rejected.status).toBe(426);
+    expect(await rejected.json()).toMatchObject({
+      error: "unsupported_client_version",
+      message: expect.stringContaining("Update the host or use a supported client version"),
+    });
+
+    const invalid = await app.handle(new Request("https://localhost/api/actions", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie: cookie!,
+        "x-remotecode-client-version": "1",
+      },
+      body: JSON.stringify({ action: 7 }),
+    }));
+    expect(invalid.status).toBe(422);
+
+    const accepted = await app.handle(new Request("https://localhost/api/actions", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie: cookie!,
+        "x-remotecode-client-version": "1",
+      },
+      body: JSON.stringify({ action: "current supported client" }),
+    }));
+    expect(accepted.status).toBe(201);
+
+    const database = new Database(path);
+    try {
+      expect(database.query<{ count: number }, []>("SELECT COUNT(*) AS count FROM actions").get()?.count).toBe(1);
+    } finally {
+      database.close();
+    }
   });
 });

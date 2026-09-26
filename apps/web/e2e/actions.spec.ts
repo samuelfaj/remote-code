@@ -39,6 +39,102 @@ async function confirmedIds(page: import("@playwright/test").Page) {
   return actions;
 }
 
+test("the frozen previous client receives snapshots and live action events from the current server", async ({ page }) => {
+  const socketUrls: string[] = [];
+  page.on("websocket", (socket) => socketUrls.push(socket.url()));
+  await page.goto("/e2e/fixtures/legacy-client.html");
+  await page.getByLabel("Host passphrase").fill(authPassword);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page.getByText("Legacy client connected")).toBeVisible();
+  const actionSockets = socketUrls.filter((url) => new URL(url).pathname === "/api/events");
+  expect(actionSockets).toHaveLength(1);
+  expect(new URL(actionSockets[0]!).searchParams.has("clientVersion")).toBe(false);
+
+  const externalAction = `current server event for legacy client ${crypto.randomUUID()}`;
+  const response = await page.request.post(`${apiUrl}/api/actions`, { data: { action: externalAction } });
+  expect(response.status()).toBe(201);
+  await expect(page.locator("#status")).toContainText("Legacy event received at cursor");
+  await expect(page.locator("#receipt")).toHaveText(externalAction);
+
+  const previousCursor = Number((await page.locator("#status").innerText()).match(/cursor ([0-9]+)/)?.[1]);
+  const legacyAction = `previous client write ${crypto.randomUUID()}`;
+  await page.locator("#action").fill(legacyAction);
+  await page.getByRole("button", { name: "Write backend receipt" }).click();
+  await expect(page.locator("#status")).toContainText(`cursor ${previousCursor + 1}`);
+  await expect(page.locator("#receipt")).toHaveText(legacyAction);
+  expect(await confirmedIds(page)).toEqual(expect.arrayContaining([
+    expect.objectContaining({ action: externalAction }),
+    expect.objectContaining({ action: legacyAction }),
+  ]));
+});
+
+test("shows the server's actionable compatibility response before login", async ({ page }) => {
+  await page.route("**/api/auth/login", (route) => {
+    const headers = { ...route.request().headers(), "x-remotecode-client-version": "99" };
+    void route.continue({ headers });
+  });
+  await page.goto("/");
+  await page.getByLabel("Host passphrase").fill(authPassword);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page.getByText("This RemoteCode client version is not supported. Update the host or use a supported client version.")).toBeVisible();
+  expect(await page.context().cookies()).toEqual([]);
+});
+
+test("shows actionable guidance when the current client's event socket is rejected", async ({ page }) => {
+  await page.routeWebSocket("**/api/events?clientVersion=1", (socket) => {
+    socket.close({ code: 4406, reason: "unsupported client version" });
+  });
+  await page.goto("/");
+  await page.getByLabel("Host passphrase").fill(authPassword);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page.getByText("This RemoteCode client version is not supported. Update the host or use a supported client version.")).toBeVisible();
+});
+
+test("shows compatibility guidance when initial session validation is rejected", async ({ page }) => {
+  await page.route("**/api/auth/session", (route) => {
+    const headers = { ...route.request().headers(), "x-remotecode-client-version": "99" };
+    void route.continue({ headers });
+  });
+  await page.goto("/");
+  await expect(page.getByText("This RemoteCode client version is not supported. Update the host or use a supported client version.")).toBeVisible();
+  expect(await page.context().cookies()).toEqual([]);
+});
+
+test("shows compatibility guidance during reconnect without restoring private state or writing", async ({ page }) => {
+  let disconnect!: () => void;
+  let actionPosts = 0;
+  await page.routeWebSocket("**/api/events*", (socket) => {
+    const server = socket.connectToServer();
+    socket.onMessage((message) => server.send(message));
+    server.onMessage((message) => socket.send(message));
+    disconnect = () => socket.close();
+  });
+  await page.route("**/api/actions", (route) => {
+    if (route.request().method() === "POST") actionPosts += 1;
+    void route.continue();
+  });
+  await signIn(page);
+  const action = `clear before incompatible reconnect ${crypto.randomUUID()}`;
+  await page.getByLabel("Action description").fill(action);
+  await page.getByRole("button", { name: "Write backend receipt" }).click();
+  await expect(page.getByTestId("latest-receipt")).toContainText(action);
+  const actionPostsBeforeReconnect = actionPosts;
+  disconnect();
+  await expect(page.getByTestId("connection-status")).toHaveText("Live updates disconnected");
+  await expect(page.getByText("No action has been recorded in this session.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Reconnect live updates" })).toBeEnabled();
+  await page.route("**/api/auth/session", (route) => {
+    const headers = { ...route.request().headers(), "x-remotecode-client-version": "99" };
+    void route.continue({ headers });
+  });
+  await page.getByRole("button", { name: "Reconnect live updates" }).click();
+  await expect(page.getByText("This RemoteCode client version is not supported. Update the host or use a supported client version.")).toBeVisible();
+  await expect(page.getByText("The host session expired or was revoked.")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Sign in to your host" })).toBeVisible();
+  await expect(page.getByText(action, { exact: true })).toHaveCount(0);
+  expect(actionPosts).toBe(actionPostsBeforeReconnect);
+});
+
 test("renders shared API health and reports a failed request", async ({ page }) => {
   await signIn(page);
 
@@ -89,7 +185,7 @@ test("reconnect snapshot restores a committed action without replaying its POST"
   let actionPostCount = 0;
   let postIntercepted = false;
 
-  await page.routeWebSocket("**/api/events", (socket) => {
+  await page.routeWebSocket("**/api/events*", (socket) => {
     const server = socket.connectToServer();
     reconnectSocket = socket;
     socket.onMessage((message) => server.send(message));
@@ -164,7 +260,7 @@ test("malformed live events clear private state and offer reconnect", async ({ p
   let sendMalformed!: () => void;
   let ready!: () => void;
   const snapshotReceived = new Promise<void>((resolve) => { ready = resolve; });
-  await page.routeWebSocket("**/api/events", (socket) => {
+  await page.routeWebSocket("**/api/events*", (socket) => {
     const server = socket.connectToServer();
     socket.onMessage((message) => server.send(message));
     server.onMessage((message) => {
@@ -194,7 +290,7 @@ test("malformed live events clear private state and offer reconnect", async ({ p
  test("a later cursor gap repairs missed events from the authoritative snapshot", async ({ page }) => {
   let firstEvent = true;
   let missedEvent = "";
-  await page.routeWebSocket("**/api/events", (socket) => {
+  await page.routeWebSocket("**/api/events*", (socket) => {
     const server = socket.connectToServer();
     socket.onMessage((message) => server.send(message));
     server.onMessage((message) => {
@@ -375,7 +471,7 @@ test("clears private UI on WebSocket loss and remains clear when the session exp
   let disconnect!: () => void;
   let socketReady!: () => void;
   const ready = new Promise<void>((resolve) => { socketReady = resolve; });
-  await page.routeWebSocket("**/api/events", (socket) => {
+  await page.routeWebSocket("**/api/events*", (socket) => {
     const server = socket.connectToServer();
     socket.onMessage((message) => server.send(message));
     server.onMessage((message) => socket.send(message));

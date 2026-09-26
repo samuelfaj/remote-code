@@ -1,8 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native-web";
-import { applyActionEvent, createApiClient, emptyActionEventState } from "@remotecode/client";
+import { applyActionEvent, CLIENT_VERSION, createApiClient, emptyActionEventState } from "@remotecode/client";
 import type { ActionEventState } from "@remotecode/client";
 import { getWebHealth } from "../health/api";
+
+function isUnsupportedClientVersion(error: unknown) {
+  if (typeof error !== "object" || error === null || !("value" in error)) return false;
+  const value = error.value;
+  return typeof value === "object" && value !== null
+    && "error" in value && value.error === "unsupported_client_version";
+}
+
+const compatibilityMessage = "This RemoteCode client version is not supported. Update the host or use a supported client version.";
+
+function requestErrorMessage(error: unknown, fallback: string) {
+  return isUnsupportedClientVersion(error) ? compatibilityMessage : fallback;
+}
+
 
 type HealthStatus = "checking" | "ready" | "not_ready" | "unavailable";
 
@@ -61,7 +75,9 @@ export function App() {
   useEffect(() => {
     let active = true;
     void api.api.auth.session.get().then(({ data, error: sessionError }) => {
-      if (active) setAuthenticated(!sessionError && Boolean(data && !("error" in data)));
+      if (!active) return;
+      setAuthenticated(!sessionError && Boolean(data && !("error" in data)));
+      if (isUnsupportedClientVersion(sessionError)) setError(compatibilityMessage);
     }).finally(() => {
       if (active) setCheckingSession(false);
     });
@@ -77,6 +93,7 @@ export function App() {
     const generation = ++connectionGeneration.current;
     const socketUrl = new URL("/api/events", window.location.href);
     socketUrl.protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    socketUrl.searchParams.set("clientVersion", String(CLIENT_VERSION));
     const socket = new WebSocket(socketUrl);
     socketRef.current = socket;
     const isCurrent = () => active && epoch === authEpoch.current
@@ -107,6 +124,8 @@ export function App() {
         setReconnecting(false);
         setAuthenticated(false);
         setError("The host session expired or was revoked.");
+      } else if (event.code === 4406) {
+        setError(compatibilityMessage);
       } else if (event.code === 1002) {
         setError("The host sent an invalid live update. Reconnect to try again.");
       } else {
@@ -179,7 +198,7 @@ export function App() {
     const { data, error: requestError } = await api.api.auth.login.post({ password });
     if (epoch !== authEpoch.current) return;
     if (requestError || !data || "error" in data) {
-      setError("The host did not accept this passphrase. Check the host configuration and try again.");
+      setError(requestErrorMessage(requestError, "The host did not accept this passphrase. Check the host configuration and try again."));
       return;
     }
     setPassword("");
@@ -216,7 +235,7 @@ export function App() {
       setConnectionFailed(false);
       eventStateRef.current = emptyActionEventState();
       setEventState(eventStateRef.current);
-      setError("The host session expired or was revoked.");
+      setError(requestErrorMessage(requestError, "The host session expired or was revoked."));
       return;
     }
     setConnectionFailed(false);
@@ -234,7 +253,7 @@ export function App() {
     const { data, error: requestError } = await api.api.actions.post({ action: value });
     if (epoch !== authEpoch.current || generation !== connectionGeneration.current) return;
     if (requestError || !data || "error" in data) {
-      setError("The backend did not confirm this action.");
+      setError(requestErrorMessage(requestError, "The backend did not confirm this action."));
     } else if (socketRef.current?.readyState === WebSocket.OPEN) {
       socketRef.current.send(JSON.stringify({ type: "sync" }));
     }

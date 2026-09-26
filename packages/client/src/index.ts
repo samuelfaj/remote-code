@@ -4,6 +4,8 @@ export type { ActionEventState, ActionReceipt } from "./action-events";
 import { treaty } from "@elysiajs/eden";
 import type { App } from "@remotecode/api";
 
+export const CLIENT_VERSION = 1;
+
 export type ApiClientOptions = {
   timeoutMs?: number;
   headers?: HeadersInit;
@@ -98,6 +100,7 @@ export function createApiClient(origin: string, options: ApiClientOptions = {}) 
   const fetcher = Object.assign(async (input: RequestInfo | URL, init?: RequestInit) => {
     const headers = new Headers(init?.headers);
     new Headers(options.headers).forEach((value, name) => headers.set(name, value));
+    headers.set("x-remotecode-client-version", String(CLIENT_VERSION));
     const timedSignal = createRequestSignal(init?.signal ?? undefined, timeoutMs);
     const { signal } = timedSignal;
     let response: Response;

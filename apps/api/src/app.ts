@@ -1,6 +1,7 @@
 import { Elysia } from "elysia";
 import { actionsFeature } from "./features/actions";
 import { authFeature } from "./features/auth";
+import { compatibilityFeature } from "./features/compatibility";
 import { storageFeature } from "./features/storage";
 import { checkDatabase, healthFeature, initializeDatabase, type ReadinessCheck } from "./features/health";
 
@@ -24,6 +25,7 @@ export function createApi(
   initializeDatabase(configuredDatabasePath);
   const actions = actionsFeature(configuredDatabasePath, authConfig.webOrigin ?? "http://localhost:5173");
   return new Elysia()
+    .use(compatibilityFeature())
     .use(healthFeature(readinessCheck))
     .use(authFeature(configuredDatabasePath, authConfig, actions.revokeSessions))
     .use(actions.routes)

@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { Elysia, t } from "elysia";
 import { isAuthenticated, sessionExpiresAt, sessionUserId } from "./auth";
+import { eventClientVersionRejection } from "./compatibility";
 
 type ActionReceipt = {
   id: string;
@@ -189,6 +190,10 @@ export function actionsFeature(databasePath: string, allowedOrigin: string) {
       open(client) {
         if (!isAuthenticated(databasePath, client.data.request)) {
           client.close(4401, "unauthorized");
+          return;
+        }
+        if (eventClientVersionRejection(client.data.request)) {
+          client.close(4406, "unsupported client version");
           return;
         }
         const expiresAt = sessionExpiresAt(databasePath, client.data.request);

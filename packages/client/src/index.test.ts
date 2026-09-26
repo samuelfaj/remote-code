@@ -48,6 +48,26 @@ it("uses the same typed API and session cookie from web and mobile callers", asy
   }
 });
 
+it("identifies the shared client version on requests", async () => {
+  let clientVersion: string | null = null;
+  const server = Bun.serve({
+    port: 0,
+    fetch: (request) => {
+      clientVersion = request.headers.get("x-remotecode-client-version");
+      return Response.json({ status: "ready" });
+    },
+  });
+
+  try {
+    const { data, error } = await createApiClient(`http://127.0.0.1:${server.port}`).api.health.ready.get();
+    expect(error).toBeNull();
+    expect(data).toEqual({ status: "ready" });
+    expect(clientVersion as string | null).toBe("1");
+  } finally {
+    server.stop(true);
+  }
+});
+
 it("returns a typed unknown-outcome error when a JSON response body exceeds the timeout", async () => {
   let markBodyStarted!: () => void;
   const bodyStarted = new Promise<void>((resolve) => { markBodyStarted = resolve; });
