@@ -2,6 +2,8 @@
 
 ## 2026-09-26
 
+- **Final handoff receipt CI passed:** Commit `c923e96b3d668740cefc38e4255e60e17f99ffc5` is confirmed as origin and open PR #2 head; runs `36256511530` and `36256508358` both passed `static` and `test` for that exact SHA. The handoff now includes the successful receipt for the prior checkpoint; no product behavior changed.
+
 - **Eligibility receipt publication verified:** Final receipt commit `fa3ac5c49a925ac2b6ec0a4dfb92dfd1941dbe1d` is the open PR #2 head on origin. Runs `36256311174` and `36256309420` both passed `static` and `test` for that exact SHA. It records CI for the unique-anchor eligibility handoff correction; no product code or task status changed.
 
 - **Eligibility handoff anchor correction published:** Reasoning review caught that the prior generic evidence heading was duplicated, which made a changelog link target a stale 67-task recheck. Renamed the new 68-task evidence section and fixed the link. Correction commit `f72b1d1e4ba5bf86156b799d274e3c517e01546e` is confirmed as PR #2 head; runs `36256110229` and `36256106489` both passed `static` and `test` for that exact SHA. Reviewer `01a0de93-625a-7bd2-87ae-60866ee90f73` found no concrete defect after the correction, but could not independently inspect Git or rerun checks. No task status or acceptance criteria changed. See `plan/checkpoint-evidence.md#backlog-eligibility-recheck-after-rc-012-receipt--2026-09-26`.
