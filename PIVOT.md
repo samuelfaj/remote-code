@@ -223,9 +223,14 @@ Keep safe, evidence-backed work moving when a task encounters a blocker. A pivot
 
 ## Publication receipt — full backlog recheck — 2026-09-26
 
-- Documentation checkpoint `15075e546ef28fcc073d8fb2d377b5101335e9f5` is pushed and confirmed as the origin branch and open PR #2 head.
+- At that checkpoint, documentation commit `15075e546ef28fcc073d8fb2d377b5101335e9f5` had been pushed and was confirmed as the origin branch and open PR #2 head.
 - Exact-SHA CI runs `36260691812` and `36260689402` both passed `static` and `test`. This validates the configured repository gates for the documentation checkpoint only; it does not advance product acceptance.
 - The checkpoint changes only `CHANGELOG.md`, `PIVOT.md`, and `plan/checkpoint-evidence.md`. `scripts/__pycache__/` remains untracked and excluded. RC-002 stays unknown/unaccepted, RC-011 `REVISE`, and RC-012/014 partial.
+
+## Publication receipt — eligibility CI follow-up — 2026-09-26
+
+- At that follow-up checkpoint, commit `e2f924874d9d0a2ae26c83fff42de62a294c1f88` was pushed and confirmed as the origin branch and open PR #2 head.
+- CI runs `36261039777` and `36261042836` matched that exact SHA and each passed both `static` and `test`. This is documentation-only CI evidence; product acceptance is unchanged.
 
 ## Backlog eligibility recheck after RC-012 receipt — 2026-09-26
 
