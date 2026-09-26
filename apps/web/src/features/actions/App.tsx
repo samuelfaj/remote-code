@@ -1,11 +1,46 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native-web";
 import { createApiClient } from "@remotecode/client";
+import { getWebHealth } from "../health/api";
 
 type ActionReceipt = { id: string; action: string; createdAt: string };
 type ActionEvent =
   | { type: "snapshot"; actions: ActionReceipt[] }
   | { type: "action.created"; receipt: ActionReceipt };
+
+type HealthStatus = "checking" | "ready" | "not_ready" | "unavailable";
+
+function HostHealth() {
+  const [status, setStatus] = useState<HealthStatus>("checking");
+  const [attempt, setAttempt] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+    setStatus("checking");
+    void getWebHealth(window.location.origin).then((health) => {
+      if (active) setStatus(health === "ready" ? "ready" : "not_ready");
+    }).catch(() => {
+      if (active) setStatus("unavailable");
+    });
+    return () => { active = false; };
+  }, [attempt]);
+
+  const label = {
+    checking: "Checking API health",
+    ready: "API ready",
+    not_ready: "API not ready",
+    unavailable: "API health unavailable",
+  }[status];
+
+  return (
+    <View style={styles.card}>
+      <Text accessibilityRole="text" aria-live="polite" testID="host-health-status">{label}</Text>
+      <Pressable accessibilityRole="button" onPress={() => setAttempt((value) => value + 1)} style={styles.button}>
+        <Text style={styles.buttonText}>Refresh host health</Text>
+      </Pressable>
+    </View>
+  );
+}
 
 export function App() {
   const api = useMemo(() => createApiClient(window.location.origin), []);
@@ -164,6 +199,8 @@ export function App() {
         <Text style={styles.intro}>
           This React Native Web screen records actions through the Elysia service running in the Linux container.
         </Text>
+
+        <HostHealth />
 
         <Pressable accessibilityRole="button" onPress={() => void signOut()} style={styles.button}>
           <Text style={styles.buttonText}>Sign out</Text>

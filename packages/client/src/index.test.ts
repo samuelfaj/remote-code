@@ -73,6 +73,47 @@ it("returns a typed unknown-outcome error when a JSON response body exceeds the 
   }
 });
 
+it("uses the shared client when a native runtime omits AbortSignal timeout helpers", async () => {
+  const timeoutDescriptor = Object.getOwnPropertyDescriptor(AbortSignal, "timeout");
+  const anyDescriptor = Object.getOwnPropertyDescriptor(AbortSignal, "any");
+  const server = Bun.serve({ port: 0, fetch: () => Response.json({ status: "ready" }) });
+
+  try {
+    Object.defineProperty(AbortSignal, "timeout", { configurable: true, value: undefined });
+    Object.defineProperty(AbortSignal, "any", { configurable: true, value: undefined });
+    const { data, error } = await createApiClient(`http://127.0.0.1:${server.port}`).api.health.ready.get();
+    expect(error).toBeNull();
+    expect(data).toEqual({ status: "ready" });
+  } finally {
+    if (timeoutDescriptor) Object.defineProperty(AbortSignal, "timeout", timeoutDescriptor);
+    if (anyDescriptor) Object.defineProperty(AbortSignal, "any", anyDescriptor);
+    server.stop(true);
+  }
+});
+
+it("normalizes native timeouts without static Response.json", async () => {
+  const responseConstructor = Response as unknown as { json?: typeof Response.json };
+  const originalJson = responseConstructor.json;
+  const server = Bun.serve({
+    port: 0,
+    fetch: async () => {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      return new Response(JSON.stringify({ status: "ready" }), { headers: { "content-type": "application/json" } });
+    },
+  });
+
+  try {
+    responseConstructor.json = undefined;
+    const result = await createApiClient(`http://127.0.0.1:${server.port}`, { timeoutMs: 20 })
+      .api.health.ready.get();
+    expect(result.data).toBeNull();
+    expectUnknownOutcome(result.error);
+  } finally {
+    responseConstructor.json = originalJson;
+    server.stop(true);
+  }
+});
+
 it("normalizes a timeout before response headers", async () => {
   const server = Bun.serve({
     port: 0,
@@ -143,6 +184,37 @@ it("throws a typed unknown-outcome error when a streaming response times out", a
     }
     expect(streamError).toBeInstanceOf(ApiClientError);
     expectUnknownOutcome(streamError);
+  } finally {
+    server.stop(true);
+  }
+});
+
+it("propagates caller cancellation while a request is in flight", async () => {
+  let markRequestStarted!: () => void;
+  let markRequestAborted!: () => void;
+  const requestStarted = new Promise<void>((resolve) => { markRequestStarted = resolve; });
+  const requestAborted = new Promise<void>((resolve) => { markRequestAborted = resolve; });
+  const server = Bun.serve({
+    port: 0,
+    fetch: (request) => new Promise<Response>((resolve) => {
+      markRequestStarted();
+      request.signal.addEventListener("abort", () => {
+        markRequestAborted();
+        resolve(Response.json({ status: "not_ready" }));
+      }, { once: true });
+    }),
+  });
+  const controller = new AbortController();
+
+  try {
+    const pending = createApiClient(`http://127.0.0.1:${server.port}`).api.health.ready.get({
+      fetch: { signal: controller.signal },
+    });
+    await requestStarted;
+    controller.abort();
+    const result = await pending;
+    await requestAborted;
+    expectUnknownOutcome(result.error);
   } finally {
     server.stop(true);
   }

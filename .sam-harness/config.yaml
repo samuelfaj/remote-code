@@ -46,10 +46,10 @@ migration:
     reconciliation_gate: false
     restore_test: false
 design:
-    applicable: false
-    browser_proof: false
-    human_labels: false
-    accessibility: false
+    applicable: true
+    browser_proof: true
+    human_labels: true
+    accessibility: true
     localization: false
 governance:
     approvers:

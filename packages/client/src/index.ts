@@ -34,24 +34,53 @@ export class ApiClientError extends Error {
 }
 
 function unknownOutcomeResponse() {
-  return Response.json({ error: "request_outcome_unknown" }, { status: 503 });
+  return new Response(JSON.stringify({ error: "request_outcome_unknown" }), {
+    status: 503,
+    headers: { "content-type": "application/json" },
+  });
 }
 
-function streamWithTimeoutError(response: Response, signal: AbortSignal) {
-  if (!response.body) return response;
+function createRequestSignal(callerSignal: AbortSignal | undefined, timeoutMs: number) {
+  const controller = new AbortController();
+  const abortFromCaller = () => controller.abort(callerSignal?.reason);
+  if (callerSignal?.aborted) abortFromCaller();
+  else callerSignal?.addEventListener("abort", abortFromCaller, { once: true });
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  return {
+    signal: controller.signal,
+    cleanup() {
+      clearTimeout(timeout);
+      callerSignal?.removeEventListener("abort", abortFromCaller);
+    },
+  };
+}
+
+function streamWithTimeoutError(response: Response, signal: AbortSignal, cleanup: () => void) {
+  if (!response.body) {
+    cleanup();
+    return response;
+  }
   const reader = response.body.getReader();
   const body = new ReadableStream<Uint8Array>({
     async pull(controller) {
       try {
         const { done, value } = await reader.read();
-        if (done) controller.close();
-        else controller.enqueue(value);
+        if (done) {
+          cleanup();
+          controller.close();
+        } else controller.enqueue(value);
       } catch (error) {
+        cleanup();
         controller.error(signal.aborted ? new ApiClientError(error) : error);
       }
     },
-    cancel(reason) {
-      return reader.cancel(reason);
+    async cancel(reason) {
+      try {
+        await reader.cancel(reason);
+      } finally {
+        cleanup();
+      }
     },
   });
   return new Response(body, {
@@ -66,9 +95,8 @@ export function createApiClient(origin: string, options: ApiClientOptions = {}) 
   const fetcher = Object.assign(async (input: RequestInfo | URL, init?: RequestInit) => {
     const headers = new Headers(init?.headers);
     new Headers(options.headers).forEach((value, name) => headers.set(name, value));
-    const signal = init?.signal
-      ? AbortSignal.any([init.signal, AbortSignal.timeout(timeoutMs)])
-      : AbortSignal.timeout(timeoutMs);
+    const timedSignal = createRequestSignal(init?.signal ?? undefined, timeoutMs);
+    const { signal } = timedSignal;
     let response: Response;
     try {
       response = await fetch(input, {
@@ -78,6 +106,7 @@ export function createApiClient(origin: string, options: ApiClientOptions = {}) 
         signal,
       });
     } catch (error) {
+      timedSignal.cleanup();
       if (signal.aborted) return unknownOutcomeResponse();
       throw error;
     }
@@ -87,15 +116,17 @@ export function createApiClient(origin: string, options: ApiClientOptions = {}) 
       && response.headers.get("transfer-encoding") === "chunked"
       && !response.headers.has("content-length");
     if (contentType === "text/event-stream" || streamingText) {
-      return streamWithTimeoutError(response, signal);
+      return streamWithTimeoutError(response, signal, timedSignal.cleanup);
     }
 
     try {
       await response.clone().arrayBuffer();
     } catch (error) {
+      timedSignal.cleanup();
       if (signal.aborted) return unknownOutcomeResponse();
       throw error;
     }
+    timedSignal.cleanup();
     return response;
   }, { preconnect: fetch.preconnect });
   return treaty<App>(origin, { fetcher });

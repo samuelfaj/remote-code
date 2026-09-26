@@ -39,6 +39,18 @@ async function confirmedIds(page: import("@playwright/test").Page) {
   return actions;
 }
 
+test("renders shared API health and reports a failed request", async ({ page }) => {
+  await signIn(page);
+
+  await expect(page.getByTestId("host-health-status")).toHaveText("API ready");
+  await page.route("**/api/health/ready", (route) => route.abort());
+  await page.getByRole("button", { name: "Refresh host health" }).click();
+  await expect(page.getByTestId("host-health-status")).toHaveText("API health unavailable");
+  await page.unroute("**/api/health/ready");
+  await page.getByRole("button", { name: "Refresh host health" }).click();
+  await expect(page.getByTestId("host-health-status")).toHaveText("API ready");
+});
+
 test("an external browser gets a backend receipt and renders cleanly on mobile", async ({ page }) => {
   await signIn(page);
 
