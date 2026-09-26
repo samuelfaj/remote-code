@@ -74,6 +74,158 @@ test("an external browser gets a backend receipt and renders cleanly on mobile",
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
 
+test("reconnect snapshot restores a committed action without replaying its POST", async ({ page }) => {
+  let disconnect!: () => void;
+  let reconnectSocket!: import("@playwright/test").WebSocketRoute;
+  let committed!: () => void;
+  let releaseResponse!: () => void;
+  let eventSuppressed!: () => void;
+  let responseFinished!: () => void;
+  const postCommitted = new Promise<void>((resolve) => { committed = resolve; });
+  const heldResponse = new Promise<void>((resolve) => { releaseResponse = resolve; });
+  const droppedEventObserved = new Promise<void>((resolve) => { eventSuppressed = resolve; });
+  const postResponseFinished = new Promise<void>((resolve) => { responseFinished = resolve; });
+  let droppedEvent = "";
+  let actionPostCount = 0;
+  let postIntercepted = false;
+
+  await page.routeWebSocket("**/api/events", (socket) => {
+    const server = socket.connectToServer();
+    reconnectSocket = socket;
+    socket.onMessage((message) => server.send(message));
+    server.onMessage((message) => {
+      const raw = String(message);
+      const event = JSON.parse(raw) as { type?: string };
+      if (!droppedEvent && event.type === "action.created") {
+        droppedEvent = raw;
+        eventSuppressed();
+        return;
+      }
+      socket.send(message);
+    });
+    disconnect = () => socket.close();
+  });
+  await page.route("**/api/actions", async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    postIntercepted = true;
+    actionPostCount += 1;
+    const response = await route.fetch();
+    committed();
+    await heldResponse;
+    await route.fulfill({ response });
+    responseFinished();
+  });
+
+  try {
+    await signIn(page);
+    const action = `recovered receipt ${crypto.randomUUID()}`;
+    await page.getByLabel("Action description").fill(action);
+    await page.getByRole("button", { name: "Write backend receipt" }).click();
+    await postCommitted;
+    await droppedEventObserved;
+    expect(droppedEvent).toContain(action);
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+    disconnect();
+    await expect(page.getByTestId("connection-status")).toHaveText("Live updates disconnected");
+    await expect(page.getByText(action)).toHaveCount(0);
+
+    const postedResponse = page.waitForResponse((response) =>
+      response.url().endsWith("/api/actions") && response.request().method() === "POST",
+    );
+    releaseResponse();
+    await postedResponse;
+    await page.waitForTimeout(50);
+    await expect(page.getByText(action)).toHaveCount(0);
+
+    await page.getByRole("button", { name: "Reconnect live updates" }).click();
+    await expect(page.getByTestId("connection-status")).toHaveText("Live updates connected");
+    await expect(page.getByTestId("latest-receipt")).toContainText(action);
+    const receiptId = (JSON.parse(droppedEvent) as { receipt: { id: string } }).receipt.id;
+    expect(await confirmedIds(page)).toContainEqual({
+      id: receiptId,
+      action,
+      createdAt: expect.any(String),
+    });
+
+    const countBeforeDuplicate = await page.getByText(action, { exact: true }).count();
+    reconnectSocket.send(droppedEvent);
+    await page.waitForTimeout(50);
+    expect(await page.getByText(action, { exact: true }).count()).toBe(countBeforeDuplicate);
+    expect(actionPostCount).toBe(1);
+  } finally {
+    releaseResponse();
+    if (postIntercepted) await postResponseFinished;
+    await page.unroute("**/api/actions");
+  }
+});
+
+test("malformed live events clear private state and offer reconnect", async ({ page }) => {
+  let sendMalformed!: () => void;
+  let ready!: () => void;
+  const snapshotReceived = new Promise<void>((resolve) => { ready = resolve; });
+  await page.routeWebSocket("**/api/events", (socket) => {
+    const server = socket.connectToServer();
+    socket.onMessage((message) => server.send(message));
+    server.onMessage((message) => {
+      const raw = String(message);
+      const event = JSON.parse(raw) as { type?: string };
+      socket.send(message);
+      if (event.type === "snapshot") {
+        sendMalformed = () => socket.send("not-json");
+        ready();
+      }
+    });
+  });
+
+  await signIn(page);
+  await snapshotReceived;
+  const action = `private receipt ${crypto.randomUUID()}`;
+  await page.getByLabel("Action description").fill(action);
+  await page.getByRole("button", { name: "Write backend receipt" }).click();
+  await expect(page.getByTestId("latest-receipt")).toContainText(action);
+  sendMalformed();
+  await expect(page.getByTestId("connection-status")).toHaveText("Live updates disconnected");
+  await expect(page.getByText(action)).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Reconnect live updates" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Write backend receipt" })).toBeDisabled();
+});
+
+ test("a later cursor gap repairs missed events from the authoritative snapshot", async ({ page }) => {
+  let firstEvent = true;
+  let missedEvent = "";
+  await page.routeWebSocket("**/api/events", (socket) => {
+    const server = socket.connectToServer();
+    socket.onMessage((message) => server.send(message));
+    server.onMessage((message) => {
+      const raw = String(message);
+      const event = JSON.parse(raw) as { type?: string };
+      if (firstEvent && event.type === "action.created") {
+        firstEvent = false;
+        missedEvent = raw;
+        return;
+      }
+      socket.send(message);
+    });
+  });
+
+  await signIn(page);
+  const firstAction = `missed event ${crypto.randomUUID()}`;
+  const secondAction = `gap trigger ${crypto.randomUUID()}`;
+  const firstResponse = await page.request.post(`${apiUrl}/api/actions`, { data: { action: firstAction } });
+  const secondResponse = await page.request.post(`${apiUrl}/api/actions`, { data: { action: secondAction } });
+  expect(firstResponse.status()).toBe(201);
+  expect(secondResponse.status()).toBe(201);
+  expect(missedEvent).toContain(firstAction);
+  await expect(page.getByTestId("connection-status")).toHaveText("Live updates connected");
+  await expect(page.getByTestId("latest-receipt")).toContainText(secondAction);
+  await expect(page.getByText(firstAction, { exact: true })).toBeVisible();
+  expect(await confirmedIds(page)).toEqual(expect.arrayContaining([
+    expect.objectContaining({ action: firstAction }),
+    expect.objectContaining({ action: secondAction }),
+  ]));
+});
+
 test("logging out revokes distinct sessions opened in two tabs", async ({ page }) => {
   const otherTab = await page.context().newPage();
   try {
@@ -108,7 +260,7 @@ test("logging out revokes distinct sessions opened in two tabs", async ({ page }
 
     await otherTab.goto("/");
     await expect(otherTab.getByTestId("connection-status")).toHaveText("Live updates connected");
-    await expect(otherTab.getByText(action)).toBeVisible();
+    await expect(otherTab.getByText(action)).toHaveCount(2);
     await page.getByRole("button", { name: "Sign out" }).click();
     await expect(otherTab.getByRole("heading", { name: "Sign in to your host" })).toBeVisible();
     await expect(otherTab.getByText(action)).toHaveCount(0);
@@ -240,10 +392,12 @@ test("clears private UI on WebSocket loss and remains clear when the session exp
   expect((await page.request.get(`${apiUrl}/api/auth/session`)).status()).toBe(200);
 
   disconnect();
-  await expect(page.getByRole("heading", { name: "Sign in to your host" })).toBeVisible();
+  await expect(page.getByTestId("connection-status")).toHaveText("Live updates disconnected");
   await expect(page.getByText(action)).toHaveCount(0);
+  expect((await page.request.get(`${apiUrl}/api/auth/session`)).status()).toBe(200);
   await page.waitForTimeout(sessionTtlMs + 100);
   expect((await page.request.get(`${apiUrl}/api/auth/session`)).status()).toBe(401);
+  await page.getByRole("button", { name: "Reconnect live updates" }).click();
   await expect(page.getByRole("heading", { name: "Sign in to your host" })).toBeVisible();
   await expect(page.getByText(action)).toHaveCount(0);
 });
@@ -334,40 +488,9 @@ test("does not restore private receipts when a pending write returns after logou
     await expect(page.getByText(action)).toHaveCount(0);
 
     await signIn(page);
-    await expect(page.getByText(action)).toHaveCount(1);
+    await expect(page.getByText(action)).toHaveCount(2);
   } finally {
     releaseResponse();
-    await page.unroute("**/api/actions");
-  }
-});
-
-test("a late action-list response does not erase a receipt received over WebSocket", async ({ page }) => {
-  let releaseRead!: () => void;
-  let readStarted!: () => void;
-  const heldRead = new Promise<void>((resolve) => { releaseRead = resolve; });
-  const requestStarted = new Promise<void>((resolve) => { readStarted = resolve; });
-
-  await page.route("**/api/actions", async (route) => {
-    if (route.request().method() !== "GET") return route.continue();
-    readStarted();
-    await heldRead;
-    await route.fulfill({ json: { actions: [] } });
-  });
-
-  try {
-    await signIn(page);
-    await requestStarted;
-
-    const action = `websocket receipt ${crypto.randomUUID()}`;
-    const response = await page.request.post(`${apiUrl}/api/actions`, { data: { action } });
-    expect(response.status()).toBe(201);
-    await expect(page.getByTestId("latest-receipt")).toContainText(action);
-
-    releaseRead();
-    await expect(page.getByText(action)).toHaveCount(2);
-    expect(await confirmedIds(page)).toContainEqual(expect.objectContaining({ action }));
-  } finally {
-    releaseRead();
     await page.unroute("**/api/actions");
   }
 });

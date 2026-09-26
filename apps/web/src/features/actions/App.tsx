@@ -1,12 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native-web";
-import { createApiClient } from "@remotecode/client";
+import { applyActionEvent, createApiClient, emptyActionEventState } from "@remotecode/client";
+import type { ActionEventState } from "@remotecode/client";
 import { getWebHealth } from "../health/api";
-
-type ActionReceipt = { id: string; action: string; createdAt: string };
-type ActionEvent =
-  | { type: "snapshot"; actions: ActionReceipt[] }
-  | { type: "action.created"; receipt: ActionReceipt };
 
 type HealthStatus = "checking" | "ready" | "not_ready" | "unavailable";
 
@@ -45,15 +41,22 @@ function HostHealth() {
 export function App() {
   const api = useMemo(() => createApiClient(window.location.origin), []);
   const [action, setAction] = useState("Verify shared Linux backend");
-  const [actions, setActions] = useState<ActionReceipt[]>([]);
-  const [receipt, setReceipt] = useState<ActionReceipt | null>(null);
+  const [eventState, setEventState] = useState<ActionEventState>(emptyActionEventState);
+  const eventStateRef = useRef(eventState);
+  const actions = eventState.actions;
+  const receipt = eventState.actions[0] ?? null;
   const [authenticated, setAuthenticated] = useState(false);
   const [checkingSession, setCheckingSession] = useState(true);
   const [password, setPassword] = useState("");
   const [connected, setConnected] = useState(false);
+  const [connectionFailed, setConnectionFailed] = useState(false);
+  const [connectionAttempt, setConnectionAttempt] = useState(0);
+  const [reconnecting, setReconnecting] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const authEpoch = useRef(0);
+  const connectionGeneration = useRef(0);
+  const socketRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -68,55 +71,107 @@ export function App() {
   useEffect(() => {
     if (!authenticated) return;
     let active = true;
+    let synchronized = false;
+    let synchronizationTimer: ReturnType<typeof setTimeout>;
     const epoch = authEpoch.current;
+    const generation = ++connectionGeneration.current;
     const socketUrl = new URL("/api/events", window.location.href);
     socketUrl.protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const socket = new WebSocket(socketUrl);
+    socketRef.current = socket;
+    const isCurrent = () => active && epoch === authEpoch.current
+      && generation === connectionGeneration.current && socketRef.current === socket;
 
-    socket.onopen = () => {
-      if (epoch === authEpoch.current) setConnected(true);
-    };
-    socket.onclose = (event) => {
-      if (epoch !== authEpoch.current) return;
-      authEpoch.current += 1;
-      setAuthenticated(false);
+    function expireSynchronization() {
+      if (!isCurrent() || synchronized) return;
       setConnected(false);
       setSubmitting(false);
-      setActions([]);
-      setReceipt(null);
-      setError(event.code === 4401 ? "The host session expired or was revoked." : "The host connection closed. Sign in again.");
+      eventStateRef.current = emptyActionEventState();
+      setEventState(eventStateRef.current);
+      socket.close(4000, "snapshot timeout");
+    }
+
+    synchronizationTimer = setTimeout(expireSynchronization, 5000);
+    socket.onclose = (event) => {
+      if (!isCurrent()) return;
+      clearTimeout(synchronizationTimer);
+      connectionGeneration.current += 1;
+      socketRef.current = null;
+      setConnected(false);
+      setConnectionFailed(event.code !== 4401);
+      setSubmitting(false);
+      eventStateRef.current = emptyActionEventState();
+      setEventState(eventStateRef.current);
+      if (event.code === 4401) {
+        authEpoch.current += 1;
+        setReconnecting(false);
+        setAuthenticated(false);
+        setError("The host session expired or was revoked.");
+      } else if (event.code === 1002) {
+        setError("The host sent an invalid live update. Reconnect to try again.");
+      } else {
+        setError("Live updates disconnected. Reconnect to continue.");
+      }
     };
     socket.onerror = () => {
-      if (epoch === authEpoch.current) setConnected(false);
+      if (isCurrent()) setConnected(false);
     };
     socket.onmessage = (message) => {
-      if (epoch !== authEpoch.current) return;
-      const event = JSON.parse(String(message.data)) as ActionEvent;
-      if (event.type === "snapshot") setActions(event.actions);
-      if (event.type === "action.created") {
-        setReceipt(event.receipt);
-        setActions((current) => [event.receipt, ...current.filter((item) => item.id !== event.receipt.id)]);
+      if (!isCurrent()) return;
+      let input: unknown;
+      try {
+        input = JSON.parse(String(message.data));
+      } catch {
+        setConnected(false);
+        setConnectionFailed(true);
+        setSubmitting(false);
+        eventStateRef.current = emptyActionEventState();
+        setEventState(eventStateRef.current);
+        setError("The host sent an invalid live update.");
+        socket.close(4002, "invalid event");
+        return;
+      }
+      const result = applyActionEvent(eventStateRef.current, input);
+      if (!result.validMessage) {
+        setConnected(false);
+        setConnectionFailed(true);
+        setSubmitting(false);
+        eventStateRef.current = emptyActionEventState();
+        setEventState(eventStateRef.current);
+        setError("The host sent an invalid live update.");
+        socket.close(4002, "invalid event");
+        return;
+      }
+      if (result.snapshotApplied) {
+        synchronized = true;
+        clearTimeout(synchronizationTimer);
+        setConnected(true);
+        setConnectionFailed(false);
+        setError("");
+      }
+      if (result.state !== eventStateRef.current) {
+        eventStateRef.current = result.state;
+        setEventState(result.state);
+      }
+      if (result.requestSnapshot) {
+        synchronized = false;
+        setConnected(false);
+        eventStateRef.current = { ...result.state, actions: [] };
+        setEventState(eventStateRef.current);
+        clearTimeout(synchronizationTimer);
+        synchronizationTimer = setTimeout(expireSynchronization, 5000);
+        socket.send(JSON.stringify({ type: "sync" }));
       }
     };
-
-    void api.api.actions.get().then(({ data, error: requestError }) => {
-      if (!active || epoch !== authEpoch.current) return;
-      if (requestError || !data || "error" in data) setError("Could not read the backend action list.");
-      else {
-        setActions((current) => {
-          const merged = new Map([...data.actions, ...current].map((item) => [item.id, item]));
-          return [...merged.values()].sort((left, right) =>
-            new Date(String(right.createdAt)).getTime() - new Date(String(left.createdAt)).getTime(),
-          );
-        });
-      }
-    });
 
     return () => {
       active = false;
+      clearTimeout(synchronizationTimer);
+      if (generation === connectionGeneration.current) connectionGeneration.current += 1;
+      if (socketRef.current === socket) socketRef.current = null;
       socket.close();
     };
-  }, [api, authenticated]);
+  }, [api, authenticated, connectionAttempt]);
 
   async function signIn() {
     const epoch = ++authEpoch.current;
@@ -133,29 +188,55 @@ export function App() {
 
   async function signOut() {
     const epoch = ++authEpoch.current;
+    connectionGeneration.current += 1;
+    socketRef.current?.close();
+    socketRef.current = null;
     setAuthenticated(false);
     setConnected(false);
+    setConnectionFailed(false);
+    setReconnecting(false);
     setSubmitting(false);
-    setActions([]);
-    setReceipt(null);
+    eventStateRef.current = emptyActionEventState();
+    setEventState(eventStateRef.current);
     const { error: requestError } = await api.api.auth.logout.post();
     if (epoch !== authEpoch.current) return;
     if (requestError) setError("The host could not confirm logout.");
+  }
+
+  async function reconnectLiveUpdates() {
+    if (reconnecting || connected) return;
+    setReconnecting(true);
+    const epoch = authEpoch.current;
+    const { data, error: requestError } = await api.api.auth.session.get();
+    if (epoch !== authEpoch.current) return;
+    setReconnecting(false);
+    if (requestError || !data || "error" in data) {
+      authEpoch.current += 1;
+      setAuthenticated(false);
+      setConnectionFailed(false);
+      eventStateRef.current = emptyActionEventState();
+      setEventState(eventStateRef.current);
+      setError("The host session expired or was revoked.");
+      return;
+    }
+    setConnectionFailed(false);
+    setError("");
+    setConnectionAttempt((attempt) => attempt + 1);
   }
 
   async function recordAction() {
     const value = action.trim();
     if (!value || submitting) return;
     const epoch = authEpoch.current;
+    const generation = connectionGeneration.current;
     setSubmitting(true);
     setError("");
     const { data, error: requestError } = await api.api.actions.post({ action: value });
-    if (epoch !== authEpoch.current) return;
+    if (epoch !== authEpoch.current || generation !== connectionGeneration.current) return;
     if (requestError || !data || "error" in data) {
       setError("The backend did not confirm this action.");
-    } else {
-      setReceipt(data);
-      setActions((current) => [data, ...current.filter((item) => item.id !== data.id)]);
+    } else if (socketRef.current?.readyState === WebSocket.OPEN) {
+      socketRef.current.send(JSON.stringify({ type: "sync" }));
     }
     setSubmitting(false);
   }
@@ -209,8 +290,19 @@ export function App() {
         <View style={styles.statusRow}>
           <View style={[styles.dot, connected ? styles.online : styles.offline]} />
           <Text accessibilityRole="text" aria-live="polite" testID="connection-status" style={styles.status}>
-            {connected ? "Live updates connected" : "Connecting to Linux backend…"}
+            {connected ? "Live updates connected" : connectionFailed ? "Live updates disconnected" : "Synchronizing with Linux backend…"}
           </Text>
+          {connectionFailed ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ disabled: reconnecting }}
+              disabled={reconnecting}
+              onPress={() => void reconnectLiveUpdates()}
+              style={styles.button}
+            >
+              <Text style={styles.buttonText}>{reconnecting ? "Checking session…" : "Reconnect live updates"}</Text>
+            </Pressable>
+          ) : null}
         </View>
 
         <View style={styles.card}>

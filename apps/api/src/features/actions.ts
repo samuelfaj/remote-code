@@ -10,27 +10,53 @@ type ActionReceipt = {
   createdAt: string;
 };
 
+type CursorAction = ActionReceipt & { cursor: number };
+
 type EventsClient = {
   data: { request: Request };
   send(data: string): void;
   close(code?: number, reason?: string): void;
 };
 
-function readActions(database: Database): ActionReceipt[] {
+function readActions(database: Database): CursorAction[] {
   const rows = database.query<unknown, []>(
-    "SELECT id, action, created_at AS createdAt FROM actions ORDER BY created_at DESC, rowid DESC",
+    "SELECT sequence AS cursor, id, action, created_at AS createdAt FROM actions ORDER BY sequence DESC",
   ).all();
   return rows.map((row) => {
     if (
       typeof row !== "object" || row === null ||
+      !("cursor" in row) || typeof row.cursor !== "number" ||
       !("id" in row) || typeof row.id !== "string" ||
       !("action" in row) || typeof row.action !== "string" ||
       !("createdAt" in row) || typeof row.createdAt !== "string"
     ) {
       throw new Error("Stored action receipt is invalid");
     }
-    return { id: row.id, action: row.action, createdAt: row.createdAt };
+    return { cursor: row.cursor, id: row.id, action: row.action, createdAt: row.createdAt };
   });
+}
+
+function sendSnapshot(databasePath: string, client: EventsClient) {
+  let database: Database | undefined;
+  try {
+    database = openDatabase(databasePath);
+    const actions = readActions(database);
+    const cursor = actions[0]?.cursor ?? 0;
+    const payload = JSON.stringify({
+      type: "snapshot",
+      cursor,
+      actions: actions.map(({ cursor: _cursor, ...receipt }) => receipt),
+    });
+    client.send(payload);
+  } catch {
+    try {
+      client.close(1011, "snapshot unavailable");
+    } catch {
+      // The connection is already unavailable.
+    }
+  } finally {
+    database?.close();
+  }
 }
 
 function openDatabase(databasePath: string) {
@@ -44,11 +70,34 @@ export function actionsFeature(databasePath: string, allowedOrigin: string) {
     try {
       database.exec(`
         CREATE TABLE IF NOT EXISTS actions (
-          id TEXT PRIMARY KEY,
+          sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+          id TEXT NOT NULL UNIQUE,
           action TEXT NOT NULL,
           created_at TEXT NOT NULL
         )
       `);
+      const columns = database.query<{ name: string }, []>("PRAGMA table_info(actions)").all();
+      if (!columns.some((column) => column.name === "sequence")) {
+        database.exec("BEGIN IMMEDIATE");
+        try {
+          database.exec(`
+            CREATE TABLE actions_with_sequence (
+              sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+              id TEXT NOT NULL UNIQUE,
+              action TEXT NOT NULL,
+              created_at TEXT NOT NULL
+            );
+            INSERT INTO actions_with_sequence (sequence, id, action, created_at)
+              SELECT rowid, id, action, created_at FROM actions ORDER BY rowid;
+            DROP TABLE actions;
+            ALTER TABLE actions_with_sequence RENAME TO actions;
+          `);
+          database.exec("COMMIT");
+        } catch (error) {
+          database.exec("ROLLBACK");
+          throw error;
+        }
+      }
     } finally {
       database.close();
     }
@@ -64,7 +113,11 @@ export function actionsFeature(databasePath: string, allowedOrigin: string) {
     const timer = expiryTimers.get(client);
     if (timer) clearTimeout(timer);
     expiryTimers.delete(client);
-    client.close(4401, reason);
+    try {
+      client.close(4401, reason);
+    } catch {
+      // The connection is already unavailable.
+    }
   }
 
   const routes = new Elysia()
@@ -75,7 +128,7 @@ export function actionsFeature(databasePath: string, allowedOrigin: string) {
       }
       const database = openDatabase(databasePath);
       try {
-        return { actions: readActions(database) };
+        return { actions: readActions(database).map(({ cursor: _cursor, ...receipt }) => receipt) };
       } finally {
         database.close();
       }
@@ -93,22 +146,30 @@ export function actionsFeature(databasePath: string, allowedOrigin: string) {
           createdAt: new Date().toISOString(),
         };
         const database = openDatabase(databasePath);
+        let cursor: number;
         try {
-          database.query("INSERT INTO actions (id, action, created_at) VALUES (?, ?, ?)").run(
+          const result = database.query("INSERT INTO actions (id, action, created_at) VALUES (?, ?, ?)").run(
             receipt.id,
             receipt.action,
             receipt.createdAt,
           );
+          cursor = Number(result.lastInsertRowid);
         } finally {
           database.close();
         }
 
         set.status = 201;
-        const event = JSON.stringify({ type: "action.created", receipt });
+        const event = JSON.stringify({ type: "action.created", cursor, receipt });
         for (const client of clients) {
           if (!isAuthenticated(databasePath, client.data.request)) {
             revokeClient(client, "session expired or revoked");
-          } else client.send(event);
+          } else {
+            try {
+              client.send(event);
+            } catch {
+              revokeClient(client, "event delivery failed");
+            }
+          }
         }
         return receipt;
       },
@@ -137,12 +198,23 @@ export function actionsFeature(databasePath: string, allowedOrigin: string) {
         }
         clients.add(client);
         expiryTimers.set(client, setTimeout(() => revokeClient(client, "session expired"), Math.max(0, expiresAt - Date.now())));
-        const database = openDatabase(databasePath);
-        try {
-          client.send(JSON.stringify({ type: "snapshot", actions: readActions(database) }));
-        } finally {
-          database.close();
+        sendSnapshot(databasePath, client);
+      },
+      message(client, message) {
+        let command: unknown = message;
+        if (typeof message === "string" || Buffer.isBuffer(message)) {
+          try {
+            command = JSON.parse(String(message));
+          } catch {
+            return;
+          }
         }
+        if (typeof command !== "object" || command === null || !("type" in command) || command.type !== "sync") return;
+        if (!isAuthenticated(databasePath, client.data.request)) {
+          revokeClient(client, "session expired or revoked");
+          return;
+        }
+        sendSnapshot(databasePath, client);
       },
       close(client) {
         clients.delete(client);

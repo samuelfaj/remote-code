@@ -358,6 +358,30 @@ describe("Elysia health checks", () => {
     expect(await response.json()).toEqual({ status: "ready" });
   });
 
+  it("reports not ready when the action cursor schema is unavailable", async () => {
+    const path = databasePath("legacy-schema-locked");
+    const owner = new Database(path);
+    owner.exec(`
+      CREATE TABLE actions (id TEXT PRIMARY KEY, action TEXT NOT NULL, created_at TEXT NOT NULL);
+      CREATE TABLE workspaces (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, name TEXT NOT NULL, created_at TEXT NOT NULL);
+      CREATE TABLE profiles (user_id TEXT PRIMARY KEY, display_name TEXT NOT NULL, updated_at TEXT NOT NULL);
+      CREATE TABLE history (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, workspace_id TEXT NOT NULL, type TEXT NOT NULL, content TEXT NOT NULL, created_at TEXT NOT NULL);
+      CREATE TABLE sessions (token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL, expires_at INTEGER NOT NULL);
+      CREATE INDEX workspaces_user_id ON workspaces(user_id);
+      CREATE INDEX history_workspace_id ON history(workspace_id, created_at, id);
+    `);
+    owner.exec("BEGIN EXCLUSIVE");
+    const app = createApi(path);
+
+    try {
+      owner.exec("ROLLBACK");
+      expect((await healthStatus(app, "ready")).status).toBe(503);
+      expect((await healthStatus(app, "live")).status).toBe(200);
+    } finally {
+      owner.close();
+    }
+  });
+
   it("reports not ready when a persistent domain table is unavailable", async () => {
     const path = databasePath("missing-workspaces");
     const app = createApi(path);
@@ -589,6 +613,50 @@ describe("Elysia action receipt", () => {
     expect((await restored.json()).actions).toEqual([receipt]);
   });
 
+  it("migrates existing receipt IDs once and preserves their durable sequence", async () => {
+    const path = databasePath("event-sequence-migration");
+    const legacy = new Database(path);
+    legacy.exec(`
+      CREATE TABLE actions (
+        id TEXT PRIMARY KEY,
+        action TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      INSERT INTO actions (id, action, created_at)
+      VALUES ('legacy-receipt', 'keep this receipt', '2026-01-01T00:00:00.000Z');
+    `);
+    legacy.close();
+
+    const { app, cookie } = await authenticatedApi(path);
+    const migrated = await app.handle(new Request("http://localhost/api/actions", { headers: { cookie } }));
+    expect((await migrated.json()).actions).toEqual([{
+      id: "legacy-receipt",
+      action: "keep this receipt",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    }]);
+    const added = await app.handle(new Request("http://localhost/api/actions", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({ action: "after migration" }),
+    }));
+    expect(added.status).toBe(201);
+
+    const restarted = createApi(path, undefined, { password: testPassword });
+    const database = new Database(path);
+    try {
+      expect(database.query("SELECT sequence, id FROM actions ORDER BY sequence").all()).toEqual([
+        { sequence: 1, id: "legacy-receipt" },
+        { sequence: 2, id: (await added.json()).id },
+      ]);
+      expect(database.query("PRAGMA table_info(actions)").all()).toContainEqual(
+        expect.objectContaining({ name: "sequence" }),
+      );
+      expect((await restarted.handle(new Request("http://localhost/api/actions", { headers: { cookie } }))).status).toBe(200);
+    } finally {
+      database.close();
+    }
+  });
+
   it("does not confirm a receipt while SQLite is locked against writes", async () => {
     const path = databasePath("write-locked");
     const { app, cookie } = await authenticatedApi(path);
@@ -640,8 +708,11 @@ describe("Elysia action receipt", () => {
       const actionEvent = await actionEventPromise;
 
       expect(response.status).toBe(201);
-      expect(snapshot).toEqual({ type: "snapshot", actions: [] });
-      expect(actionEvent).toEqual({ type: "action.created", receipt });
+      expect(snapshot).toEqual({ type: "snapshot", cursor: 0, actions: [] });
+      expect(actionEvent).toEqual({ type: "action.created", cursor: 1, receipt });
+      const recoveredSnapshot = waitForEvent(socket, "snapshot");
+      socket.send(JSON.stringify({ type: "sync" }));
+      expect(await recoveredSnapshot).toEqual({ type: "snapshot", cursor: 1, actions: [receipt] });
       const messagesAfterRevocation: string[] = [];
       socket.addEventListener("message", (message) => messagesAfterRevocation.push(String(message.data)));
       const secondLogin = await app.handle(new Request("https://localhost/api/auth/login", {

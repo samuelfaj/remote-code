@@ -1,3 +1,6 @@
+export { applyActionEvent, emptyActionEventState } from "./action-events";
+export type { ActionEventState, ActionReceipt } from "./action-events";
+
 import { treaty } from "@elysiajs/eden";
 import type { App } from "@remotecode/api";
 

@@ -5,7 +5,7 @@
   "scripts": {
     "dev:api": "bun --hot apps/api/src/index.ts",
     "dev:web": "bunx vite --config apps/web/vite.config.ts --host 0.0.0.0",
-    "test": "bun test apps/api/src",
+    "test": "bun test apps/api/src packages/client/src",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test:e2e": "playwright test --config=playwright.config.ts"
   },
