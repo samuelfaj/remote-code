@@ -541,27 +541,80 @@ describe("Elysia persistent workspace data", () => {
     })).status).toBe(201);
     expect((await request(userAToken, "/api/profile", "PUT", { displayName: "User A" })).status).toBe(200);
 
+    const forgedWorkspace = await request(userAToken, "/api/workspaces", "POST", { name: "Forged owner", userId: "user-b" });
+    expect(forgedWorkspace.status).toBe(201);
+    const forgedWorkspaceRecord = await forgedWorkspace.json() as { id: string };
+    const forgedProfile = await request(userAToken, "/api/profile", "PUT", { displayName: "Forged profile", userId: "user-b" });
+    expect(forgedProfile.status).toBe(200);
+    expect(await forgedProfile.json()).toMatchObject({ userId: "user-a", displayName: "Forged profile" });
+    const forgedHistory = await request(userAToken, `/api/workspaces/${workspace.id}/history`, "POST", {
+      type: "note", content: "forged history", userId: "user-b",
+    });
+    expect(forgedHistory.status).toBe(201);
+    const forgedHistoryRecord = await forgedHistory.json() as { id: string };
+    const forgedData = new Database(path, { readonly: true });
+    expect(forgedData.query("SELECT user_id FROM workspaces WHERE id = ?").get(forgedWorkspaceRecord.id)).toEqual({ user_id: "user-a" });
+    expect(forgedData.query("SELECT user_id FROM history WHERE id = ?").get(forgedHistoryRecord.id)).toEqual({ user_id: "user-a" });
+    forgedData.close();
+
     const userAWorkspaces = await request(userAToken, "/api/workspaces");
     expect(userAWorkspaces.status).toBe(200);
-    expect((await userAWorkspaces.json()).workspaces).toEqual([{ ...workspace, name: "A workspace", createdAt: expect.any(String) }]);
+    expect((await userAWorkspaces.json()).workspaces).toEqual([
+      { ...workspace, name: "A workspace", createdAt: expect.any(String) },
+      { id: forgedWorkspaceRecord.id, name: "Forged owner", createdAt: expect.any(String) },
+    ]);
     expect((await (await request(userBToken, "/api/workspaces")).json()).workspaces).toEqual([]);
     expect((await (await request(userBToken, "/api/profile")).json()).profile).toBeNull();
-    expect((await request(userBToken, `/api/workspaces/${workspace.id}/history`)).status).toBe(404);
+    const foreignHistory = await request(userBToken, `/api/workspaces/${workspace.id}/history`);
+    const missingWorkspaceId = crypto.randomUUID();
+    const nonexistentHistory = await request(userBToken, `/api/workspaces/${missingWorkspaceId}/history`);
+    expect(foreignHistory.status).toBe(404);
+    expect(nonexistentHistory.status).toBe(foreignHistory.status);
+    expect(await foreignHistory.json()).toEqual(await nonexistentHistory.json());
     const ownedEmptyWorkspace = await request(userBToken, "/api/workspaces", "POST", { name: "B empty workspace" });
     expect(ownedEmptyWorkspace.status).toBe(201);
     const emptyWorkspace = await ownedEmptyWorkspace.json() as { id: string };
+    const userBWorkspaces = await request(userBToken, "/api/workspaces");
+    expect(userBWorkspaces.status).toBe(200);
+    expect((await userBWorkspaces.json()).workspaces).toEqual([
+      { id: emptyWorkspace.id, name: "B empty workspace", createdAt: expect.any(String) },
+    ]);
     expect((await request(userBToken, `/api/workspaces/${emptyWorkspace.id}/history`)).status).toBe(200);
     expect((await (await request(userBToken, `/api/workspaces/${emptyWorkspace.id}/history`)).json()).history).toEqual([]);
-    expect((await request(userBToken, `/api/workspaces/${workspace.id}/history`, "POST", {
+    const userBHistoryCreate = await request(userBToken, `/api/workspaces/${emptyWorkspace.id}/history`, "POST", {
+      type: "note", content: "B private history entry",
+    });
+    expect(userBHistoryCreate.status).toBe(201);
+    expect((await (await request(userBToken, `/api/workspaces/${emptyWorkspace.id}/history`)).json()).history).toMatchObject([
+      { type: "note", content: "B private history entry" },
+    ]);
+    const historySnapshot = new Database(path, { readonly: true });
+    const beforeRejectedWrites = historySnapshot.query("SELECT id, user_id, workspace_id, type, content, created_at FROM history ORDER BY id").all();
+    historySnapshot.close();
+    const foreignHistoryWrite = await request(userBToken, `/api/workspaces/${workspace.id}/history`, "POST", {
       type: "note", content: "cross-user write",
-    })).status).toBe(404);
+    });
+    const nonexistentHistoryWrite = await request(userBToken, `/api/workspaces/${missingWorkspaceId}/history`, "POST", {
+      type: "note", content: "cross-user write",
+    });
+    expect(foreignHistoryWrite.status).toBe(404);
+    expect(nonexistentHistoryWrite.status).toBe(foreignHistoryWrite.status);
+    expect(await foreignHistoryWrite.json()).toEqual(await nonexistentHistoryWrite.json());
+    const afterRejectedWrites = new Database(path, { readonly: true });
+    expect(afterRejectedWrites.query("SELECT id, user_id, workspace_id, type, content, created_at FROM history ORDER BY id").all()).toEqual(beforeRejectedWrites);
+    afterRejectedWrites.close();
     expect((await request(userBToken, "/api/profile", "PUT", { displayName: "User B" })).status).toBe(200);
+    expect((await (await request(userBToken, "/api/profile")).json()).profile).toMatchObject({
+      userId: "user-b", displayName: "User B",
+    });
 
-    expect((await (await request(userAToken, "/api/profile")).json()).profile.displayName).toBe("User A");
-    expect((await (await request(userAToken, `/api/workspaces/${workspace.id}/history`)).json()).history).toHaveLength(1);
+    expect((await (await request(userAToken, "/api/profile")).json()).profile.displayName).toBe("Forged profile");
+    expect((await (await request(userAToken, `/api/workspaces/${workspace.id}/history`)).json()).history).toHaveLength(2);
+    expect((await request(userBToken, `/api/workspaces/${workspace.id}/history`)).status).toBe(404);
     const storedOwner = new Database(path, { readonly: true });
     expect(storedOwner.query("SELECT user_id FROM workspaces WHERE id = ?").get(workspace.id)).toEqual({ user_id: "user-a" });
-    expect(storedOwner.query("SELECT COUNT(*) AS count FROM history WHERE content = 'cross-user write'").get()).toEqual({ count: 0 });
+    expect(storedOwner.query("SELECT user_id FROM workspaces WHERE id = ?").get(forgedWorkspaceRecord.id)).toEqual({ user_id: "user-a" });
+    expect(storedOwner.query("SELECT COUNT(*) AS count FROM history WHERE content IN ('cross-user write', 'forged history') AND user_id = 'user-b'").get()).toEqual({ count: 0 });
     storedOwner.close();
 
     expect((await request(userAToken, "/api/auth/logout", "POST")).status).toBe(204);
