@@ -13,3 +13,14 @@ button,
 input {
   font: inherit;
 }
+
+.host-passphrase {
+  box-sizing: border-box;
+  width: 100%;
+  border: 1px solid #c9d8d1;
+  border-radius: 10px;
+  background: #fbfdfc;
+  color: #183337;
+  font-size: 16px;
+  padding: 12px 13px;
+}

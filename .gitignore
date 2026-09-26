@@ -4,3 +4,7 @@
 # sam-harness:start
 .sam-harness/evidence/
 # sam-harness:end
+node_modules/
+apps/web/dist/
+playwright-report/
+test-results/

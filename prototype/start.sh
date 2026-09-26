@@ -65,7 +65,7 @@ wait_for http://127.0.0.1:5173/
 mkdir -p /var/lib/rc003
 chromium --no-sandbox --disable-dev-shm-usage --disable-gpu --no-first-run \
   --remote-debugging-address=127.0.0.1 --remote-debugging-port=9222 \
-  --user-data-dir=/var/lib/rc003/chromium --app=http://127.0.0.1:5173/ \
+  --user-data-dir=/var/lib/rc003/chromium --app=http://localhost:5173/ \
   --window-size=1280,900 >/var/log/rc003-chromium.log 2>&1 &
 CHROME_PID=$!
 

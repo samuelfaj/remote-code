@@ -1,18 +1,46 @@
 import { execFileSync } from "node:child_process";
+import { request as httpRequest } from "node:http";
+import { networkInterfaces } from "node:os";
 import { expect, test } from "@playwright/test";
 
 const apiUrl = process.env.RC003_API_URL ?? "http://127.0.0.1:37117";
+const webUrl = process.env.RC003_WEB_URL ?? "http://127.0.0.1:37118";
+const authPassword = process.env.RC003_AUTH_PASSWORD ?? "remotecode-e2e-passphrase";
 
-async function confirmedIds() {
-  const response = await fetch(`${apiUrl}/api/actions`);
+async function signIn(page: import("@playwright/test").Page) {
+  await page.goto("/");
+  await page.getByLabel("Host passphrase").fill(authPassword);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page.getByTestId("connection-status")).toHaveText("Live updates connected");
+}
+
+test("rejects canonical and normalized cleartext login paths from a non-loopback interface", async () => {
+  const address = Object.values(networkInterfaces()).flat().find((item) => item?.family === "IPv4" && !item.internal)?.address;
+  test.skip(!address, "No non-loopback IPv4 interface is available for ingress verification.");
+  const port = Number(new URL(webUrl).port);
+  const responses = await Promise.all(["/api/auth/login", "/api/auth/./login"].map((path) =>
+    new Promise<{ status: number; setCookie?: string }>((resolve, reject) => {
+      const request = httpRequest({ hostname: address, port, path, method: "POST", headers: { "content-type": "application/json" } }, (response) => {
+        response.resume();
+        response.on("end", () => resolve({ status: response.statusCode ?? 0, setCookie: response.headers["set-cookie"]?.toString() }));
+      });
+      request.on("error", reject);
+      request.end(JSON.stringify({ password: authPassword }));
+    }),
+  ));
+  expect(responses.map((response) => response.status)).toEqual([403, 403]);
+  expect(responses.every((response) => !response.setCookie)).toBe(true);
+});
+
+async function confirmedIds(page: import("@playwright/test").Page) {
+  const response = await page.request.get(`${apiUrl}/api/actions`);
   if (!response.ok) throw new Error(`Backend read failed: ${response.status}`);
   const { actions } = await response.json() as { actions: Array<{ id: string; action: string }> };
   return actions;
 }
 
 test("an external browser gets a backend receipt and renders cleanly on mobile", async ({ page }) => {
-  await page.goto("/");
-  await expect(page.getByTestId("connection-status")).toHaveText("Live updates connected");
+  await signIn(page);
 
   const action = `external browser ${crypto.randomUUID()}`;
   await page.getByLabel("Action description").fill(action);
@@ -22,7 +50,7 @@ test("an external browser gets a backend receipt and renders cleanly on mobile",
   const receiptText = await page.getByTestId("latest-receipt").innerText();
   const receiptId = receiptText.match(/Receipt ([\w-]+)/)?.[1];
   expect(receiptId).toBeTruthy();
-  expect(await confirmedIds()).toContainEqual({
+  expect(await confirmedIds(page)).toContainEqual({
     id: receiptId,
     action,
     createdAt: expect.any(String),
@@ -32,6 +60,273 @@ test("an external browser gets a backend receipt and renders cleanly on mobile",
   await expect(page.getByRole("heading", { name: "One backend, two browsers" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Write backend receipt" })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+});
+
+test("logging out revokes distinct sessions opened in two tabs", async ({ page }) => {
+  const otherTab = await page.context().newPage();
+  try {
+    await otherTab.goto("/");
+    await expect(otherTab.getByRole("heading", { name: "Sign in to your host" })).toBeVisible();
+
+    await signIn(page);
+    const firstCookie = (await page.context().cookies()).find((cookie) => cookie.name === "remotecode_session")?.value;
+    expect(firstCookie).toBeTruthy();
+    expect((await page.request.get(`${apiUrl}/api/auth/session`, {
+      headers: { cookie: `remotecode_session=${firstCookie}` },
+    })).status()).toBe(200);
+
+    const action = `private history ${crypto.randomUUID()}`;
+    await page.getByLabel("Action description").fill(action);
+    await page.getByRole("button", { name: "Write backend receipt" }).click();
+    await expect(page.getByTestId("latest-receipt")).toContainText(action);
+
+    const secondLogin = await otherTab.request.post(`${webUrl}/api/auth/login`, {
+      data: { password: authPassword },
+    });
+    expect(secondLogin.status()).toBe(200);
+    const secondCookie = secondLogin.headers()["set-cookie"]?.match(/remotecode_session=([^;]+)/)?.[1];
+    expect(secondCookie).toBeTruthy();
+    expect(secondCookie).not.toBe(firstCookie);
+    expect((await page.request.get(`${apiUrl}/api/auth/session`, {
+      headers: { cookie: `remotecode_session=${firstCookie}` },
+    })).status()).toBe(200);
+    expect((await page.request.get(`${apiUrl}/api/auth/session`, {
+      headers: { cookie: `remotecode_session=${secondCookie}` },
+    })).status()).toBe(200);
+
+    await otherTab.goto("/");
+    await expect(otherTab.getByTestId("connection-status")).toHaveText("Live updates connected");
+    await expect(otherTab.getByText(action)).toBeVisible();
+    await page.getByRole("button", { name: "Sign out" }).click();
+    await expect(otherTab.getByRole("heading", { name: "Sign in to your host" })).toBeVisible();
+    await expect(otherTab.getByText(action)).toHaveCount(0);
+    expect((await otherTab.request.get(`${apiUrl}/api/actions`)).status()).toBe(401);
+    expect((await page.request.get(`${apiUrl}/api/auth/session`, {
+      headers: { cookie: `remotecode_session=${firstCookie}` },
+    })).status()).toBe(401);
+    expect((await page.request.get(`${apiUrl}/api/auth/session`, {
+      headers: { cookie: `remotecode_session=${secondCookie}` },
+    })).status()).toBe(401);
+  } finally {
+    await otherTab.close();
+  }
+});
+
+test("a login response arriving after logout cannot restore private UI", async ({ page }) => {
+  let releaseFirst!: () => void;
+  let releaseSecond!: () => void;
+  let firstCommitted!: () => void;
+  let firstReleased!: () => void;
+  let firstResponseFinished!: () => void;
+  let secondCommitted!: () => void;
+  const firstHeld = new Promise<void>((resolve) => { releaseFirst = resolve; });
+  const secondHeld = new Promise<void>((resolve) => { releaseSecond = resolve; });
+  const firstReady = new Promise<void>((resolve) => { firstCommitted = resolve; });
+  const firstResponseReleased = new Promise<void>((resolve) => { firstReleased = resolve; });
+  const firstResponseCompleted = new Promise<void>((resolve) => { firstResponseFinished = resolve; });
+  const secondReady = new Promise<void>((resolve) => { secondCommitted = resolve; });
+  let loginCount = 0;
+  let firstCookie = "";
+  let secondCookie = "";
+
+  await page.route("**/api/auth/login", async (route) => {
+    const response = await route.fetch();
+    const cookie = response.headers()["set-cookie"]?.match(/remotecode_session=([^;]+)/)?.[1];
+    if (loginCount++ === 0) {
+      firstCookie = cookie ?? "";
+      firstCommitted();
+      await firstHeld;
+      firstReleased();
+      await route.fulfill({ response });
+      firstResponseFinished();
+      return;
+    } else {
+      secondCookie = cookie ?? "";
+      secondCommitted();
+      await secondHeld;
+    }
+    await route.fulfill({ response });
+  });
+
+  try {
+    await page.goto("/");
+    await page.getByLabel("Host passphrase").fill(authPassword);
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await firstReady;
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await secondReady;
+
+    expect(firstCookie).toBeTruthy();
+    expect(secondCookie).toBeTruthy();
+    expect(secondCookie).not.toBe(firstCookie);
+    releaseSecond();
+    await expect(page.getByTestId("connection-status")).toHaveText("Live updates connected");
+    const action = `stale login response ${crypto.randomUUID()}`;
+    await page.getByLabel("Action description").fill(action);
+    await page.getByRole("button", { name: "Write backend receipt" }).click();
+    await expect(page.getByTestId("latest-receipt")).toContainText(action);
+
+    await page.getByRole("button", { name: "Sign out" }).click();
+    await expect(page.getByRole("heading", { name: "Sign in to your host" })).toBeVisible();
+    const firstResponse = page.waitForResponse((response) => response.url().endsWith("/api/auth/login") && response.request().method() === "POST");
+    releaseFirst();
+    await firstResponseReleased;
+    await firstResponseCompleted;
+    await firstResponse;
+    await page.evaluate(() => new Promise<void>((resolve) => setTimeout(resolve, 0)));
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+    await expect(page.getByLabel("Host passphrase")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Sign in to your host" })).toBeVisible();
+    await expect(page.getByText(action)).toHaveCount(0);
+    expect((await page.request.get(`${apiUrl}/api/auth/session`, {
+      headers: { cookie: `remotecode_session=${firstCookie}` },
+    })).status()).toBe(401);
+    expect((await page.request.get(`${apiUrl}/api/auth/session`, {
+      headers: { cookie: `remotecode_session=${secondCookie}` },
+    })).status()).toBe(401);
+  } finally {
+    releaseFirst();
+    releaseSecond();
+    await page.unroute("**/api/auth/login");
+  }
+});
+
+test("returns to sign-in and clears private receipts when the session expires", async ({ page }) => {
+  const sessionTtlMs = Number(process.env.REMOTECODE_AUTH_SESSION_TTL_MS);
+  test.skip(!Number.isFinite(sessionTtlMs) || sessionTtlMs <= 0, "Set a short session TTL to verify expiry in the browser.");
+  await signIn(page);
+  const action = `expiring private receipt ${crypto.randomUUID()}`;
+  await page.getByLabel("Action description").fill(action);
+  await page.getByRole("button", { name: "Write backend receipt" }).click();
+  await expect(page.getByTestId("latest-receipt")).toContainText(action);
+  await page.waitForTimeout(sessionTtlMs + 100);
+  await expect(page.getByRole("heading", { name: "Sign in to your host" })).toBeVisible();
+  await expect(page.getByText(action)).toHaveCount(0);
+  expect((await page.request.get(`${apiUrl}/api/actions`)).status()).toBe(401);
+});
+
+test("clears private UI on WebSocket loss and remains clear when the session expires", async ({ page }) => {
+  const sessionTtlMs = Number(process.env.REMOTECODE_AUTH_SESSION_TTL_MS);
+  test.skip(!Number.isFinite(sessionTtlMs) || sessionTtlMs <= 0, "Set a short session TTL to verify expiry after socket loss.");
+  let disconnect!: () => void;
+  let socketReady!: () => void;
+  const ready = new Promise<void>((resolve) => { socketReady = resolve; });
+  await page.routeWebSocket("**/api/events", (socket) => {
+    const server = socket.connectToServer();
+    socket.onMessage((message) => server.send(message));
+    server.onMessage((message) => socket.send(message));
+    disconnect = () => socket.close();
+    socketReady();
+  });
+
+  await signIn(page);
+  await ready;
+  const action = `socket loss private receipt ${crypto.randomUUID()}`;
+  await page.getByLabel("Action description").fill(action);
+  await page.getByRole("button", { name: "Write backend receipt" }).click();
+  await expect(page.getByTestId("latest-receipt")).toContainText(action);
+  expect((await page.request.get(`${apiUrl}/api/auth/session`)).status()).toBe(200);
+
+  disconnect();
+  await expect(page.getByRole("heading", { name: "Sign in to your host" })).toBeVisible();
+  await expect(page.getByText(action)).toHaveCount(0);
+  await page.waitForTimeout(sessionTtlMs + 100);
+  expect((await page.request.get(`${apiUrl}/api/auth/session`)).status()).toBe(401);
+  await expect(page.getByRole("heading", { name: "Sign in to your host" })).toBeVisible();
+  await expect(page.getByText(action)).toHaveCount(0);
+});
+
+test("clears private UI when logout commits but its response is lost", async ({ page }) => {
+  await signIn(page);
+  const action = `uncertain logout ${crypto.randomUUID()}`;
+  await page.getByLabel("Action description").fill(action);
+  await page.getByRole("button", { name: "Write backend receipt" }).click();
+  await expect(page.getByTestId("latest-receipt")).toContainText(action);
+  let logoutCommitted!: () => void;
+  let releaseLogout!: () => void;
+  let logoutRequestAborted!: () => void;
+  let logoutResponseFailed!: () => void;
+  const committed = new Promise<void>((resolve) => { logoutCommitted = resolve; });
+  const heldResponse = new Promise<void>((resolve) => { releaseLogout = resolve; });
+  const logoutAborted = new Promise<void>((resolve) => { logoutRequestAborted = resolve; });
+  const logoutFailed = new Promise<void>((resolve) => { logoutResponseFailed = resolve; });
+  page.on("requestfailed", (request) => {
+    if (request.url().endsWith("/api/auth/logout")) logoutResponseFailed();
+  });
+
+  await page.route("**/api/auth/logout", async (route) => {
+    await route.fetch();
+    logoutCommitted();
+    await heldResponse;
+    await route.abort();
+    logoutRequestAborted();
+  });
+  try {
+    await page.getByRole("button", { name: "Sign out" }).click();
+    await committed;
+    await expect(page.getByRole("heading", { name: "Sign in to your host" })).toBeVisible();
+    await expect(page.getByText(action)).toHaveCount(0);
+  } finally {
+    releaseLogout();
+    await logoutAborted;
+    await logoutFailed;
+    await page.unroute("**/api/auth/logout");
+  }
+  await expect(page.getByRole("heading", { name: "Sign in to your host" })).toBeVisible();
+  await expect(page.getByText(action)).toHaveCount(0);
+  await expect(page.getByText("The host could not confirm logout.")).toBeVisible();
+  expect((await page.request.get(`${apiUrl}/api/actions`)).status()).toBe(401);
+});
+
+test("does not restore private receipts when a pending write returns after logout", async ({ page }) => {
+  await signIn(page);
+  const action = `delayed private receipt ${crypto.randomUUID()}`;
+  let releaseResponse!: () => void;
+  let markCommitted!: () => void;
+  let markResponseFulfilled!: () => void;
+  const heldResponse = new Promise<void>((resolve) => { releaseResponse = resolve; });
+  const committed = new Promise<void>((resolve) => { markCommitted = resolve; });
+  const responseFulfilled = new Promise<void>((resolve) => { markResponseFulfilled = resolve; });
+  const browserResponse = page.waitForResponse((response) =>
+    response.url().endsWith("/api/actions") && response.request().method() === "POST",
+  );
+  const browserRequestFinished = page.waitForEvent("requestfinished", (request) =>
+    request.url().endsWith("/api/actions") && request.method() === "POST",
+  );
+
+  await page.route("**/api/actions", async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    const response = await route.fetch();
+    markCommitted();
+    await heldResponse;
+    await route.fulfill({ response });
+    markResponseFulfilled();
+  });
+
+  try {
+    await page.getByLabel("Action description").fill(action);
+    await page.getByRole("button", { name: "Write backend receipt" }).click();
+    await committed;
+    await page.getByRole("button", { name: "Sign out" }).click();
+    await expect(page.getByRole("heading", { name: "Sign in to your host" })).toBeVisible();
+    releaseResponse();
+    await responseFulfilled;
+    const response = await browserResponse;
+    expect(response.status()).toBe(201);
+    const finishedRequest = await browserRequestFinished;
+    expect(finishedRequest).toBe(response.request());
+    await page.evaluate(() => new Promise<void>((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    }));
+    await expect(page.getByRole("heading", { name: "Sign in to your host" })).toBeVisible();
+    await expect(page.getByText(action)).toHaveCount(0);
+
+    await signIn(page);
+    await expect(page.getByText(action)).toHaveCount(1);
+  } finally {
+    releaseResponse();
+    await page.unroute("**/api/actions");
+  }
 });
 
 test("a late action-list response does not erase a receipt received over WebSocket", async ({ page }) => {
@@ -48,8 +343,7 @@ test("a late action-list response does not erase a receipt received over WebSock
   });
 
   try {
-    await page.goto("/");
-    await expect(page.getByTestId("connection-status")).toHaveText("Live updates connected");
+    await signIn(page);
     await requestStarted;
 
     const action = `websocket receipt ${crypto.randomUUID()}`;
@@ -59,7 +353,7 @@ test("a late action-list response does not erase a receipt received over WebSock
 
     releaseRead();
     await expect(page.getByText(action)).toHaveCount(2);
-    expect(await confirmedIds()).toContainEqual(expect.objectContaining({ action }));
+    expect(await confirmedIds(page)).toContainEqual(expect.objectContaining({ action }));
   } finally {
     releaseRead();
     await page.unroute("**/api/actions");
@@ -77,8 +371,7 @@ test("Linux guest and external browsers observe receipts from the same backend",
     return JSON.parse(output) as { action: string; receiptId: string };
   }
 
-  await page.goto("/");
-  await expect(page.getByTestId("connection-status")).toHaveText("Live updates connected");
+  await signIn(page);
 
   const externalAction = `external ${crypto.randomUUID()}`;
   await page.getByLabel("Action description").fill(externalAction);
@@ -89,7 +382,7 @@ test("Linux guest and external browsers observe receipts from the same backend",
 
   const guestObserved = await useGuest("observe", externalAction);
   expect(guestObserved.receiptId).toBe(externalReceipt);
-  expect(await confirmedIds()).toContainEqual(expect.objectContaining({ id: externalReceipt, action: externalAction }));
+  expect(await confirmedIds(page)).toContainEqual(expect.objectContaining({ id: externalReceipt, action: externalAction }));
 
   const guestAction = `linux guest ${crypto.randomUUID()}`;
   const guestCreated = await useGuest("create", guestAction);
@@ -97,5 +390,5 @@ test("Linux guest and external browsers observe receipts from the same backend",
   await expect(page.getByTestId("latest-receipt")).toContainText(guestAction);
   const guestReceipt = (await page.getByTestId("latest-receipt").innerText()).match(/Receipt ([\w-]+)/)?.[1];
   expect(guestReceipt).toBe(guestCreated.receiptId);
-  expect(await confirmedIds()).toContainEqual(expect.objectContaining({ id: guestReceipt, action: guestAction }));
+  expect(await confirmedIds(page)).toContainEqual(expect.objectContaining({ id: guestReceipt, action: guestAction }));
 });

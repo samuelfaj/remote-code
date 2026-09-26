@@ -8,7 +8,7 @@ if (!new Set(["observe", "create"]).has(operation) || !action) {
 const browser = await chromium.connectOverCDP("http://127.0.0.1:9222");
 try {
   const page = browser.contexts().flatMap((context) => context.pages())
-    .find((candidate) => candidate.url().startsWith("http://127.0.0.1:5173/"));
+    .find((candidate) => candidate.url().startsWith("http://localhost:5173/"));
   if (!page) throw new Error("Linux Chromium has no RemoteCode UI open.");
   await expect(page.getByTestId("connection-status")).toHaveText("Live updates connected");
 

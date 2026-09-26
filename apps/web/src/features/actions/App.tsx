@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native-web";
 import { createApiClient } from "@remotecode/client";
 
@@ -12,20 +12,50 @@ export function App() {
   const [action, setAction] = useState("Verify shared Linux backend");
   const [actions, setActions] = useState<ActionReceipt[]>([]);
   const [receipt, setReceipt] = useState<ActionReceipt | null>(null);
+  const [authenticated, setAuthenticated] = useState(false);
+  const [checkingSession, setCheckingSession] = useState(true);
+  const [password, setPassword] = useState("");
   const [connected, setConnected] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const authEpoch = useRef(0);
 
   useEffect(() => {
     let active = true;
+    void api.api.auth.session.get().then(({ data, error: sessionError }) => {
+      if (active) setAuthenticated(!sessionError && Boolean(data && !("error" in data)));
+    }).finally(() => {
+      if (active) setCheckingSession(false);
+    });
+    return () => { active = false; };
+  }, [api]);
+
+  useEffect(() => {
+    if (!authenticated) return;
+    let active = true;
+    const epoch = authEpoch.current;
     const socketUrl = new URL("/api/events", window.location.href);
     socketUrl.protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const socket = new WebSocket(socketUrl);
 
-    socket.onopen = () => setConnected(true);
-    socket.onclose = () => setConnected(false);
-    socket.onerror = () => setConnected(false);
+    socket.onopen = () => {
+      if (epoch === authEpoch.current) setConnected(true);
+    };
+    socket.onclose = (event) => {
+      if (epoch !== authEpoch.current) return;
+      authEpoch.current += 1;
+      setAuthenticated(false);
+      setConnected(false);
+      setSubmitting(false);
+      setActions([]);
+      setReceipt(null);
+      setError(event.code === 4401 ? "The host session expired or was revoked." : "The host connection closed. Sign in again.");
+    };
+    socket.onerror = () => {
+      if (epoch === authEpoch.current) setConnected(false);
+    };
     socket.onmessage = (message) => {
+      if (epoch !== authEpoch.current) return;
       const event = JSON.parse(String(message.data)) as ActionEvent;
       if (event.type === "snapshot") setActions(event.actions);
       if (event.type === "action.created") {
@@ -35,9 +65,9 @@ export function App() {
     };
 
     void api.api.actions.get().then(({ data, error: requestError }) => {
-      if (!active) return;
-      if (requestError) setError("Could not read the backend action list.");
-      else if (data) {
+      if (!active || epoch !== authEpoch.current) return;
+      if (requestError || !data || "error" in data) setError("Could not read the backend action list.");
+      else {
         setActions((current) => {
           const merged = new Map([...data.actions, ...current].map((item) => [item.id, item]));
           return [...merged.values()].sort((left, right) =>
@@ -51,21 +81,79 @@ export function App() {
       active = false;
       socket.close();
     };
-  }, [api]);
+  }, [api, authenticated]);
+
+  async function signIn() {
+    const epoch = ++authEpoch.current;
+    setError("");
+    const { data, error: requestError } = await api.api.auth.login.post({ password });
+    if (epoch !== authEpoch.current) return;
+    if (requestError || !data || "error" in data) {
+      setError("The host did not accept this passphrase. Check the host configuration and try again.");
+      return;
+    }
+    setPassword("");
+    setAuthenticated(true);
+  }
+
+  async function signOut() {
+    const epoch = ++authEpoch.current;
+    setAuthenticated(false);
+    setConnected(false);
+    setSubmitting(false);
+    setActions([]);
+    setReceipt(null);
+    const { error: requestError } = await api.api.auth.logout.post();
+    if (epoch !== authEpoch.current) return;
+    if (requestError) setError("The host could not confirm logout.");
+  }
 
   async function recordAction() {
     const value = action.trim();
     if (!value || submitting) return;
+    const epoch = authEpoch.current;
     setSubmitting(true);
     setError("");
     const { data, error: requestError } = await api.api.actions.post({ action: value });
-    if (requestError || !data) {
+    if (epoch !== authEpoch.current) return;
+    if (requestError || !data || "error" in data) {
       setError("The backend did not confirm this action.");
     } else {
       setReceipt(data);
       setActions((current) => [data, ...current.filter((item) => item.id !== data.id)]);
     }
     setSubmitting(false);
+  }
+
+  if (checkingSession) return <Text accessibilityRole="text">Checking host session…</Text>;
+
+  if (!authenticated) {
+    return (
+      <ScrollView contentContainerStyle={styles.page}>
+        <View style={styles.shell}>
+          <Text style={styles.eyebrow}>REMOTE CODE HOST</Text>
+          <Text accessibilityRole="header" style={styles.title}>Sign in to your host</Text>
+          <View style={styles.card}>
+            <Text style={styles.label}>Host passphrase</Text>
+            <input
+              aria-label="Host passphrase"
+              className="host-passphrase"
+              onChange={(event) => setPassword(event.currentTarget.value)}
+              type="password"
+              value={password}
+            />
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => void signIn()}
+              style={styles.button}
+            >
+              <Text style={styles.buttonText}>Sign in</Text>
+            </Pressable>
+            {error ? <Text accessibilityRole="text" aria-live="assertive" style={styles.error}>{error}</Text> : null}
+          </View>
+        </View>
+      </ScrollView>
+    );
   }
 
   return (
@@ -76,6 +164,10 @@ export function App() {
         <Text style={styles.intro}>
           This React Native Web screen records actions through the Elysia service running in the Linux container.
         </Text>
+
+        <Pressable accessibilityRole="button" onPress={() => void signOut()} style={styles.button}>
+          <Text style={styles.buttonText}>Sign out</Text>
+        </Pressable>
 
         <View style={styles.statusRow}>
           <View style={[styles.dot, connected ? styles.online : styles.offline]} />

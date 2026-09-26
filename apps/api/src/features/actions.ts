@@ -2,6 +2,7 @@ import { Database } from "bun:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { Elysia, t } from "elysia";
+import { isAuthenticated, sessionExpiresAt } from "./auth";
 
 type ActionReceipt = {
   id: string;
@@ -10,7 +11,9 @@ type ActionReceipt = {
 };
 
 type EventsClient = {
+  data: { request: Request };
   send(data: string): void;
+  close(code?: number, reason?: string): void;
 };
 
 function readActions(database: Database): ActionReceipt[] {
@@ -35,7 +38,7 @@ function openDatabase(databasePath: string) {
   return new Database(databasePath, { create: true });
 }
 
-export function actionsFeature(databasePath: string) {
+export function actionsFeature(databasePath: string, allowedOrigin: string) {
   try {
     const database = openDatabase(databasePath);
     try {
@@ -54,9 +57,22 @@ export function actionsFeature(databasePath: string) {
   }
 
   const clients = new Set<EventsClient>();
+  const expiryTimers = new Map<EventsClient, ReturnType<typeof setTimeout>>();
 
-  return new Elysia()
-    .get("/api/actions", () => {
+  function revokeClient(client: EventsClient, reason: string) {
+    clients.delete(client);
+    const timer = expiryTimers.get(client);
+    if (timer) clearTimeout(timer);
+    expiryTimers.delete(client);
+    client.close(4401, reason);
+  }
+
+  const routes = new Elysia()
+    .get("/api/actions", ({ request, set }) => {
+      if (!isAuthenticated(databasePath, request)) {
+        set.status = 401;
+        return { error: "unauthorized" as const };
+      }
       const database = openDatabase(databasePath);
       try {
         return { actions: readActions(database) };
@@ -66,7 +82,11 @@ export function actionsFeature(databasePath: string) {
     })
     .post(
       "/api/actions",
-      ({ body, set }) => {
+      ({ body, request, set }) => {
+        if (!isAuthenticated(databasePath, request)) {
+          set.status = 401;
+          return { error: "unauthorized" as const };
+        }
         const receipt: ActionReceipt = {
           id: crypto.randomUUID(),
           action: body.action,
@@ -85,14 +105,38 @@ export function actionsFeature(databasePath: string) {
 
         set.status = 201;
         const event = JSON.stringify({ type: "action.created", receipt });
-        for (const client of clients) client.send(event);
+        for (const client of clients) {
+          if (!isAuthenticated(databasePath, client.data.request)) {
+            revokeClient(client, "session expired or revoked");
+          } else client.send(event);
+        }
         return receipt;
       },
       { body: t.Object({ action: t.String({ minLength: 1, maxLength: 120 }) }) },
     )
     .ws("/api/events", {
+      beforeHandle({ request, set }) {
+        if (request.headers.get("origin") !== allowedOrigin) {
+          set.status = 403;
+          return { error: "origin_not_allowed" as const };
+        }
+        if (!isAuthenticated(databasePath, request)) {
+          set.status = 401;
+          return { error: "unauthorized" as const };
+        }
+      },
       open(client) {
+        if (!isAuthenticated(databasePath, client.data.request)) {
+          client.close(4401, "unauthorized");
+          return;
+        }
+        const expiresAt = sessionExpiresAt(databasePath, client.data.request);
+        if (expiresAt === undefined) {
+          client.close(4401, "session expired or unavailable");
+          return;
+        }
         clients.add(client);
+        expiryTimers.set(client, setTimeout(() => revokeClient(client, "session expired"), Math.max(0, expiresAt - Date.now())));
         const database = openDatabase(databasePath);
         try {
           client.send(JSON.stringify({ type: "snapshot", actions: readActions(database) }));
@@ -102,6 +146,16 @@ export function actionsFeature(databasePath: string) {
       },
       close(client) {
         clients.delete(client);
+        const timer = expiryTimers.get(client);
+        if (timer) clearTimeout(timer);
+        expiryTimers.delete(client);
       },
     });
+
+  return {
+    routes,
+    revokeSessions() {
+      for (const client of clients) revokeClient(client, "session revoked");
+    },
+  };
 }
