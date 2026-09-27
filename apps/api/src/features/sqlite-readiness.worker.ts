@@ -6,6 +6,7 @@ self.onmessage = (event: MessageEvent<string>) => {
     database = new Database(event.data, { readonly: true, create: false });
     database.exec("PRAGMA busy_timeout = 5000");
     database.query("SELECT sequence FROM actions LIMIT 1").get();
+    database.query("SELECT user_id, request_id, action_id FROM action_requests LIMIT 1").get();
     for (const table of ["workspaces", "history", "profiles", "sessions"]) {
       database.query(`SELECT 1 FROM ${table} LIMIT 1`).get();
     }

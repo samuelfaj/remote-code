@@ -37,6 +37,14 @@ function readActions(database: Database): CursorAction[] {
   });
 }
 
+function readRequestReceipt(database: Database, userId: string, requestId: string) {
+  return database.query<ActionReceipt, [string, string]>(`
+    SELECT actions.id, actions.action, actions.created_at AS createdAt
+    FROM action_requests JOIN actions ON actions.id = action_requests.action_id
+    WHERE action_requests.user_id = ? AND action_requests.request_id = ?
+  `).get(userId, requestId);
+}
+
 function sendSnapshot(databasePath: string, client: EventsClient) {
   let database: Database | undefined;
   try {
@@ -99,6 +107,14 @@ export function actionsFeature(databasePath: string, allowedOrigin: string) {
           throw error;
         }
       }
+      database.exec(`
+        CREATE TABLE IF NOT EXISTS action_requests (
+          user_id TEXT NOT NULL,
+          request_id TEXT NOT NULL,
+          action_id TEXT NOT NULL UNIQUE,
+          PRIMARY KEY (user_id, request_id)
+        )
+      `);
     } finally {
       database.close();
     }
@@ -134,10 +150,29 @@ export function actionsFeature(databasePath: string, allowedOrigin: string) {
         database.close();
       }
     })
+    .get("/api/actions/receipts/:requestId", ({ params, request, set }) => {
+      const userId = sessionUserId(databasePath, request);
+      if (userId === undefined) {
+        set.status = 401;
+        return { error: "unauthorized" as const };
+      }
+      const database = openDatabase(databasePath);
+      try {
+        const receipt = readRequestReceipt(database, userId, params.requestId);
+        if (!receipt) {
+          set.status = 404;
+          return { error: "receipt_not_found" as const };
+        }
+        return receipt;
+      } finally {
+        database.close();
+      }
+    }, { params: t.Object({ requestId: t.String({ format: "uuid" }) }) })
     .post(
       "/api/actions",
       ({ body, request, set }) => {
-        if (!isAuthenticated(databasePath, request)) {
+        const userId = sessionUserId(databasePath, request);
+        if (userId === undefined) {
           set.status = 401;
           return { error: "unauthorized" as const };
         }
@@ -149,12 +184,30 @@ export function actionsFeature(databasePath: string, allowedOrigin: string) {
         const database = openDatabase(databasePath);
         let cursor: number;
         try {
-          const result = database.query("INSERT INTO actions (id, action, created_at) VALUES (?, ?, ?)").run(
-            receipt.id,
-            receipt.action,
-            receipt.createdAt,
-          );
-          cursor = Number(result.lastInsertRowid);
+          const result = database.transaction(() => {
+            if (body.requestId) {
+              const existing = readRequestReceipt(database, userId, body.requestId);
+              if (existing) return { existing };
+            }
+            const inserted = database.query("INSERT INTO actions (id, action, created_at) VALUES (?, ?, ?)").run(
+              receipt.id,
+              receipt.action,
+              receipt.createdAt,
+            );
+            if (body.requestId) {
+              database.query("INSERT INTO action_requests (user_id, request_id, action_id) VALUES (?, ?, ?)")
+                .run(userId, body.requestId, receipt.id);
+            }
+            return { cursor: Number(inserted.lastInsertRowid) };
+          }).immediate();
+          if (result.existing) {
+            if (result.existing.action !== body.action) {
+              set.status = 409;
+              return { error: "request_id_conflict" as const };
+            }
+            return result.existing;
+          }
+          cursor = result.cursor!;
         } finally {
           database.close();
         }
@@ -174,7 +227,10 @@ export function actionsFeature(databasePath: string, allowedOrigin: string) {
         }
         return receipt;
       },
-      { body: t.Object({ action: t.String({ minLength: 1, maxLength: 120 }) }) },
+      { body: t.Object({
+        action: t.String({ minLength: 1, maxLength: 120 }),
+        requestId: t.Optional(t.String({ format: "uuid" })),
+      }) },
     )
     .ws("/api/events", {
       beforeHandle({ request, set }) {
