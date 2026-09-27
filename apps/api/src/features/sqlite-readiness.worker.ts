@@ -1,10 +1,11 @@
 import { Database } from "bun:sqlite";
-import { existsSync } from "node:fs";
+import { existsSync, statfsSync } from "node:fs";
 
 self.onmessage = (event: MessageEvent<string>) => {
   let database: Database | undefined;
   try {
     if (!existsSync(event.data)) throw new Error("SQLite file unavailable");
+    if (statfsSync(event.data).bavail === 0) throw new Error("SQLite volume full");
     database = new Database(event.data);
     database.exec("PRAGMA busy_timeout = 250");
     const integrity = database.query<{ quick_check: string }, []>("PRAGMA quick_check").all();
