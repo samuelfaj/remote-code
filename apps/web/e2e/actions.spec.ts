@@ -14,11 +14,17 @@ async function signIn(page: import("@playwright/test").Page) {
   await expect(page.getByTestId("connection-status")).toHaveText("Live updates connected");
 }
 
-test("rejects canonical and normalized cleartext login paths from a non-loopback interface", async () => {
+test("rejects canonical, normalized and trailing-slash credential routes from a non-loopback interface", async () => {
   const address = Object.values(networkInterfaces()).flat().find((item) => item?.family === "IPv4" && !item.internal)?.address;
   test.skip(!address, "No non-loopback IPv4 interface is available for ingress verification.");
   const port = Number(new URL(webUrl).port);
-  const responses = await Promise.all(["/api/auth/login", "/api/auth/./login"].map((path) =>
+  const id = crypto.randomUUID();
+  const paths = [
+    "/api/auth/login", "/api/auth/./login", "/api/auth/login/",
+    `/api/auth/receipts/${id}/lookup`, `/api/auth/receipts/${id}/lookup/`,
+    `/api/auth/login/${id}/revoke`, `/api/auth/./login/${id}/revoke/`,
+  ];
+  const responses = await Promise.all(paths.map((path) =>
     new Promise<{ status: number; setCookie?: string }>((resolve, reject) => {
       const request = httpRequest({ hostname: address, port, path, method: "POST", headers: { "content-type": "application/json" } }, (response) => {
         response.resume();
@@ -28,7 +34,7 @@ test("rejects canonical and normalized cleartext login paths from a non-loopback
       request.end(JSON.stringify({ password: authPassword }));
     }),
   ));
-  expect(responses.map((response) => response.status)).toEqual([403, 403]);
+  expect(responses.map((response) => response.status)).toEqual(paths.map(() => 403));
   expect(responses.every((response) => !response.setCookie)).toBe(true);
 });
 

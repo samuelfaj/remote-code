@@ -7,11 +7,14 @@ function rejectRemoteCleartextLogin(): Connect.NextHandleFunction {
   return (request, response, next) => {
     let requestPath: string;
     try {
-      requestPath = posix.normalize(decodeURIComponent(new URL(request.url ?? "/", "http://localhost").pathname));
+      requestPath = posix.normalize(decodeURIComponent(new URL(request.url ?? "/", "http://localhost").pathname)).replace(/\/+$/, "") || "/";
     } catch {
       requestPath = "";
     }
-    if (requestPath !== "/api/auth/login") return next();
+    const credentialRoute = requestPath === "/api/auth/login"
+      || /^\/api\/auth\/receipts\/[^/]+\/lookup$/.test(requestPath)
+      || /^\/api\/auth\/login\/[^/]+\/revoke$/.test(requestPath);
+    if (!credentialRoute) return next();
     const address = request.socket.remoteAddress?.replace(/^::ffff:/, "");
     if (address === "127.0.0.1" || address === "::1") return next();
     response.statusCode = 403;

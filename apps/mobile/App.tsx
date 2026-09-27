@@ -83,7 +83,7 @@ export default function App() {
       if (generation !== operationGeneration.current) return;
       const { data: session, error: sessionError } = await client.api.auth.session.get();
       if (sessionError) throw sessionError;
-      if (!session || typeof session.userId !== "string") throw new Error("Missing session identity");
+      if (!session || !("userId" in session) || typeof session.userId !== "string") throw new Error("Missing session identity");
       if (generation !== operationGeneration.current) return;
       const key = `remotecode.pending-action:${JSON.stringify([apiOrigin, session.userId])}`;
       const pending = await withPendingStorage(async () => validatePendingId(await AsyncStorage.getItem(key)));

@@ -20,9 +20,13 @@
 - **Publication:** Offline-read implementation checkpoint `306702c3a2adb8d882751e589cf5cc74a0780028` passed exact-SHA static/test workflows `36295807211` and `36295809113`; subsequent receipt-only commits remain visible in Git history. RC-017 remains In progress and dependents remain gated.
 - **RC-016 evidence correction:** The final native run log's receipts are `2471939c-71d3-4a4f-ae1a-cab0a5a92f74` and `4bb32685-5b5d-4eba-b8c1-1b916a2e7118`; prior run IDs previously copied into the acceptance record were corrected. The four CI jobs for `faf408be2451b7f94f3ec4dd9d0231fd3477be7d` passed. Full evidence is in `plan/checkpoint-evidence.md`.
 
+## Selected next auth approach — 2026-09-27
+
+Recover the authoritative login receipt, not the original bearer cookie. Preserve random tokens and hash-only storage; require fresh credentials for unauthenticated receipt lookup, then explicitly revoke/fence the orphan under a separate durable ID before permitting a distinct login. A missing receipt alone never permits retry. Preserve current ID-less callers only as a declared legacy gap during the first backend slice. The full selected contract and falsifying cases are in `plan/failure-state-contract.md`; reasoning advice `01a0e3b9-93e2-7e43-82ea-98a1d89a317a` is incorporated. The backend portion is now implemented and tested; browser/native auth recovery controls are the next step. This does not accept RC-018.
+
 ## Next action
 
-RC-018 now has tested optional action request IDs, atomic persistence, and authenticated canonical lookup. The web flow now retains pending IDs across reload, checks the capability before sending, and uses the shared Eden receipt route for explicit no-replay recovery. Native iOS persistence/recovery is now tested, including a failed lookup, logout/relogin and process restart. Next, resolve login/session mutation identity and the lost-cookie recovery policy, then cover every other mutation. Keep login/session, gateway, total-deadline, and visible-client requirements open until proven.
+RC-018 now has tested optional action request IDs, atomic persistence, and authenticated canonical lookup. The web flow now retains pending IDs across reload, checks the capability before sending, and uses the shared Eden receipt route for explicit no-replay recovery. Native iOS persistence/recovery is now tested, including a failed lookup, logout/relogin and process restart. The auth backend now supplies keyed receipts, explicit orphan revocation and delayed-login fencing. Next, wire browser then native auth recovery controls, retaining operation IDs and verifying actual cookie/session identity before declaring sign-in; then cover every other mutation. Keep login/session, gateway, total-deadline, and visible-client requirements open until proven.
 
 
 ## Purpose

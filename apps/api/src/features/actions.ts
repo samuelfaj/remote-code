@@ -2,7 +2,7 @@ import { Database } from "bun:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { Elysia, t } from "elysia";
-import { isAuthenticated, sessionExpiresAt, sessionUserId } from "./auth";
+import { isAuthenticated, sessionExpiresAt, sessionUserId, sessionTokenHash } from "./auth";
 import { eventClientVersionRejection } from "./compatibility";
 
 type ActionReceipt = {
@@ -122,7 +122,7 @@ export function actionsFeature(databasePath: string, allowedOrigin: string) {
     // Liveness remains available; readiness reports an unavailable database.
   }
 
-  const clients = new Set<EventsClient>();
+  const clients = new Map<EventsClient, { userId: string; tokenHash: string }>();
   const expiryTimers = new Map<EventsClient, ReturnType<typeof setTimeout>>();
 
   function revokeClient(client: EventsClient, reason: string) {
@@ -214,7 +214,7 @@ export function actionsFeature(databasePath: string, allowedOrigin: string) {
 
         set.status = 201;
         const event = JSON.stringify({ type: "action.created", cursor, receipt });
-        for (const client of clients) {
+        for (const client of clients.keys()) {
           if (!isAuthenticated(databasePath, client.data.request)) {
             revokeClient(client, "session expired or revoked");
           } else {
@@ -244,7 +244,9 @@ export function actionsFeature(databasePath: string, allowedOrigin: string) {
         }
       },
       open(client) {
-        if (!isAuthenticated(databasePath, client.data.request)) {
+        const userId = sessionUserId(databasePath, client.data.request);
+        const tokenHash = sessionTokenHash(client.data.request);
+        if (userId === undefined || tokenHash === undefined) {
           client.close(4401, "unauthorized");
           return;
         }
@@ -257,7 +259,7 @@ export function actionsFeature(databasePath: string, allowedOrigin: string) {
           client.close(4401, "session expired or unavailable");
           return;
         }
-        clients.add(client);
+        clients.set(client, { userId, tokenHash });
         expiryTimers.set(client, setTimeout(() => revokeClient(client, "session expired"), Math.max(0, expiresAt - Date.now())));
         sendSnapshot(databasePath, client);
       },
@@ -287,9 +289,9 @@ export function actionsFeature(databasePath: string, allowedOrigin: string) {
 
   return {
     routes,
-    revokeSessions(userId: string) {
-      for (const client of clients) {
-        if (sessionUserId(databasePath, client.data.request) === userId) revokeClient(client, "session revoked");
+    revokeSessions(userId: string, tokenHash?: string) {
+      for (const [client, identity] of clients) {
+        if (identity.userId === userId && (tokenHash === undefined || identity.tokenHash === tokenHash)) revokeClient(client, "session revoked");
       }
     },
   };

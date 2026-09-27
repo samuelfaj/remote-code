@@ -125,7 +125,7 @@ export function App() {
     void api.api.auth.session.get().then(({ data, error: sessionError }) => {
       if (!active) return;
       setAuthenticated(!sessionError && Boolean(data && !("error" in data)));
-      if (!sessionError && data && typeof data.userId === "string") restoreActionRecovery(data.userId);
+      if (!sessionError && data && "userId" in data && typeof data.userId === "string") restoreActionRecovery(data.userId);
       if (isUnsupportedClientVersion(sessionError)) setError(compatibilityMessage);
     }).finally(() => {
       if (active) setCheckingSession(false);

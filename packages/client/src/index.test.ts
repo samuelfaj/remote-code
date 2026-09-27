@@ -269,7 +269,7 @@ it("recovers session validation after the login response was confirmed", async (
   try {
     const login = await createApiClient(origin).api.auth.login.post({ password: "client-test-password" });
     expect(login.error).toBeNull();
-    expect(login.data?.userId).toBe("local");
+    expect(login.data).toMatchObject({ userId: "local" });
     if (!cookie) throw new Error("Login response did not include a session cookie");
 
     const sessionClient = createApiClient(origin, { headers: { cookie } });

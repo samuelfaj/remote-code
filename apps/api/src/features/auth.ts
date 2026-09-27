@@ -3,6 +3,7 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { Elysia, t } from "elysia";
+import { authReceipt, initializeAuthRequests, insertAuthRequest, readAuthRequest, type AuthReceipt } from "./auth-requests";
 
 const sessionCookie = "remotecode_session";
 
@@ -42,6 +43,11 @@ export function sessionToken(request: Request) {
     }
   }
   return undefined;
+}
+
+export function sessionTokenHash(request: Request) {
+  const token = sessionToken(request);
+  return token ? tokenHash(token) : undefined;
 }
 
 function readSession(database: Database, token: string | undefined): Session | undefined {
@@ -88,7 +94,7 @@ export function isAuthenticated(databasePath: string, request: Request) {
 export function authFeature(
   databasePath: string,
   config: AuthConfig = {},
-  revokeSessions: (userId: string) => void = () => {},
+  revokeSessions: (userId: string, sessionHash?: string) => void = () => {},
 ) {
   let database: Database | undefined;
   try {
@@ -100,51 +106,89 @@ export function authFeature(
         expires_at INTEGER NOT NULL
       )
     `);
+    initializeAuthRequests(database);
   } catch {
     // Liveness remains available; auth requests fail closed if storage is unavailable.
   } finally {
     database?.close();
   }
 
+  function credentialError(request: Request, peer: string | undefined, password: string) {
+    if (!usesHttps(request) && !isLoopbackPeer(peer)) return { status: 403 as const, error: "https_required" as const };
+    if (!config.password || config.password.length < 16) return { status: 503 as const, error: "host_auth_not_configured" as const };
+    const actual = createHash("sha256").update(password).digest();
+    const expected = createHash("sha256").update(config.password).digest();
+    if (!timingSafeEqual(actual, expected)) return { status: 401 as const, error: "unauthorized" as const };
+    return null;
+  }
+
+  const passwordSchema = t.String({ minLength: 1, maxLength: 1024 });
+  const requestIdSchema = t.Transform(t.String({ format: "uuid", minLength: 36, maxLength: 36 }))
+    .Decode((value) => value.toLowerCase())
+    .Encode((value) => value.toLowerCase());
   const ttl = config.sessionTtlMs ?? 24 * 60 * 60 * 1000;
   return new Elysia()
+    .onBeforeHandle(({ set }) => { set.headers["cache-control"] = "no-store"; })
+    .onError(({ code, set }) => {
+      if (code === "VALIDATION") {
+        set.status = 422;
+        return { error: "invalid_auth_request" as const };
+      }
+    })
     .post(
       "/api/auth/login",
       ({ body, set, request, server }) => {
-        if (!usesHttps(request) && !isLoopbackPeer(server?.requestIP(request)?.address)) {
-          set.status = 403;
-          return { error: "https_required" as const };
-        }
-        if (!config.password || config.password.length < 16) {
-          set.status = 503;
-          return { error: "host_auth_not_configured" as const };
-        }
-        const actual = createHash("sha256").update(body.password).digest();
-        const expected = createHash("sha256").update(config.password).digest();
-        if (!timingSafeEqual(actual, expected)) {
-          set.status = 401;
-          return { error: "unauthorized" as const };
+        const rejected = credentialError(request, server?.requestIP(request)?.address, body.password);
+        if (rejected) {
+          set.status = rejected.status;
+          return { error: rejected.error };
         }
         if (!Number.isFinite(ttl) || ttl < 1000) {
           set.status = 503;
           return { error: "invalid_session_lifetime" as const };
         }
-
-        const token = randomBytes(32).toString("hex");
-        const expiresAt = Date.now() + ttl;
         const connection = openDatabase(databasePath);
-        try {
-          connection.query(
-            "INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)",
-          ).run(tokenHash(token), "local", expiresAt);
-        } finally {
-          connection.close();
+        const result = (() => {
+          try {
+            return connection.transaction(() => {
+              if (body.requestId) {
+                const previous = readAuthRequest(connection, "local", body.requestId);
+                if (previous) return { receipt: authReceipt(previous), token: undefined, expiresAt: previous.expiresAt };
+              }
+              const token = randomBytes(32).toString("hex");
+              const now = Date.now();
+              const expiresAt = new Date(now + ttl).toISOString();
+              connection.query("INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)")
+                .run(tokenHash(token), "local", now + ttl);
+              let receipt: AuthReceipt | undefined;
+              if (body.requestId) {
+                receipt = {
+                  requestId: body.requestId, kind: "login", targetRequestId: null,
+                  outcome: "session_created", createdAt: new Date(now).toISOString(), expiresAt,
+                };
+                insertAuthRequest(connection, "local", receipt, tokenHash(token));
+              }
+              return { receipt, token, expiresAt };
+            }).immediate();
+          } finally { connection.close(); }
+        })();
+        if (result.receipt && result.receipt.kind !== "login") {
+          set.status = 409;
+          return { error: "request_id_conflict" as const };
         }
-        const secure = usesHttps(request) ? "; Secure" : "";
-        set.headers["set-cookie"] = `${sessionCookie}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${Math.floor(ttl / 1000)}${secure}`;
-        return { userId: "local", expiresAt: new Date(expiresAt).toISOString() };
+        if (result.receipt?.outcome === "closed_before_acceptance") {
+          set.status = 409;
+          return { error: "login_request_closed" as const, receipt: result.receipt };
+        }
+        if (result.token) {
+          const secure = usesHttps(request) ? "; Secure" : "";
+          set.headers["set-cookie"] = `${sessionCookie}=${result.token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${Math.floor(ttl / 1000)}${secure}`;
+        }
+        return result.receipt
+          ? { userId: "local", expiresAt: result.expiresAt, receipt: result.receipt }
+          : { userId: "local", expiresAt: result.expiresAt };
       },
-      { body: t.Object({ password: t.String({ minLength: 1, maxLength: 1024 }) }) },
+      { body: t.Object({ password: passwordSchema, requestId: t.Optional(requestIdSchema) }) },
     )
     .get("/api/auth/session", ({ request, set }) => {
       const connection = openDatabase(databasePath);
@@ -154,28 +198,122 @@ export function authFeature(
           set.status = 401;
           return { error: "unauthorized" as const };
         }
-        return { userId: session.userId };
-      } finally {
-        connection.close();
-      }
+        const login = connection.query<{ requestId: string }, [string, string]>(
+          "SELECT request_id AS requestId FROM auth_requests WHERE user_id = ? AND session_token_hash = ? AND kind = 'login'",
+        ).get(session.userId, sessionTokenHash(request)!);
+        return login ? { userId: session.userId, loginRequestId: login.requestId } : { userId: session.userId };
+      } finally { connection.close(); }
     })
-    .post("/api/auth/logout", ({ request, set }) => {
-      const token = sessionToken(request);
-      if (token) {
-        const connection = openDatabase(databasePath);
-        let userId: string | undefined;
-        try {
-          userId = readSession(connection, token)?.userId;
-          if (userId) {
-            revokeSessions(userId);
-            connection.query("DELETE FROM sessions WHERE user_id = ?").run(userId);
-          }
-        } finally {
-          connection.close();
+    .post("/api/auth/receipts/:requestId/lookup", ({ params, body, request, server, set }) => {
+      let userId: string | undefined;
+      if (body?.password !== undefined) {
+        const rejected = credentialError(request, server?.requestIP(request)?.address, body.password);
+        if (rejected) {
+          set.status = rejected.status;
+          return { error: rejected.error };
         }
+        userId = "local";
+      } else userId = sessionUserId(databasePath, request);
+      if (!userId) {
+        set.status = 401;
+        return { error: "unauthorized" as const };
       }
+      const connection = openDatabase(databasePath);
+      try {
+        const record = readAuthRequest(connection, userId, params.requestId);
+        if (!record) {
+          set.status = 404;
+          return { error: "receipt_not_found" as const };
+        }
+        const active = record.sessionTokenHash && connection.query<{ active: number }, [string, string, number]>(
+          "SELECT 1 AS active FROM sessions WHERE token_hash = ? AND user_id = ? AND expires_at > ?",
+        ).get(record.sessionTokenHash, userId, Date.now());
+        const sessionStatus = record.kind === "login" ? (active ? "active" as const : "inactive" as const) : "not_applicable" as const;
+        return { receipt: authReceipt(record), sessionStatus };
+      } finally { connection.close(); }
+    }, { params: t.Object({ requestId: requestIdSchema }), body: t.Optional(t.Object({ password: t.Optional(passwordSchema) })) })
+    .post("/api/auth/login/:loginRequestId/revoke", ({ params, body, request, server, set }) => {
+      const rejected = credentialError(request, server?.requestIP(request)?.address, body.password);
+      if (rejected) {
+        set.status = rejected.status;
+        return { error: rejected.error };
+      }
+      if (body.requestId === params.loginRequestId) {
+        set.status = 409;
+        return { error: "request_id_conflict" as const };
+      }
+      const connection = openDatabase(databasePath);
+      const result = (() => {
+        try {
+          return connection.transaction(() => {
+            const previous = readAuthRequest(connection, "local", body.requestId);
+            if (previous) return { receipt: authReceipt(previous), sessionHash: null };
+            const target = readAuthRequest(connection, "local", params.loginRequestId);
+            if (target && target.kind !== "login") return null;
+            const createdAt = new Date().toISOString();
+            if (!target) {
+              const fence: AuthReceipt = {
+                requestId: params.loginRequestId, kind: "login", targetRequestId: null,
+                outcome: "closed_before_acceptance", createdAt, expiresAt: null,
+              };
+              insertAuthRequest(connection, "local", fence);
+            } else if (target.sessionTokenHash) {
+              connection.query("DELETE FROM sessions WHERE user_id = ? AND token_hash = ?").run("local", target.sessionTokenHash);
+            }
+            const receipt: AuthReceipt = {
+              requestId: body.requestId, kind: "revoke_login", targetRequestId: params.loginRequestId,
+              outcome: "login_revoked", createdAt, expiresAt: null,
+            };
+            insertAuthRequest(connection, "local", receipt);
+            return { receipt, sessionHash: target?.sessionTokenHash ?? null };
+          }).immediate();
+        } finally { connection.close(); }
+      })();
+      if (!result || result.receipt.kind !== "revoke_login" || result.receipt.targetRequestId !== params.loginRequestId) {
+        set.status = 409;
+        return { error: "request_id_conflict" as const };
+      }
+      if (result.sessionHash) revokeSessions("local", result.sessionHash);
+      return result.receipt;
+    }, { params: t.Object({ loginRequestId: requestIdSchema }), body: t.Object({ password: passwordSchema, requestId: requestIdSchema }) })
+    .post("/api/auth/logout", ({ body, request, set }) => {
+      const requestId = body?.requestId;
+      const token = sessionToken(request);
+      const connection = token ? openDatabase(databasePath) : undefined;
+      const result = (() => {
+        if (!connection) return null;
+        try {
+          return connection.transaction(() => {
+            const userId = readSession(connection, token)?.userId;
+            if (!userId) return null;
+            if (requestId) {
+              const previous = readAuthRequest(connection, userId, requestId);
+              if (previous) return { userId, changed: false, receipt: authReceipt(previous) };
+            }
+            let receipt: AuthReceipt | undefined;
+            if (requestId) {
+              receipt = { requestId, kind: "logout", targetRequestId: null, outcome: "sessions_revoked", createdAt: new Date().toISOString(), expiresAt: null };
+              insertAuthRequest(connection, userId, receipt);
+            }
+            connection.query("DELETE FROM sessions WHERE user_id = ?").run(userId);
+            return { userId, changed: true, receipt };
+          }).immediate();
+        } finally { connection.close(); }
+      })();
+      if (requestId && !result) {
+        set.status = 401;
+        return { error: "unauthorized" as const };
+      }
+      if (result?.receipt && result.receipt.kind !== "logout") {
+        set.status = 409;
+        return { error: "request_id_conflict" as const };
+      }
+      if (result?.changed) revokeSessions(result.userId);
+      if (result?.changed || !requestId) {
+        const secure = usesHttps(request) ? "; Secure" : "";
+        set.headers["set-cookie"] = `${sessionCookie}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${secure}`;
+      }
+      if (result?.receipt) return result.receipt;
       set.status = 204;
-      const secure = usesHttps(request) ? "; Secure" : "";
-      set.headers["set-cookie"] = `${sessionCookie}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${secure}`;
-    });
+    }, { body: t.Optional(t.Object({ requestId: t.Optional(requestIdSchema) })) });
 }
