@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-09-27
+
+- **RC-016 complete, including native iOS proof:** A tracked Expo config plugin now generates a native UI-test target from the ignored iOS project. The Release simulator journey signed in, received a live event, submitted a second action, matched both displayed receipt IDs to API/SQLite records, and verified logout revocation. The rerunnable command passed 1/1 XCUITest and confirmed two durable actions with zero remaining sessions. An unsigned app archive also succeeded. The prior/current compatibility and invalid-before-write proofs remain from the existing browser/API checkpoint; hosted/self-managed policy is implemented, while deployed services are not claimed. RC-017 is the next eligible task. Full evidence: `plan/checkpoint-evidence.md#rc-016-native-client-and-compatibility-acceptance--2026-09-27`.
+- **X update:** Posted once at https://x.com/samfajreldines/status/2104053068912275554 after a fresh timeline check. Readback returned the exact post at 2026-09-27T03:38:37Z. The browser tool could not confirm tab removal (`closed:false`, then `hasTab:false`); no force-close or retry was performed.
+
 ## 2026-09-26
 
 - **Native-proof assessment checkpoint published:** Commit `ebdb66250ffcf047c621d61a3408a77780515f2d` is confirmed on `origin/checkpoint/rc002-linux-runtime-evidence` and as the open PR #2 head. GitHub runs `36288453980` and `36288456070` both passed `static` and `test` for that exact SHA (four successful jobs). This is handoff-only evidence; RC-016 remains partial and its native journey is unverified. The next proposed route remains a tracked XCUITest harness, not an existing capability. See `plan/checkpoint-evidence.md#native-ui-automation-route-assessment--2026-09-26`.
