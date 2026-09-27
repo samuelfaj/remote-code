@@ -1,12 +1,12 @@
 import { expect, it } from "bun:test";
 import { Database } from "bun:sqlite";
 import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createNativeRecoveryTestApi } from "./native-recovery";
 
-const scratch = process.env.RC_NATIVE_TEST_WORK_DIR;
+const scratch = process.env.RC_NATIVE_TEST_WORK_DIR ?? tmpdir();
 it("native auth faults lose transport evidence, not real committed effects; fencing blocks delayed login", async () => {
-  if (!scratch) throw new Error("Set RC_NATIVE_TEST_WORK_DIR to owned scratch");
   const directory = mkdtempSync(join(scratch, "auth-fixture-"));
   const databasePath = join(directory, "host.sqlite");
   const password = "native-auth-fixture-password";
@@ -62,7 +62,6 @@ it("native auth faults lose transport evidence, not real committed effects; fenc
 });
 
 it("synthetic 401 after a real commit is not authoritative rejection of login or revocation", async () => {
-  if (!scratch) throw new Error("Set RC_NATIVE_TEST_WORK_DIR to owned scratch");
   const directory = mkdtempSync(join(scratch, "auth-401-fixture-"));
   const databasePath = join(directory, "host.sqlite");
   const password = "native-auth-fixture-password";
