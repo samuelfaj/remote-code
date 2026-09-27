@@ -623,3 +623,230 @@ test("Linux guest and external browsers observe receipts from the same backend",
   expect(guestReceipt).toBe(guestCreated.receiptId);
   expect(await confirmedIds(page)).toContainEqual(expect.objectContaining({ id: guestReceipt, action: guestAction }));
 });
+
+test("recovers an ambiguous action by its retained ID after reload without another POST", async ({ page }, testInfo) => {
+  const pageErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  let requestId = "";
+  let posts = 0;
+  await page.routeWebSocket("**/api/events*", (socket) => {
+    const server = socket.connectToServer();
+    socket.onMessage((message) => server.send(message));
+    server.onMessage((message) => {
+      if (JSON.parse(String(message)).type !== "action.created") socket.send(message);
+    });
+  });
+  await page.route("**/api/actions", async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    posts++;
+    requestId = route.request().postDataJSON().requestId;
+    expect((await route.fetch()).status()).toBe(201);
+    await route.abort("failed");
+  });
+  await signIn(page);
+  const action = `recover by stable identity ${crypto.randomUUID()}`;
+  await page.getByLabel("Action description").fill(action);
+  await page.getByRole("button", { name: "Write backend receipt" }).click();
+  await expect(page.getByTestId("pending-action")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Check action receipt" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Write backend receipt" })).toBeDisabled();
+  expect(requestId).toMatch(/^[0-9a-f-]{36}$/);
+  expect(await page.evaluate(() => sessionStorage.getItem("remotecode.pending-action:local"))).toBe(requestId);
+  await page.screenshot({ path: testInfo.outputPath("pending-desktop.png"), fullPage: true });
+  await page.reload();
+  await expect(page.getByTestId("connection-status")).toHaveText("Live updates connected");
+  await expect(page.getByTestId("pending-action")).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: testInfo.outputPath("pending-mobile.png"), fullPage: true });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  const recoveredResponse = page.waitForResponse((response) =>
+    new URL(response.url()).pathname === `/api/actions/receipts/${requestId}` && response.request().method() === "GET");
+  await page.getByRole("button", { name: "Check action receipt" }).click();
+  const recovered = await recoveredResponse;
+  expect(recovered.status()).toBe(200);
+  const canonical = await recovered.json();
+  await expect(page.getByTestId("action-recovery-status")).toContainText(canonical.id);
+  await expect(page.getByTestId("latest-receipt")).toContainText(canonical.id);
+  await expect(page.getByTestId("pending-action")).toHaveCount(0);
+  expect(await page.evaluate(() => sessionStorage.getItem("remotecode.pending-action:local"))).toBeNull();
+  await expect(page.getByRole("button", { name: "Write backend receipt" })).toBeEnabled();
+  expect((await confirmedIds(page)).filter((item) => item.action === action)).toEqual([
+    { id: canonical.id, action, createdAt: expect.any(String) },
+  ]);
+  expect(posts).toBe(1);
+  expect(pageErrors).toEqual([]);
+  await page.screenshot({ path: testInfo.outputPath("recovered-mobile.png"), fullPage: true });
+});
+
+test("a missing or unavailable receipt never enables resubmission of an ambiguous action", async ({ page }) => {
+  let posts = 0;
+  let requestId = "";
+  await page.route("**/api/actions", async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    posts++;
+    requestId = route.request().postDataJSON().requestId;
+    await route.abort("failed");
+  });
+  await signIn(page);
+  await page.getByRole("button", { name: "Write backend receipt" }).click();
+  await expect(page.getByRole("button", { name: "Check action receipt" })).toBeEnabled();
+  await page.getByRole("button", { name: "Check action receipt" }).click();
+  await expect(page.getByTestId("action-recovery-status")).toContainText("No receipt is confirmed yet");
+  await expect(page.getByRole("button", { name: "Write backend receipt" })).toBeDisabled();
+  const route = `**/api/actions/receipts/${requestId}`;
+  await page.route(route, (request) => request.abort("failed"));
+  await page.getByRole("button", { name: "Check action receipt" }).click();
+  await expect(page.getByTestId("action-recovery-status")).toContainText("could not check");
+  await expect(page.getByRole("button", { name: "Write backend receipt" })).toBeDisabled();
+  await page.unroute(route);
+  await page.getByRole("button", { name: "Check action receipt" }).click();
+  await expect(page.getByTestId("action-recovery-status")).toContainText("No receipt is confirmed yet");
+  expect(posts).toBe(1);
+});
+
+test("a receipt response after logout cannot restore private UI, and the same user can recover after signing in", async ({ page }) => {
+  let requestId = "";
+  let posts = 0;
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  let lookupStarted!: () => void;
+  const started = new Promise<void>((resolve) => { lookupStarted = resolve; });
+  await page.route("**/api/actions", async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    posts++;
+    requestId = route.request().postDataJSON().requestId;
+    await route.fetch();
+    await route.abort("failed");
+  });
+  await signIn(page);
+  const action = `late recovery ${crypto.randomUUID()}`;
+  await page.getByLabel("Action description").fill(action);
+  await page.getByRole("button", { name: "Write backend receipt" }).click();
+  await expect(page.getByRole("button", { name: "Check action receipt" })).toBeEnabled();
+  const routePattern = `**/api/actions/receipts/${requestId}`;
+  await page.route(routePattern, async (route) => {
+    const response = await route.fetch();
+    lookupStarted();
+    await held;
+    await route.fulfill({ response });
+  });
+  try {
+    await page.getByRole("button", { name: "Check action receipt" }).click();
+    await started;
+    await expect(page.getByRole("button", { name: "Checking receipt…" })).toBeDisabled();
+    await page.getByRole("button", { name: "Sign out", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Sign in to your host" })).toBeVisible();
+    const response = page.waitForResponse((result) => new URL(result.url()).pathname === `/api/actions/receipts/${requestId}`);
+    release();
+    await response;
+    await expect(page.getByTestId("action-recovery-status")).toHaveCount(0);
+    await expect(page.getByText(action, { exact: true })).toHaveCount(0);
+    await page.unroute(routePattern);
+    await page.getByLabel("Host passphrase").fill(authPassword);
+    await page.getByRole("button", { name: "Sign in", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Check action receipt" })).toBeEnabled();
+    await page.getByRole("button", { name: "Check action receipt" }).click();
+    await expect(page.getByTestId("action-recovery-status")).toContainText("Confirmed receipt");
+    expect(posts).toBe(1);
+  } finally { release(); }
+});
+
+test("requires host recovery support and durable tab storage before submitting an action", async ({ page }) => {
+  let posts = 0;
+  page.on("request", (request) => { if (request.method() === "POST" && new URL(request.url()).pathname === "/api/actions") posts++; });
+  await page.route("**/api/version", (route) => route.fulfill({ json: { apiVersion: 1, capabilities: ["action-receipts", "event-snapshots-v1"] } }));
+  await signIn(page);
+  await page.getByRole("button", { name: "Write backend receipt" }).click();
+  await expect(page.getByText("Update the host to support action receipt recovery. No action was sent.")).toBeVisible();
+  expect(posts).toBe(0);
+  await page.unroute("**/api/version");
+  await page.evaluate(() => { Storage.prototype.setItem = () => { throw new Error("storage unavailable"); }; });
+  await page.getByRole("button", { name: "Write backend receipt" }).click();
+  await expect(page.getByText("Browser storage is unavailable. No action was sent.")).toBeVisible();
+  expect(posts).toBe(0);
+});
+
+test("a real client timeout preserves its pending ID and recovers the committed action without replay", async ({ page }) => {
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  let completed!: () => void;
+  const finished = new Promise<void>((resolve) => { completed = resolve; });
+  let intercepted = false;
+  let posts = 0;
+  let requestId = "";
+  await page.route("**/api/actions", async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    intercepted = true;
+    posts++;
+    requestId = route.request().postDataJSON().requestId;
+    const response = await route.fetch();
+    await held;
+    try { await route.fulfill({ response }); } finally { completed(); }
+  });
+  try {
+    await signIn(page);
+    const action = `recover real timeout ${crypto.randomUUID()}`;
+    await page.getByLabel("Action description").fill(action);
+    await page.getByRole("button", { name: "Write backend receipt" }).click();
+    await expect(page.getByTestId("action-recovery-status")).toContainText("outcome is unknown", { timeout: 15_000 });
+    expect(requestId).toMatch(/^[0-9a-f-]{36}$/);
+    await page.getByRole("button", { name: "Check action receipt" }).click();
+    await expect(page.getByTestId("action-recovery-status")).toContainText("Confirmed receipt");
+    expect((await confirmedIds(page)).filter((item) => item.action === action)).toHaveLength(1);
+    expect(posts).toBe(1);
+  } finally {
+    release();
+    if (intercepted) await finished;
+    await page.unroute("**/api/actions");
+  }
+});
+
+test("receipt authorization failure requires a fresh snapshot before recovery can resume", async ({ page }) => {
+  let connections = 0;
+  let replacement!: import("@playwright/test").WebSocketRoute;
+  let heldSnapshot = "";
+  let snapshotSeen!: () => void;
+  const snapshotReady = new Promise<void>((resolve) => { snapshotSeen = resolve; });
+  let released = false;
+  let posts = 0;
+  await page.routeWebSocket("**/api/events*", (socket) => {
+    const index = ++connections;
+    const server = socket.connectToServer();
+    socket.onMessage((message) => server.send(message));
+    server.onMessage((message) => {
+      if (index > 1 && !released && JSON.parse(String(message)).type === "snapshot") {
+        replacement = socket;
+        heldSnapshot = String(message);
+        snapshotSeen();
+      } else socket.send(message);
+    });
+  });
+  await page.route("**/api/actions", async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    posts++;
+    await route.fetch();
+    await route.abort("failed");
+  });
+  await signIn(page);
+  await page.getByRole("button", { name: "Write backend receipt" }).click();
+  await expect(page.getByRole("button", { name: "Check action receipt" })).toBeEnabled();
+  await page.route("**/api/actions/receipts/*", async (route) => {
+    const response = await route.fetch({ headers: { ...route.request().headers(), cookie: "" } });
+    expect(response.status()).toBe(401);
+    await route.fulfill({ response });
+  });
+  await page.getByRole("button", { name: "Check action receipt" }).click();
+  await expect(page.getByRole("heading", { name: "Sign in to your host" })).toBeVisible();
+  await page.unroute("**/api/actions/receipts/*");
+  await page.getByLabel("Host passphrase").fill(authPassword);
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await snapshotReady;
+  await expect(page.getByTestId("connection-status")).toHaveText("Synchronizing with Linux backend…");
+  await expect(page.getByRole("button", { name: "Check action receipt" })).toBeDisabled();
+  released = true;
+  replacement.send(heldSnapshot);
+  await expect(page.getByTestId("connection-status")).toHaveText("Live updates connected");
+  await page.getByRole("button", { name: "Check action receipt" }).click();
+  await expect(page.getByTestId("action-recovery-status")).toContainText("Confirmed receipt");
+  expect(posts).toBe(1);
+});

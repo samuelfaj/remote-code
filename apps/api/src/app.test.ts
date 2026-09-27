@@ -967,7 +967,7 @@ describe("Elysia action receipt", () => {
         hosted: { minimum: 0, maximum: 1 },
         selfManaged: { minimum: 0, maximum: 1 },
       },
-      capabilities: ["action-receipts", "event-snapshots-v1"],
+      capabilities: ["action-receipts", "event-snapshots-v1", "action-request-recovery-v1"],
     });
 
     const login = await app.handle(new Request("https://localhost/api/auth/login", {

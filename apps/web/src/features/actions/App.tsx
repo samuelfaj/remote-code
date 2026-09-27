@@ -66,17 +66,66 @@ export function App() {
   const [connectionFailed, setConnectionFailed] = useState(false);
   const [connectionAttempt, setConnectionAttempt] = useState(0);
   const [reconnecting, setReconnecting] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
+  const [actionPhase, setActionPhase] = useState<"sending" | "checking" | null>(null);
+  const submitting = actionPhase !== null;
   const [error, setError] = useState("");
+  const [sessionUserId, setSessionUserId] = useState<string | null>(null);
+  const [pendingRequestId, setPendingRequestId] = useState<string | null>(null);
+  const [recoveryMessage, setRecoveryMessage] = useState("");
+  const [recoveryStorageReady, setRecoveryStorageReady] = useState(false);
+  const actionBusy = useRef(false);
   const authEpoch = useRef(0);
   const connectionGeneration = useRef(0);
   const socketRef = useRef<WebSocket | null>(null);
+
+  function recoveryKey(userId: string) {
+    return `remotecode.pending-action:${userId}`;
+  }
+
+  function restoreActionRecovery(userId: string) {
+    setSessionUserId(userId);
+    setRecoveryMessage("");
+    try {
+      const requestId = sessionStorage.getItem(recoveryKey(userId));
+      if (requestId !== null && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(requestId)) {
+        throw new Error("Invalid pending action identity");
+      }
+      setPendingRequestId(requestId);
+      setRecoveryStorageReady(true);
+    } catch {
+      setPendingRequestId(null);
+      setRecoveryStorageReady(false);
+      setRecoveryMessage("Browser storage could not restore the pending action. Sending is disabled to avoid a duplicate.");
+    }
+  }
+
+  function clearActionRecoveryView() {
+    actionBusy.current = false;
+    setSessionUserId(null);
+    setPendingRequestId(null);
+    setRecoveryStorageReady(false);
+    setRecoveryMessage("");
+  }
+
+  function forgetPendingAction(userId: string, requestId: string) {
+    try {
+      const key = recoveryKey(userId);
+      if (sessionStorage.getItem(key) !== requestId) return false;
+      sessionStorage.removeItem(key);
+      if (sessionStorage.getItem(key) !== null) return false;
+      setPendingRequestId(null);
+      return true;
+    } catch {
+      return false;
+    }
+  }
 
   useEffect(() => {
     let active = true;
     void api.api.auth.session.get().then(({ data, error: sessionError }) => {
       if (!active) return;
       setAuthenticated(!sessionError && Boolean(data && !("error" in data)));
+      if (!sessionError && data && typeof data.userId === "string") restoreActionRecovery(data.userId);
       if (isUnsupportedClientVersion(sessionError)) setError(compatibilityMessage);
     }).finally(() => {
       if (active) setCheckingSession(false);
@@ -102,7 +151,9 @@ export function App() {
     function expireSynchronization() {
       if (!isCurrent() || synchronized) return;
       setConnected(false);
-      setSubmitting(false);
+      setActionPhase(null);
+      actionBusy.current = false;
+      setRecoveryMessage("");
       eventStateRef.current = emptyActionEventState();
       setEventState(eventStateRef.current);
       socket.close(4000, "snapshot timeout");
@@ -116,13 +167,16 @@ export function App() {
       socketRef.current = null;
       setConnected(false);
       setConnectionFailed(event.code !== 4401);
-      setSubmitting(false);
+      setActionPhase(null);
+      actionBusy.current = false;
+      setRecoveryMessage("");
       eventStateRef.current = emptyActionEventState();
       setEventState(eventStateRef.current);
       if (event.code === 4401) {
         authEpoch.current += 1;
         setReconnecting(false);
         setAuthenticated(false);
+        clearActionRecoveryView();
         setError("The host session expired or was revoked.");
       } else if (event.code === 4406) {
         setError(compatibilityMessage);
@@ -143,7 +197,9 @@ export function App() {
       } catch {
         setConnected(false);
         setConnectionFailed(true);
-        setSubmitting(false);
+        setActionPhase(null);
+        actionBusy.current = false;
+        setRecoveryMessage("");
         eventStateRef.current = emptyActionEventState();
         setEventState(eventStateRef.current);
         setError("The host sent an invalid live update.");
@@ -154,7 +210,9 @@ export function App() {
       if (!result.validMessage) {
         setConnected(false);
         setConnectionFailed(true);
-        setSubmitting(false);
+        setActionPhase(null);
+        actionBusy.current = false;
+        setRecoveryMessage("");
         eventStateRef.current = emptyActionEventState();
         setEventState(eventStateRef.current);
         setError("The host sent an invalid live update.");
@@ -202,6 +260,7 @@ export function App() {
       return;
     }
     setPassword("");
+    restoreActionRecovery(data.userId);
     setAuthenticated(true);
   }
 
@@ -211,10 +270,11 @@ export function App() {
     socketRef.current?.close();
     socketRef.current = null;
     setAuthenticated(false);
+    clearActionRecoveryView();
     setConnected(false);
     setConnectionFailed(false);
     setReconnecting(false);
-    setSubmitting(false);
+    setActionPhase(null);
     eventStateRef.current = emptyActionEventState();
     setEventState(eventStateRef.current);
     const { error: requestError } = await api.api.auth.logout.post();
@@ -232,12 +292,14 @@ export function App() {
     if (requestError || !data || "error" in data) {
       authEpoch.current += 1;
       setAuthenticated(false);
+      clearActionRecoveryView();
       setConnectionFailed(false);
       eventStateRef.current = emptyActionEventState();
       setEventState(eventStateRef.current);
       setError(requestErrorMessage(requestError, "The host session expired or was revoked."));
       return;
     }
+    restoreActionRecovery(data.userId);
     setConnectionFailed(false);
     setError("");
     setConnectionAttempt((attempt) => attempt + 1);
@@ -245,19 +307,104 @@ export function App() {
 
   async function recordAction() {
     const value = action.trim();
-    if (!value || submitting) return;
+    if (!value || actionBusy.current || pendingRequestId || !connected || !sessionUserId || !recoveryStorageReady) return;
+    if (value.length > 120) {
+      setError("Use at most 120 characters for an action.");
+      return;
+    }
     const epoch = authEpoch.current;
     const generation = connectionGeneration.current;
-    setSubmitting(true);
+    const isCurrent = () => epoch === authEpoch.current && generation === connectionGeneration.current;
+    actionBusy.current = true;
+    setActionPhase("sending");
     setError("");
-    const { data, error: requestError } = await api.api.actions.post({ action: value });
-    if (epoch !== authEpoch.current || generation !== connectionGeneration.current) return;
-    if (requestError || !data || "error" in data) {
-      setError(requestErrorMessage(requestError, "The backend did not confirm this action."));
-    } else if (socketRef.current?.readyState === WebSocket.OPEN) {
-      socketRef.current.send(JSON.stringify({ type: "sync" }));
+    setRecoveryMessage("");
+    let requestId: string | undefined;
+    try {
+      const version = await api.api.version.get();
+      if (!isCurrent()) return;
+      if (version.error || !version.data || !Array.isArray(version.data.capabilities)
+        || !version.data.capabilities.includes("action-request-recovery-v1")) {
+        setError("Update the host to support action receipt recovery. No action was sent.");
+        return;
+      }
+      try {
+        const key = recoveryKey(sessionUserId);
+        if (sessionStorage.getItem(key) !== null) {
+          restoreActionRecovery(sessionUserId);
+          return;
+        }
+        requestId = crypto.randomUUID();
+        sessionStorage.setItem(key, requestId);
+        if (sessionStorage.getItem(key) !== requestId) throw new Error("Pending identity was not retained");
+      } catch {
+        setError("Browser storage is unavailable. No action was sent.");
+        return;
+      }
+      setPendingRequestId(requestId);
+      const { data, error: requestError } = await api.api.actions.post({ action: value, requestId });
+      if (!isCurrent()) return;
+      if (!requestError && data && "id" in data) {
+        const cleared = forgetPendingAction(sessionUserId, requestId);
+        setRecoveryMessage(cleared ? "" : `Confirmed receipt ${data.id}. Browser storage could not clear the pending identity; check the receipt again.`);
+        if (socketRef.current?.readyState === WebSocket.OPEN) socketRef.current.send(JSON.stringify({ type: "sync" }));
+      } else if (requestError && [401, 403, 422, 426].includes(requestError.status)) {
+        const cleared = forgetPendingAction(sessionUserId, requestId);
+        setError(requestErrorMessage(requestError, "The host rejected this action before acceptance."));
+        if (!cleared) setRecoveryMessage("Browser storage could not clear the rejected request. Sending remains disabled.");
+      } else {
+        setRecoveryMessage("The outcome is unknown. Check the action receipt before sending another action.");
+      }
+    } catch {
+      if (isCurrent()) setRecoveryMessage(requestId
+        ? "The outcome is unknown. Check the action receipt before sending another action."
+        : "The host could not be checked. No action was sent.");
+    } finally {
+      if (isCurrent()) {
+        actionBusy.current = false;
+        setActionPhase(null);
+      }
     }
-    setSubmitting(false);
+  }
+
+  async function checkActionReceipt() {
+    if (!pendingRequestId || !sessionUserId || !connected || actionBusy.current) return;
+    const epoch = authEpoch.current;
+    const generation = connectionGeneration.current;
+    const isCurrent = () => epoch === authEpoch.current && generation === connectionGeneration.current;
+    actionBusy.current = true;
+    setActionPhase("checking");
+    setRecoveryMessage("");
+    try {
+      const { data, error: requestError, status } = await api.api.actions.receipts({ requestId: pendingRequestId }).get();
+      if (!isCurrent()) return;
+      if (!requestError && data && "id" in data) {
+        const cleared = forgetPendingAction(sessionUserId, pendingRequestId);
+        setRecoveryMessage(`Confirmed receipt ${data.id}.${cleared ? "" : " Browser storage could not clear the pending identity; check the receipt again."}`);
+        if (socketRef.current?.readyState === WebSocket.OPEN) socketRef.current.send(JSON.stringify({ type: "sync" }));
+      } else if (status === 401) {
+        authEpoch.current += 1;
+        setAuthenticated(false);
+        setConnected(false);
+        setConnectionFailed(false);
+        clearActionRecoveryView();
+        eventStateRef.current = emptyActionEventState();
+        setEventState(eventStateRef.current);
+        setActionPhase(null);
+        setError("The host session expired or was revoked.");
+      } else {
+        setRecoveryMessage(status === 404
+          ? "No receipt is confirmed yet. The outcome is still unknown; check again later without resending."
+          : requestErrorMessage(requestError, "The host could not check the receipt. The outcome is still unknown."));
+      }
+    } catch {
+      if (isCurrent()) setRecoveryMessage("The host could not check the receipt. The outcome is still unknown.");
+    } finally {
+      if (isCurrent()) {
+        actionBusy.current = false;
+        setActionPhase(null);
+      }
+    }
   }
 
   if (checkingSession) return <Text accessibilityRole="text">Checking host session…</Text>;
@@ -335,13 +482,28 @@ export function App() {
           />
           <Pressable
             accessibilityRole="button"
-            accessibilityState={{ disabled: submitting || !connected }}
-            disabled={submitting || !connected}
+            accessibilityState={{ disabled: submitting || !connected || Boolean(pendingRequestId) || !recoveryStorageReady }}
+            disabled={submitting || !connected || Boolean(pendingRequestId) || !recoveryStorageReady}
             onPress={recordAction}
-            style={({ pressed }) => [styles.button, pressed && styles.pressed, (submitting || !connected) && styles.disabled]}
+            style={({ pressed }) => [styles.button, pressed && styles.pressed, (submitting || !connected || Boolean(pendingRequestId) || !recoveryStorageReady) && styles.disabled]}
           >
-            <Text style={styles.buttonText}>{submitting ? "Saving…" : "Write backend receipt"}</Text>
+            <Text style={styles.buttonText}>{actionPhase === "sending" ? "Saving…" : "Write backend receipt"}</Text>
           </Pressable>
+          {pendingRequestId ? (
+            <View testID="pending-action" style={styles.recovery}>
+              <Text style={styles.empty}>An action is awaiting confirmation. Check its receipt; this will not resend it.</Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityState={{ disabled: submitting || !connected }}
+                disabled={submitting || !connected}
+                onPress={() => void checkActionReceipt()}
+                style={[styles.button, (submitting || !connected) && styles.disabled]}
+              >
+                <Text style={styles.buttonText}>{actionPhase === "checking" ? "Checking receipt…" : "Check action receipt"}</Text>
+              </Pressable>
+            </View>
+          ) : null}
+          {recoveryMessage ? <Text testID="action-recovery-status" accessibilityRole="text" aria-live="polite" style={styles.empty}>{recoveryMessage}</Text> : null}
           {error ? <Text accessibilityRole="text" aria-live="assertive" style={styles.error}>{error}</Text> : null}
         </View>
 
@@ -389,6 +551,7 @@ const styles = StyleSheet.create({
   disabled: { opacity: 0.55 },
   buttonText: { color: "#fff", fontSize: 15, fontWeight: "750" },
   error: { color: "#a52d20", fontSize: 14 },
+  recovery: { gap: 12 },
   receiptAction: { color: "#183337", fontSize: 17, fontWeight: "750" },
   receiptId: { color: "#476361", fontFamily: "monospace", fontSize: 12 },
   timestamp: { color: "#647d78", fontSize: 12 },
