@@ -11,6 +11,17 @@ private struct ActionHistory: Decodable {
     let actions: [ActionReceipt]
 }
 
+private struct AuthReceiptLookup: Decodable {
+    struct Receipt: Decodable {
+        let requestId: String
+        let kind: String
+        let outcome: String
+        let targetRequestId: String?
+    }
+    let receipt: Receipt
+    let sessionStatus: String
+}
+
 final class RemoteCodeMobileProofUITests: XCTestCase {
     override func setUpWithError() throws {
         try super.setUpWithError()
@@ -150,6 +161,195 @@ final class RemoteCodeMobileProofUITests: XCTestCase {
     }
 
     @MainActor
+    func testAuthBeforeAcceptanceRequiresFenceBeforeNewLogin() async throws {
+        let observer = URLSession(configuration: .ephemeral)
+        try await observer.signIn(at: api, password: password)
+        try await armAuthFault("login-before", using: observer)
+        let app = XCUIApplication(bundleIdentifier: "com.remotecode.mobileproof")
+        app.launch()
+        enterPassword(app)
+        app.buttons["Sign in to host"].tap()
+        let recovery = app.staticTexts.matching(identifier: "auth-recovery-status").firstMatch
+        XCTAssertTrue(recovery.waitForLabelContaining("unknown", timeout: 20))
+        app.buttons["Check auth receipt"].tap()
+        XCTAssertTrue(recovery.waitForLabelContaining("No auth receipt", timeout: 15))
+        XCTAssertFalse(app.buttons["Sign in to host"].isEnabled, "Missing receipt is not proof of rollback")
+        let (data, _) = try await observer.data(from: URL(string: "/__test__/auth-diagnostics", relativeTo: api)!)
+        let diagnostics = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let oldId = try XCTUnwrap(diagnostics["loginRequestId"] as? String)
+        app.buttons["Revoke old login"].tap()
+        XCTAssertTrue(recovery.waitForLabelContaining("revocation confirmed", timeout: 15))
+        var delayed = URLRequest(url: URL(string: "/api/auth/login", relativeTo: api)!)
+        delayed.httpMethod = "POST"
+        delayed.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        delayed.httpBody = try JSONSerialization.data(withJSONObject: ["password": password, "requestId": oldId])
+        let (_, response) = try await observer.data(for: delayed)
+        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 409, "A delayed original login must be fenced at the real API")
+        app.buttons["Sign in to host"].tap()
+        XCTAssertTrue(app.staticTexts.matching(identifier: "connection-status").firstMatch.waitForLabel("connected", timeout: 15))
+        app.buttons["Sign out"].tap()
+        XCTAssertTrue(app.staticTexts.matching(identifier: "connection-status").firstMatch.waitForLabel("signed out", timeout: 15))
+    }
+
+    @MainActor
+    func testAuthSynthetic401AfterCommitKeepsOriginalPendingIdentity() async throws {
+        let app = XCUIApplication(bundleIdentifier: "com.remotecode.mobileproof")
+        let observer = URLSession(configuration: .ephemeral)
+        try await observer.signIn(at: api, password: password)
+        let diagnosticsURL = URL(string: "/__test__/auth-diagnostics", relativeTo: api)!
+        func counters() async throws -> [String: Any] {
+            let (data, response) = try await observer.data(from: diagnosticsURL)
+            XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
+            return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        }
+        let initial = try await counters()
+        try await armAuthFault("login-401", using: observer)
+        app.launch()
+        enterPassword(app)
+        app.buttons["Sign in to host"].tap()
+        let recovery = app.staticTexts.matching(identifier: "auth-recovery-status").firstMatch
+        XCTAssertTrue(recovery.waitForLabelContaining("unknown", timeout: 20), "Synthetic 401 must not erase a committed login identity")
+        XCTAssertTrue(app.buttons["Check auth receipt"].exists)
+        XCTAssertFalse(app.buttons["Sign in to host"].isEnabled)
+        let afterLogin = try await counters()
+        XCTAssertEqual(afterLogin["loginPosts"] as? Int, (initial["loginPosts"] as? Int ?? 0) + 1)
+        let loginId = try XCTUnwrap(afterLogin["loginRequestId"] as? String)
+        let loginLookup = try await observer.lookupAuthReceipt(at: api, requestId: loginId, password: password)
+        XCTAssertEqual(loginLookup.receipt.outcome, "session_created", "The real host created the session despite synthetic 401")
+        XCTAssertEqual(loginLookup.sessionStatus, "active")
+        app.terminate()
+        app.launch()
+        enterPassword(app)
+        app.buttons["Check auth receipt"].tap()
+        XCTAssertTrue(recovery.waitForLabelContaining("matching cookie is not confirmed", timeout: 15))
+        try await armAuthFault("revoke-401", using: observer)
+        app.buttons["Revoke old login"].tap()
+        XCTAssertTrue(recovery.waitForLabelContaining("unknown", timeout: 20), "Synthetic 401 must not replace a committed revocation identity with the old login")
+        XCTAssertTrue(app.buttons["Check auth receipt"].exists)
+        XCTAssertFalse(app.buttons["Sign in to host"].isEnabled)
+        let afterRevoke = try await counters()
+        XCTAssertEqual(afterRevoke["revokePosts"] as? Int, (initial["revokePosts"] as? Int ?? 0) + 1)
+        let revokeId = try XCTUnwrap(afterRevoke["revokeRequestId"] as? String)
+        XCTAssertNotEqual(revokeId, loginId)
+        let revokeLookup = try await observer.lookupAuthReceipt(at: api, requestId: revokeId, password: password)
+        XCTAssertEqual(revokeLookup.receipt.targetRequestId, loginId)
+        XCTAssertEqual(revokeLookup.receipt.outcome, "login_revoked")
+        app.terminate()
+        app.launch()
+        enterPassword(app)
+        app.buttons["Check auth receipt"].tap()
+        XCTAssertTrue(recovery.waitForLabelContaining("revocation confirmed", timeout: 15))
+        XCTAssertTrue(app.buttons["Sign in to host"].isEnabled)
+        let verified = try await counters()
+        XCTAssertEqual(verified["loginPosts"] as? Int, (initial["loginPosts"] as? Int ?? 0) + 1, "Receipt reads must not replay the original login")
+        XCTAssertEqual(verified["revokePosts"] as? Int, (initial["revokePosts"] as? Int ?? 0) + 1, "Receipt reads must not replay the revocation")
+        app.buttons["Sign in to host"].tap()
+        XCTAssertTrue(app.staticTexts.matching(identifier: "connection-status").firstMatch.waitForLabel("connected", timeout: 15))
+        app.buttons["Sign out"].tap()
+        XCTAssertTrue(app.staticTexts.matching(identifier: "connection-status").firstMatch.waitForLabel("signed out", timeout: 15))
+    }
+
+    @MainActor
+    func testAuthRecoveryRetainsIdentityAcrossRestartAndNeverReplays() async throws {
+        let app = XCUIApplication(bundleIdentifier: "com.remotecode.mobileproof")
+        let observer = URLSession(configuration: .ephemeral)
+        app.launch()
+        signIn(app)
+        app.terminate()
+        try await observer.signIn(at: api, password: password)
+        try await armAuthFault("login-cookie", using: observer)
+        app.launch()
+        enterPassword(app)
+        app.buttons["Sign in to host"].tap()
+        let recovery = app.staticTexts.matching(identifier: "auth-recovery-status").firstMatch
+        XCTAssertTrue(recovery.waitForLabelContaining("unknown", timeout: 20))
+        XCTAssertFalse(app.buttons["Sign in to host"].isEnabled)
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(app.buttons["Check auth receipt"].waitForExistence(timeout: 15))
+        enterPassword(app, value: "wrong-password")
+        app.buttons["Check auth receipt"].tap()
+        XCTAssertTrue(recovery.waitForLabelContaining("could not check", timeout: 15))
+        XCTAssertFalse(app.buttons["Sign in to host"].isEnabled)
+        app.buttons["Revoke old login"].tap()
+        XCTAssertTrue(recovery.waitForLabelContaining("Revocation was rejected", timeout: 15))
+        XCTAssertTrue(app.buttons["Revoke old login"].exists, "A definite credential rejection must keep the original login recoverable")
+        app.terminate()
+        app.launch()
+        enterPassword(app)
+        app.buttons["Check auth receipt"].tap()
+        XCTAssertTrue(recovery.waitForLabelContaining("matching cookie is not confirmed", timeout: 15), "A receipt must not be confused with an authenticated native cookie")
+        XCTAssertFalse(app.textFields["Action"].exists)
+        try await armAuthFault("revoke-body", using: observer)
+        app.buttons["Revoke old login"].tap()
+        XCTAssertTrue(recovery.waitForLabelContaining("unknown", timeout: 20))
+        app.terminate()
+        app.launch()
+        enterPassword(app)
+        app.buttons["Check auth receipt"].tap()
+        XCTAssertTrue(recovery.waitForLabelContaining("revocation confirmed", timeout: 15))
+        XCTAssertTrue(app.buttons["Sign in to host"].isEnabled)
+        let (data, _) = try await observer.data(from: URL(string: "/__test__/auth-diagnostics", relativeTo: api)!)
+        let diagnostics = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(diagnostics["loginPosts"] as? Int, 1)
+        XCTAssertEqual(diagnostics["revokePosts"] as? Int, 2, "One credential rejection and one distinct authorized revocation, with no replay")
+        let loginId = try XCTUnwrap(diagnostics["loginRequestId"] as? String)
+        let revokeId = try XCTUnwrap(diagnostics["revokeRequestId"] as? String)
+        XCTAssertNotEqual(loginId, revokeId)
+        XCTAssertNotNil(UUID(uuidString: loginId))
+        XCTAssertNotNil(UUID(uuidString: revokeId))
+
+        try await armAuthFault("login-body", using: observer)
+        app.buttons["Sign in to host"].tap()
+        let connection = app.staticTexts.matching(identifier: "connection-status").firstMatch
+        if !connection.waitForLabel("connected", timeout: 15) {
+            XCTAssertTrue(app.buttons["Check auth receipt"].isEnabled)
+            app.buttons["Check auth receipt"].tap()
+        }
+        XCTAssertTrue(connection.waitForLabel("connected", timeout: 15), "Lost body requires a confirmed matching cookie, not a replay")
+        try await armAuthFault("logout-body", using: observer)
+        app.buttons["Sign out"].tap()
+        XCTAssertTrue(recovery.waitForLabelContaining("unknown", timeout: 20))
+        XCTAssertFalse(app.textFields["Action"].exists)
+        app.terminate()
+        app.launch()
+        enterPassword(app)
+        app.buttons["Check auth receipt"].tap()
+        XCTAssertTrue(recovery.waitForLabelContaining("Sign-out confirmed", timeout: 15))
+        try await observer.signIn(at: api, password: password)
+        let (logoutData, _) = try await observer.data(from: URL(string: "/__test__/auth-diagnostics", relativeTo: api)!)
+        let logoutDiagnostics = try XCTUnwrap(JSONSerialization.jsonObject(with: logoutData) as? [String: Any])
+        XCTAssertEqual(logoutDiagnostics["loginPosts"] as? Int, 2, "Restarts and receipt checks must not replay login")
+        XCTAssertEqual(logoutDiagnostics["logoutPosts"] as? Int, 1, "Logout recovery must only look up the original receipt")
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "Native auth receipt recovery after restart"
+        shot.lifetime = .keepAlways
+        add(shot)
+        app.buttons["Sign in to host"].tap()
+        XCTAssertTrue(app.staticTexts.matching(identifier: "connection-status").firstMatch.waitForLabel("connected", timeout: 15))
+        app.buttons["Sign out"].tap()
+        XCTAssertTrue(app.staticTexts.matching(identifier: "connection-status").firstMatch.waitForLabel("signed out", timeout: 15))
+    }
+
+    @MainActor
+    private func enterPassword(_ app: XCUIApplication, value: String? = nil) {
+        let input = app.secureTextFields["Host password"]
+        XCTAssertTrue(input.waitForExistence(timeout: 15))
+        input.tap()
+        input.typeText(value ?? password)
+        app.staticTexts["Host connection"].firstMatch.tap()
+    }
+
+    private func armAuthFault(_ fault: String, using session: URLSession) async throws {
+        var request = URLRequest(url: URL(string: "/__test__/auth-fault", relativeTo: api)!)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["fault": fault])
+        let (_, response) = try await session.data(for: request)
+        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
+    }
+
+    @MainActor
     private func signIn(_ app: XCUIApplication) {
         let input = app.secureTextFields["Host password"]
         XCTAssertTrue(input.waitForExistence(timeout: 15))
@@ -183,6 +383,15 @@ private extension XCUIElement {
 }
 
 private extension URLSession {
+    func lookupAuthReceipt(at baseURL: URL, requestId: String, password: String) async throws -> AuthReceiptLookup {
+        var request = URLRequest(url: URL(string: "/api/auth/receipts/\(requestId)/lookup", relativeTo: baseURL)!)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["password": password])
+        let (data, response) = try await self.data(for: request)
+        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
+        return try JSONDecoder().decode(AuthReceiptLookup.self, from: data)
+    }
     func signIn(at baseURL: URL, password: String) async throws {
         var request = URLRequest(url: URL(string: "/api/auth/login", relativeTo: baseURL)!)
         request.httpMethod = "POST"

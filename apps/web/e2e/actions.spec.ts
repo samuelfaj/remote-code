@@ -378,81 +378,33 @@ test("logging out revokes distinct sessions opened in two tabs", async ({ page }
   }
 });
 
-test("a login response arriving after logout cannot restore private UI", async ({ page }) => {
-  let releaseFirst!: () => void;
-  let releaseSecond!: () => void;
-  let firstCommitted!: () => void;
-  let firstReleased!: () => void;
-  let firstResponseFinished!: () => void;
-  let secondCommitted!: () => void;
-  const firstHeld = new Promise<void>((resolve) => { releaseFirst = resolve; });
-  const secondHeld = new Promise<void>((resolve) => { releaseSecond = resolve; });
-  const firstReady = new Promise<void>((resolve) => { firstCommitted = resolve; });
-  const firstResponseReleased = new Promise<void>((resolve) => { firstReleased = resolve; });
-  const firstResponseCompleted = new Promise<void>((resolve) => { firstResponseFinished = resolve; });
-  const secondReady = new Promise<void>((resolve) => { secondCommitted = resolve; });
-  let loginCount = 0;
-  let firstCookie = "";
-  let secondCookie = "";
-
+test("blocks a second login while the original response is pending", async ({ page }) => {
+  let release!: () => void;
+  let committed!: () => void;
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  const ready = new Promise<void>((resolve) => { committed = resolve; });
+  let posts = 0;
   await page.route("**/api/auth/login", async (route) => {
+    posts++;
     const response = await route.fetch();
-    const cookie = response.headers()["set-cookie"]?.match(/remotecode_session=([^;]+)/)?.[1];
-    if (loginCount++ === 0) {
-      firstCookie = cookie ?? "";
-      firstCommitted();
-      await firstHeld;
-      firstReleased();
-      await route.fulfill({ response });
-      firstResponseFinished();
-      return;
-    } else {
-      secondCookie = cookie ?? "";
-      secondCommitted();
-      await secondHeld;
-    }
+    committed();
+    await held;
     await route.fulfill({ response });
   });
-
   try {
     await page.goto("/");
     await page.getByLabel("Host passphrase").fill(authPassword);
-    await page.getByRole("button", { name: "Sign in" }).click();
-    await firstReady;
-    await page.getByRole("button", { name: "Sign in" }).click();
-    await secondReady;
-
-    expect(firstCookie).toBeTruthy();
-    expect(secondCookie).toBeTruthy();
-    expect(secondCookie).not.toBe(firstCookie);
-    releaseSecond();
+    await page.getByRole("button", { name: "Sign in", exact: true }).click();
+    await ready;
+    await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeDisabled();
+    expect(posts).toBe(1);
+    release();
     await expect(page.getByTestId("connection-status")).toHaveText("Live updates connected");
-    const action = `stale login response ${crypto.randomUUID()}`;
-    await page.getByLabel("Action description").fill(action);
-    await page.getByRole("button", { name: "Write backend receipt" }).click();
-    await expect(page.getByTestId("latest-receipt")).toContainText(action);
-
-    await page.getByRole("button", { name: "Sign out" }).click();
-    await expect(page.getByRole("heading", { name: "Sign in to your host" })).toBeVisible();
-    const firstResponse = page.waitForResponse((response) => response.url().endsWith("/api/auth/login") && response.request().method() === "POST");
-    releaseFirst();
-    await firstResponseReleased;
-    await firstResponseCompleted;
-    await firstResponse;
-    await page.evaluate(() => new Promise<void>((resolve) => setTimeout(resolve, 0)));
-    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
-    await expect(page.getByLabel("Host passphrase")).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Sign in to your host" })).toBeVisible();
-    await expect(page.getByText(action)).toHaveCount(0);
-    expect((await page.request.get(`${apiUrl}/api/auth/session`, {
-      headers: { cookie: `remotecode_session=${firstCookie}` },
-    })).status()).toBe(401);
-    expect((await page.request.get(`${apiUrl}/api/auth/session`, {
-      headers: { cookie: `remotecode_session=${secondCookie}` },
-    })).status()).toBe(401);
+    await page.getByRole("button", { name: "Sign out", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeEnabled();
+    expect((await page.request.get(`${apiUrl}/api/auth/session`)).status()).toBe(401);
   } finally {
-    releaseFirst();
-    releaseSecond();
+    release();
     await page.unroute("**/api/auth/login");
   }
 });
@@ -542,7 +494,7 @@ test("clears private UI when logout commits but its response is lost", async ({ 
   }
   await expect(page.getByRole("heading", { name: "Sign in to your host" })).toBeVisible();
   await expect(page.getByText(action)).toHaveCount(0);
-  await expect(page.getByText("The host could not confirm logout.")).toBeVisible();
+  await expect(page.getByTestId("auth-recovery-status")).toContainText("unknown");
   expect((await page.request.get(`${apiUrl}/api/actions`)).status()).toBe(401);
 });
 
@@ -760,7 +712,7 @@ test("a receipt response after logout cannot restore private UI, and the same us
 test("requires host recovery support and durable tab storage before submitting an action", async ({ page }) => {
   let posts = 0;
   page.on("request", (request) => { if (request.method() === "POST" && new URL(request.url()).pathname === "/api/actions") posts++; });
-  await page.route("**/api/version", (route) => route.fulfill({ json: { apiVersion: 1, capabilities: ["action-receipts", "event-snapshots-v1"] } }));
+  await page.route("**/api/version", (route) => route.fulfill({ json: { apiVersion: 1, capabilities: ["action-receipts", "event-snapshots-v1", "auth-request-recovery-v1"] } }));
   await signIn(page);
   await page.getByRole("button", { name: "Write backend receipt" }).click();
   await expect(page.getByText("Update the host to support action receipt recovery. No action was sent.")).toBeVisible();

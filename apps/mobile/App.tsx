@@ -9,6 +9,25 @@ const apiOrigin = process.env.EXPO_PUBLIC_API_ORIGIN ?? "http://127.0.0.1:3000";
 const clientOrigin = process.env.EXPO_PUBLIC_CLIENT_ORIGIN ?? "http://localhost:5173";
 const compatibilityMessage = "This RemoteCode client version is not supported. Update the host or use a supported client version.";
 
+type PendingAuth = { kind: "login" | "logout"; requestId: string }
+  | { kind: "revoke_login"; requestId: string; loginRequestId: string };
+const authStorageKey = `remotecode.pending-auth:${apiOrigin}`;
+
+function authReceiptMatches(value: unknown, pending: PendingAuth) {
+  if (!value || typeof value !== "object" || !("requestId" in value) || !("kind" in value) || !("outcome" in value)) return false;
+  if (value.requestId !== pending.requestId || value.kind !== pending.kind) return false;
+  return pending.kind === "logout" ? value.outcome === "sessions_revoked"
+    : pending.kind === "revoke_login" && value.outcome === "login_revoked"
+      && "targetRequestId" in value && value.targetRequestId === pending.loginRequestId;
+}
+
+function isCredentialRejection(response: { status: number; error: unknown }) {
+  const error = response.error;
+  if (response.status !== 401 || !error || typeof error !== "object" || !("value" in error)) return false;
+  const value = error.value;
+  return typeof value === "object" && value !== null && "error" in value && value.error === "unauthorized";
+}
+
 type Connection = "signed_out" | "connecting" | "connected" | "disconnected" | "incompatible";
 
 function errorMessage(error: unknown) {
@@ -20,6 +39,11 @@ function errorMessage(error: unknown) {
 }
 
 export default function App() {
+  const [pendingAuth, setPendingAuth] = useState<PendingAuth | null>(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [authMessage, setAuthMessage] = useState("");
+  const authPending = useRef<PendingAuth | null>(null);
+  const authLock = useRef(false);
   const [password, setPassword] = useState("");
   const [action, setAction] = useState("");
   const [connection, setConnection] = useState<Connection>("signed_out");
@@ -36,6 +60,32 @@ export default function App() {
   const syncTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const operationGeneration = useRef(0);
   const eventState = useRef(emptyActionEventState());
+
+  useEffect(() => {
+    let active = true;
+    void withPendingStorage(async () => {
+      const raw = await AsyncStorage.getItem(authStorageKey);
+      let pending: PendingAuth | null = null;
+      if (raw) {
+        const value = JSON.parse(raw);
+        if (!value || !["login", "logout", "revoke_login"].includes(value.kind)
+          || typeof value.requestId !== "string" || !validatePendingId(value.requestId)
+          || (value.kind === "revoke_login" && (typeof value.loginRequestId !== "string" || !validatePendingId(value.loginRequestId)))) {
+          throw new Error("Invalid auth identity");
+        }
+        pending = value;
+      }
+      if (!active) return;
+      authPending.current = pending;
+      setPendingAuth(pending);
+      setAuthReady(true);
+      if (pending) {
+        setConnection("disconnected");
+        setAuthMessage("An earlier auth outcome is unknown. Check its receipt; no request will be resent.");
+      }
+    }).catch(() => { if (active) setAuthMessage("Device storage could not recover the auth identity. Sending is disabled. Restart to check again."); });
+    return () => { active = false; operationGeneration.current++; };
+  }, []);
 
   useEffect(() => () => {
     if (syncTimeout.current) clearTimeout(syncTimeout.current);
@@ -71,21 +121,140 @@ export default function App() {
     }).catch(() => false);
   }
 
-  async function connect() {
+  async function saveAuth(pending: PendingAuth, previous: PendingAuth | null, generation: number) {
+    await withPendingStorage(async () => {
+      if (generation !== operationGeneration.current) throw new Error("Stale auth operation");
+      const expected = previous ? JSON.stringify(previous) : null;
+      if (await AsyncStorage.getItem(authStorageKey) !== expected) throw new Error("Auth storage changed");
+      const raw = JSON.stringify(pending);
+      await AsyncStorage.setItem(authStorageKey, raw);
+      if (await AsyncStorage.getItem(authStorageKey) !== raw) throw new Error("Auth identity was not retained");
+    }).catch((cause) => {
+      if (generation === operationGeneration.current) setAuthReady(false);
+      throw cause;
+    });
+    if (generation !== operationGeneration.current) return false;
+    authPending.current = pending;
+    setPendingAuth(pending);
+    return true;
+  }
+
+  async function finishAuth(pending: PendingAuth, generation: number) {
+    const cleared = await forgetPending(authStorageKey, JSON.stringify(pending));
+    if (generation !== operationGeneration.current) return false;
+    if (!cleared) {
+      setAuthMessage("The host confirmed the result, but device storage could not clear its identity. Check again.");
+      return false;
+    }
+    authPending.current = null;
+    setPendingAuth(null);
+    return true;
+  }
+
+  async function runAuth(work: (generation: number) => Promise<void>) {
+    if (authLock.current || !authReady) return;
+    authLock.current = true;
     const generation = ++operationGeneration.current;
     setBusy(true);
     setError("");
-    clearRecoveryView();
+    setAuthMessage("");
+    try { await work(generation); }
+    catch {
+      if (generation === operationGeneration.current) {
+        setAuthMessage("The auth outcome is unknown. Check the receipt before another attempt. If device storage is unavailable, restart to check again.");
+      }
+    } finally {
+      authLock.current = false;
+      if (generation === operationGeneration.current) setBusy(false);
+    }
+  }
+
+  async function supportsAuthRecovery(generation: number) {
+    const response = await createApiClient(apiOrigin).api.version.get();
+    if (generation !== operationGeneration.current) return false;
+    if (response.error || !response.data?.capabilities.includes("auth-request-recovery-v1")) {
+      setAuthMessage("Update the host to support auth receipt recovery. No auth request was sent.");
+      return false;
+    }
+    return true;
+  }
+
+  async function confirmLogin(pending: PendingAuth, generation: number) {
+    const { data: session, error: sessionError } = await createApiClient(apiOrigin).api.auth.session.get();
+    if (generation !== operationGeneration.current) return false;
+    if (pending.kind !== "login" || sessionError || !session || !("userId" in session)
+      || typeof session.userId !== "string" || !("loginRequestId" in session) || session.loginRequestId !== pending.requestId) return false;
+    if (!await finishAuth(pending, generation)) return true;
+    setPassword("");
+    setAuthMessage("");
+    await establishSession(session.userId, generation);
+    return true;
+  }
+
+  async function connect() {
+    if (!password || authPending.current || busy) return;
+    await runAuth(async (generation) => {
+      if (!await supportsAuthRecovery(generation)) return;
+      const pending: PendingAuth = { kind: "login", requestId: randomUUID() };
+      if (!await saveAuth(pending, null, generation)) return;
+      clearRecoveryView();
+      setConnection("disconnected");
+      const response = await createApiClient(apiOrigin).api.auth.login.post({ password, requestId: pending.requestId });
+      if (generation !== operationGeneration.current) return;
+      if (isCredentialRejection(response)) {
+        if (await finishAuth(pending, generation)) setAuthMessage("Sign in failed. Check the host password. No session was created.");
+        return;
+      }
+      if (!await confirmLogin(pending, generation) && generation === operationGeneration.current) {
+        setAuthMessage("The login outcome is unknown. Check the receipt or explicitly revoke the old login before another attempt.");
+      }
+    });
+  }
+
+  async function checkAuthReceipt() {
+    const pending = authPending.current;
+    if (!pending || busy) return;
+    await runAuth(async (generation) => {
+      if (pending.kind === "login" && await confirmLogin(pending, generation)) return;
+      if (generation !== operationGeneration.current) return;
+      const response = await createApiClient(apiOrigin).api.auth.receipts({ requestId: pending.requestId }).lookup.post(password ? { password } : {});
+      if (generation !== operationGeneration.current) return;
+      const receipt = response.data && "receipt" in response.data ? response.data.receipt : null;
+      if (authReceiptMatches(receipt, pending)) {
+        if (await finishAuth(pending, generation)) {
+          setConnection("signed_out");
+          setAuthMessage(pending.kind === "logout" ? "Sign-out confirmed. You may start a new login." : "Old login revocation confirmed. You may start a distinct new login.");
+        }
+      } else if (pending.kind === "login" && receipt?.requestId === pending.requestId && receipt.kind === "login") {
+        setAuthMessage("The login receipt is confirmed, but a matching cookie is not confirmed on this device. Explicitly revoke the old login before a new attempt.");
+      } else {
+        setAuthMessage(response.status === 404
+          ? "No auth receipt is confirmed yet. The outcome is unknown; an old login can be explicitly revoked and fenced."
+          : "The host could not check the auth receipt. Enter the host password and check again; the outcome remains unknown.");
+      }
+    });
+  }
+
+  async function revokeOldLogin() {
+    const previous = authPending.current;
+    if (!previous || previous.kind !== "login" || !password || busy) return;
+    await runAuth(async (generation) => {
+      if (!await supportsAuthRecovery(generation)) return;
+      const pending: PendingAuth = { kind: "revoke_login", requestId: randomUUID(), loginRequestId: previous.requestId };
+      if (!await saveAuth(pending, previous, generation)) return;
+      const response = await createApiClient(apiOrigin).api.auth.login({ loginRequestId: previous.requestId }).revoke.post({ password, requestId: pending.requestId });
+      if (generation !== operationGeneration.current) return;
+      if (isCredentialRejection(response)) {
+        if (await saveAuth(previous, pending, generation)) setAuthMessage("Revocation was rejected. Check the host password; the old login still needs recovery.");
+      } else if (!response.error && authReceiptMatches(response.data, pending)) {
+        if (await finishAuth(pending, generation)) setAuthMessage("Old login revocation confirmed. You may start a distinct new login.");
+      } else setAuthMessage("The revocation outcome is unknown. Check its receipt; do not resend it.");
+    });
+  }
+
+  async function establishSession(userId: string, generation: number) {
     try {
-      const client = createApiClient(apiOrigin);
-      const { error: loginError } = await client.api.auth.login.post({ password });
-      if (loginError) throw loginError;
-      if (generation !== operationGeneration.current) return;
-      const { data: session, error: sessionError } = await client.api.auth.session.get();
-      if (sessionError) throw sessionError;
-      if (!session || !("userId" in session) || typeof session.userId !== "string") throw new Error("Missing session identity");
-      if (generation !== operationGeneration.current) return;
-      const key = `remotecode.pending-action:${JSON.stringify([apiOrigin, session.userId])}`;
+      const key = `remotecode.pending-action:${JSON.stringify([apiOrigin, userId])}`;
       const pending = await withPendingStorage(async () => validatePendingId(await AsyncStorage.getItem(key)));
       if (generation !== operationGeneration.current) return;
       setPendingKey(key);
@@ -318,29 +487,30 @@ export default function App() {
   }
 
   async function signOut() {
-    const generation = ++operationGeneration.current;
-    setBusy(true);
-    const activeSocket = socket.current;
-    socket.current = null;
-    activeSocket?.close();
-    if (syncTimeout.current) clearTimeout(syncTimeout.current);
-    eventState.current = emptyActionEventState();
-    setEvents(eventState.current);
-    setConnection("signed_out");
-    clearRecoveryView();
-    setPassword("");
-    setAction("");
-    setError("");
-    try {
-      const { error: logoutError } = await createApiClient(apiOrigin).api.auth.logout.post();
-      if (logoutError) throw logoutError;
-    } catch {
-      if (generation === operationGeneration.current) {
-        setError("Disconnected on this device. The host could not confirm logout; its session may still be active.");
-      }
-    } finally {
-      if (generation === operationGeneration.current) setBusy(false);
-    }
+    if (authPending.current) return;
+    await runAuth(async (generation) => {
+      const activeSocket = socket.current;
+      socket.current = null;
+      activeSocket?.close();
+      if (syncTimeout.current) clearTimeout(syncTimeout.current);
+      eventState.current = emptyActionEventState();
+      setEvents(eventState.current);
+      setConnection("disconnected");
+      clearRecoveryView();
+      setPassword("");
+      setAction("");
+      if (!await supportsAuthRecovery(generation)) return;
+      const pending: PendingAuth = { kind: "logout", requestId: randomUUID() };
+      if (!await saveAuth(pending, null, generation)) return;
+      const response = await createApiClient(apiOrigin).api.auth.logout.post({ requestId: pending.requestId });
+      if (generation !== operationGeneration.current) return;
+      if (!response.error && authReceiptMatches(response.data, pending)) {
+        if (await finishAuth(pending, generation)) {
+          setConnection("signed_out");
+          setAuthMessage("Sign-out confirmed.");
+        }
+      } else setAuthMessage("Disconnected on this device. The logout outcome is unknown; the host session may still be active. Check its receipt.");
+    });
   }
 
   return (
@@ -354,10 +524,20 @@ export default function App() {
             <Text accessibilityLiveRegion="polite" testID="connection-status" style={styles.status}>{connection.replace("_", " ")}</Text>
             {connection === "signed_out" || connection === "disconnected" || connection === "incompatible" ? <>
               <TextInput accessibilityLabel="Host password" autoCapitalize="none" secureTextEntry value={password} onChangeText={setPassword} placeholder="Host password" style={styles.input} />
-              <Pressable accessibilityRole="button" accessibilityLabel="Sign in to host" disabled={busy || !password} onPress={() => void connect()} style={styles.button}>
+              <Pressable accessibilityRole="button" accessibilityLabel="Sign in to host" accessibilityState={{ disabled: busy || !password || !authReady || Boolean(pendingAuth) }} disabled={busy || !password || !authReady || Boolean(pendingAuth)} onPress={() => void connect()} style={styles.button}>
                 {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Sign in to host</Text>}
               </Pressable>
             </> : null}
+            {pendingAuth ? <View style={styles.recovery}>
+              <Text style={styles.muted}>An auth request is awaiting confirmation. Checking does not resend it.</Text>
+              <Pressable accessibilityRole="button" accessibilityLabel="Check auth receipt" accessibilityState={{ disabled: busy || !authReady }} disabled={busy || !authReady} onPress={() => void checkAuthReceipt()} style={styles.button}>
+                <Text style={styles.buttonText}>Check auth receipt</Text>
+              </Pressable>
+              {pendingAuth.kind === "login" ? <Pressable accessibilityRole="button" accessibilityLabel="Revoke old login" accessibilityState={{ disabled: busy || !password || !authReady }} disabled={busy || !password || !authReady} onPress={() => void revokeOldLogin()} style={styles.secondaryButton}>
+                <Text style={styles.secondaryText}>Revoke old login</Text>
+              </Pressable> : null}
+            </View> : null}
+            {authMessage ? <Text accessibilityLiveRegion="polite" testID="auth-recovery-status" style={styles.muted}>{authMessage}</Text> : null}
             {connection === "connected" ? <>
               <TextInput accessibilityLabel="Action" value={action} onChangeText={setAction} placeholder="Send an action" maxLength={120} style={styles.input} />
               <Pressable accessibilityRole="button" accessibilityLabel="Submit action" accessibilityState={{ disabled: busy || !action.trim() || Boolean(pendingRequestId) || !storageReady }} disabled={busy || !action.trim() || Boolean(pendingRequestId) || !storageReady} onPress={() => void submitAction()} style={[styles.button, (busy || !action.trim() || Boolean(pendingRequestId) || !storageReady) && styles.disabled]}>
@@ -371,7 +551,7 @@ export default function App() {
               </Pressable>
             </View> : null}
             {connection === "connected" && recoveryMessage ? <Text accessibilityLiveRegion="polite" testID="action-recovery-status" style={styles.muted}>{recoveryMessage}</Text> : null}
-            {connection !== "signed_out" ? <Pressable accessibilityRole="button" accessibilityLabel="Sign out" disabled={busy && connection !== "connected"} onPress={() => void signOut()} style={styles.secondaryButton}><Text style={styles.secondaryText}>Sign out</Text></Pressable> : null}
+            {connection !== "signed_out" && !pendingAuth ? <Pressable accessibilityRole="button" accessibilityLabel="Sign out" disabled={busy && connection !== "connected"} onPress={() => void signOut()} style={styles.secondaryButton}><Text style={styles.secondaryText}>Sign out</Text></Pressable> : null}
             {error ? <Text accessibilityRole="alert" testID="connection-error" style={styles.error}>{error}</Text> : null}
           </View>
           {connection === "connected" ? <View style={styles.card}>

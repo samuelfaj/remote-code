@@ -1,16 +1,33 @@
-import { Elysia } from "elysia";
+import { Elysia, t } from "elysia";
 import { createApi } from "../src/app";
 import { isAuthenticated } from "../src/features/auth";
 
 export function createNativeRecoveryTestApi(databasePath: string, password: string) {
+  let authFault: string | null = null;
+  let loginPosts = 0;
+  let revokePosts = 0;
+  let logoutPosts = 0;
+  let loginRequestId: string | null = null;
+  let revokeRequestId: string | null = null;
+  let logoutRequestId: string | null = null;
   let armed = false;
   let lostResponse = false;
   let failedRead = false;
   let actionPosts = 0;
   let requestId: string | null = null;
   return new Elysia()
-    .onBeforeHandle({ as: "global" }, ({ request, set }) => {
+    .onBeforeHandle({ as: "global" }, ({ request, body, set }) => {
       const path = new URL(request.url).pathname;
+      if (request.method === "POST" && typeof body === "object" && body !== null && "requestId" in body && typeof body.requestId === "string") {
+        if (path === "/api/auth/login") { loginPosts++; loginRequestId = body.requestId; }
+        if (path.endsWith("/revoke")) { revokePosts++; revokeRequestId = body.requestId; }
+        if (path === "/api/auth/logout") { logoutPosts++; logoutRequestId = body.requestId; }
+      }
+      if (authFault === "login-before" && request.method === "POST" && path === "/api/auth/login") {
+        authFault = null;
+        set.status = 503;
+        return { error: "injected_before_login" };
+      }
       if (armed && request.method === "POST" && path === "/api/actions") actionPosts++;
       if (lostResponse && !failedRead && request.method === "GET" && path.startsWith("/api/actions/receipts/")) {
         failedRead = true;
@@ -19,6 +36,25 @@ export function createNativeRecoveryTestApi(databasePath: string, password: stri
       }
     })
     .onAfterHandle({ as: "global" }, ({ request, body, set }) => {
+      const path = new URL(request.url).pathname;
+      const matchesAuth = request.method === "POST" && (
+        (path === "/api/auth/login" && (authFault === "login-cookie" || authFault === "login-body" || authFault === "login-401"))
+        || (path.endsWith("/revoke") && (authFault === "revoke-body" || authFault === "revoke-401"))
+        || (path === "/api/auth/logout" && authFault === "logout-body")
+      );
+      if (matchesAuth && (set.status === 200 || set.status === undefined)) {
+        if (authFault === "login-cookie" || authFault === "login-401") delete set.headers["set-cookie"];
+        if (authFault === "login-401" || authFault === "revoke-401") {
+          authFault = null;
+          return new Response(JSON.stringify({ error: "injected_proxy_unauthorized" }), {
+            status: 401, headers: { "content-type": "application/json" },
+          });
+        }
+        authFault = null;
+        return new Response(new ReadableStream({
+          start(controller) { controller.enqueue(new TextEncoder().encode('{"receipt":')); },
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      }
       if (!armed || lostResponse || request.method !== "POST" || new URL(request.url).pathname !== "/api/actions" || set.status !== 201) return;
       lostResponse = true;
       if (typeof body === "object" && body !== null && "requestId" in body && typeof body.requestId === "string") requestId = body.requestId;
@@ -27,6 +63,29 @@ export function createNativeRecoveryTestApi(databasePath: string, password: stri
       }), { status: 201, headers: { "content-type": "application/json" } });
     })
     .use(createApi(databasePath, undefined, { password, webOrigin: "http://localhost:5173" }))
+    .post("/__test__/auth-fault", ({ request, body, set }) => {
+      if (!isAuthenticated(databasePath, request)) {
+        set.status = 401;
+        return { error: "unauthorized" };
+      }
+      if (body.fault === "login-cookie") {
+        loginPosts = 0;
+        revokePosts = 0;
+        logoutPosts = 0;
+        loginRequestId = null;
+        revokeRequestId = null;
+        logoutRequestId = null;
+      }
+      authFault = body.fault;
+      return { armed: true };
+    }, { body: t.Object({ fault: t.Union([t.Literal("login-cookie"), t.Literal("login-body"), t.Literal("login-before"), t.Literal("login-401"), t.Literal("revoke-body"), t.Literal("revoke-401"), t.Literal("logout-body")]) }) })
+    .get("/__test__/auth-diagnostics", ({ request, set }) => {
+      if (!isAuthenticated(databasePath, request)) {
+        set.status = 401;
+        return { error: "unauthorized" };
+      }
+      return { loginPosts, revokePosts, logoutPosts, loginRequestId, revokeRequestId, logoutRequestId };
+    })
     .post("/__test__/lose-action-response", ({ request, set }) => {
       if (!isAuthenticated(databasePath, request)) {
         set.status = 401;

@@ -14,6 +14,7 @@ API_PASSWORD="remote-code-native-test-passphrase"
 DATABASE_PATH="$WORK_DIR/remotecode-native.sqlite"
 DEVICE_ID="${RC_NATIVE_TEST_DEVICE:-}"
 API_PID=""
+DERIVED_DATA_PATH="${RC_NATIVE_TEST_DERIVED_DATA:-$WORK_DIR/DerivedData}"
 API_ENTRY="apps/api/src/index.ts"
 TEST_SELECTION="RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testInstalledAppUsesAuthenticatedSnapshotEventsAndReceipts"
 if [[ "${RC_NATIVE_TEST_RECOVERY:-0}" == "1" ]]; then
@@ -41,7 +42,10 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-rm -f "$DATABASE_PATH" "$DATABASE_PATH-wal" "$DATABASE_PATH-shm"
+if [[ -e "$DATABASE_PATH" || -e "$WORK_DIR/NativeTests.xcresult" ]]; then
+  echo "Use a fresh evidence directory; existing native proof will not be overwritten." >&2
+  exit 2
+fi
 cd "$ROOT_DIR"
 API_PORT="$API_PORT" \
   DATABASE_PATH="$DATABASE_PATH" \
@@ -102,7 +106,7 @@ if ! EXPO_PUBLIC_API_ORIGIN="$API_ORIGIN" \
     -workspace "$ROOT_DIR/apps/mobile/ios/RemoteCodeMobileProof.xcworkspace" \
     -scheme RemoteCodeMobileProof \
     -destination "platform=iOS Simulator,id=$DEVICE_ID" \
-    -derivedDataPath "$WORK_DIR/DerivedData" \
+    -derivedDataPath "$DERIVED_DATA_PATH" \
     RC_NATIVE_TEST_API_ORIGIN="$API_ORIGIN" \
     -only-testing:"$TEST_SELECTION" \
     -resultBundlePath "$WORK_DIR/NativeTests.xcresult" \
@@ -120,6 +124,7 @@ connection = sqlite3.connect(sys.argv[1])
 try:
     rows = connection.execute("SELECT id, action, created_at FROM actions ORDER BY sequence").fetchall()
     session_count = connection.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
+    auth_rows = connection.execute("SELECT request_id, kind, target_request_id, outcome FROM auth_requests ORDER BY created_at").fetchall()
 finally:
     connection.close()
 expected_count = 3 if sys.argv[2] == "1" else 2
@@ -142,6 +147,18 @@ if not event[1].startswith("native-event-") or not submitted[1].startswith("nati
     raise SystemExit(f"Unexpected native test action sequence: {rows!r}")
 if event[1].removeprefix("native-event-") != submitted[1].removeprefix("native-submit-"):
     raise SystemExit(f"Native event and submitted action IDs do not belong to the same test run: {rows!r}")
+if sys.argv[2] == "1":
+    from collections import Counter
+    kinds = Counter(row[1] for row in auth_rows)
+    if kinds != {"login": 12, "logout": 7, "revoke_login": 3}:
+        raise SystemExit(f"Unexpected keyed native auth effects: {dict(kinds)!r}")
+    fenced = [row for row in auth_rows if row[3] == "closed_before_acceptance"]
+    if len(fenced) != 1:
+        raise SystemExit("Expected exactly one delayed login fenced before acceptance")
+    for row in auth_rows:
+        if row[1] == "revoke_login" and not any(login[0] == row[2] and login[1] == "login" for login in auth_rows):
+            raise SystemExit("Native revocation does not target its durable original login")
+    print(json.dumps({"authReceipts": [{"requestId": row[0], "kind": row[1], "targetRequestId": row[2], "outcome": row[3]} for row in auth_rows]}, indent=2))
 if session_count != 0:
     raise SystemExit(f"Native logout left {session_count} persisted session(s)")
 print(json.dumps({"actions": [{"id": row[0], "action": row[1], "createdAt": row[2]} for row in rows], "remainingSessions": session_count}, indent=2))

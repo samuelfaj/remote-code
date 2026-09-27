@@ -18,6 +18,34 @@ function requestErrorMessage(error: unknown, fallback: string) {
 }
 
 
+type PendingAuth = { kind: "login"; requestId: string }
+  | { kind: "logout"; requestId: string }
+  | { kind: "revoke_login"; requestId: string; targetRequestId: string };
+const authStorageKey = "remotecode.pending-auth";
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+function readPendingAuth(): PendingAuth | null {
+  const raw = sessionStorage.getItem(authStorageKey);
+  if (raw === null) return null;
+  const value = JSON.parse(raw);
+  if (!value || typeof value.requestId !== "string" || !uuidPattern.test(value.requestId)
+    || !["login", "logout", "revoke_login"].includes(value.kind)
+    || Object.keys(value).sort().join(",") !== (value.kind === "revoke_login" ? "kind,requestId,targetRequestId" : "kind,requestId")
+    || (value.kind === "revoke_login" && (typeof value.targetRequestId !== "string"
+      || !uuidPattern.test(value.targetRequestId) || value.targetRequestId === value.requestId))) {
+    throw new Error("Invalid pending auth identity");
+  }
+  return value;
+}
+
+function matchesAuthReceipt(value: unknown, operation: PendingAuth) {
+  if (!value || typeof value !== "object") return false;
+  const receipt = value as Record<string, unknown>;
+  return receipt.requestId === operation.requestId && receipt.kind === operation.kind
+    && receipt.targetRequestId === (operation.kind === "revoke_login" ? operation.targetRequestId : null)
+    && receipt.outcome === ({ login: "session_created", logout: "sessions_revoked", revoke_login: "login_revoked" }[operation.kind]);
+}
+
 type HealthStatus = "checking" | "ready" | "not_ready" | "unavailable";
 
 function HostHealth() {
@@ -73,6 +101,13 @@ export function App() {
   const [pendingRequestId, setPendingRequestId] = useState<string | null>(null);
   const [recoveryMessage, setRecoveryMessage] = useState("");
   const [recoveryStorageReady, setRecoveryStorageReady] = useState(false);
+  const [pendingAuth, setPendingAuth] = useState<PendingAuth | null>(null);
+  const pendingAuthRef = useRef<PendingAuth | null>(null);
+  const [authStorageReady, setAuthStorageReady] = useState(false);
+  const [authCompatible, setAuthCompatible] = useState(false);
+  const [authWorking, setAuthWorking] = useState(false);
+  const authBusy = useRef(false);
+  const [authMessage, setAuthMessage] = useState("");
   const actionBusy = useRef(false);
   const authEpoch = useRef(0);
   const connectionGeneration = useRef(0);
@@ -120,16 +155,61 @@ export function App() {
     }
   }
 
+  function persistAuth(operation: PendingAuth | null) {
+    try {
+      if (JSON.stringify(readPendingAuth()) !== JSON.stringify(pendingAuthRef.current)) throw new Error("Auth identity changed");
+      if (operation) sessionStorage.setItem(authStorageKey, JSON.stringify(operation));
+      else sessionStorage.removeItem(authStorageKey);
+      if (JSON.stringify(readPendingAuth()) !== JSON.stringify(operation)) throw new Error("Auth identity not persisted");
+      pendingAuthRef.current = operation;
+      setPendingAuth(operation);
+      return true;
+    } catch {
+      setAuthStorageReady(false);
+      setAuthMessage("Browser storage could not preserve auth recovery. No further auth operation will be sent; restore storage and reload.");
+      return false;
+    }
+  }
+
+  async function requireAuthRecovery() {
+    const { data, error: versionError } = await api.api.version.get();
+    const compatible = !versionError && Boolean(data?.capabilities.includes("auth-request-recovery-v1"));
+    setAuthCompatible(compatible);
+    if (!compatible) setError("This host does not confirm auth-request-recovery-v1. Update the host and reload before signing in or out.");
+    return compatible;
+  }
+
   useEffect(() => {
     let active = true;
-    void api.api.auth.session.get().then(({ data, error: sessionError }) => {
-      if (!active) return;
-      setAuthenticated(!sessionError && Boolean(data && !("error" in data)));
-      if (!sessionError && data && "userId" in data && typeof data.userId === "string") restoreActionRecovery(data.userId);
-      if (isUnsupportedClientVersion(sessionError)) setError(compatibilityMessage);
-    }).finally(() => {
-      if (active) setCheckingSession(false);
-    });
+    void (async () => {
+      try {
+        const operation = readPendingAuth();
+        pendingAuthRef.current = operation;
+        setPendingAuth(operation);
+        setAuthStorageReady(true);
+        if (operation) setAuthMessage("The auth outcome is unknown. Check its receipt without resending.");
+        const { data: version, error: versionError } = await api.api.version.get();
+        if (!active) return;
+        const compatible = !versionError && Boolean(version?.capabilities.includes("auth-request-recovery-v1"));
+        setAuthCompatible(compatible);
+        if (!compatible) setError("This host does not confirm auth-request-recovery-v1. Update the host and reload before signing in or out.");
+        if (operation) return;
+        const { data, error: sessionError } = await api.api.auth.session.get();
+        if (!active) return;
+        if (!sessionError && data && "userId" in data && typeof data.userId === "string") {
+          restoreActionRecovery(data.userId);
+          setAuthenticated(true);
+        }
+        if (isUnsupportedClientVersion(sessionError)) setError(compatibilityMessage);
+      } catch {
+        if (active) {
+          setAuthStorageReady(false);
+          setError("The host session or browser recovery storage could not be checked. Reload before sending auth operations.");
+        }
+      } finally {
+        if (active) setCheckingSession(false);
+      }
+    })();
     return () => { active = false; };
   }, [api]);
 
@@ -250,22 +330,7 @@ export function App() {
     };
   }, [api, authenticated, connectionAttempt]);
 
-  async function signIn() {
-    const epoch = ++authEpoch.current;
-    setError("");
-    const { data, error: requestError } = await api.api.auth.login.post({ password });
-    if (epoch !== authEpoch.current) return;
-    if (requestError || !data || "error" in data) {
-      setError(requestErrorMessage(requestError, "The host did not accept this passphrase. Check the host configuration and try again."));
-      return;
-    }
-    setPassword("");
-    restoreActionRecovery(data.userId);
-    setAuthenticated(true);
-  }
-
-  async function signOut() {
-    const epoch = ++authEpoch.current;
+  function hideSession() {
     connectionGeneration.current += 1;
     socketRef.current?.close();
     socketRef.current = null;
@@ -277,9 +342,100 @@ export function App() {
     setActionPhase(null);
     eventStateRef.current = emptyActionEventState();
     setEventState(eventStateRef.current);
-    const { error: requestError } = await api.api.auth.logout.post();
-    if (epoch !== authEpoch.current) return;
-    if (requestError) setError("The host could not confirm logout.");
+  }
+
+  async function confirmLogin(operation: PendingAuth, epoch: number) {
+    const { data, error: sessionError } = await api.api.auth.session.get();
+    if (epoch !== authEpoch.current) return false;
+    if (!sessionError && data && "loginRequestId" in data && data.loginRequestId === operation.requestId) {
+      if (!persistAuth(null)) return false;
+      restoreActionRecovery(data.userId);
+      setAuthenticated(true);
+      setAuthMessage("");
+      return true;
+    }
+    return false;
+  }
+
+  async function mutateAuth(kind: PendingAuth["kind"]) {
+    if (authBusy.current || !authStorageReady || !authCompatible) return;
+    const previous = pendingAuthRef.current;
+    if (kind === "revoke_login" ? previous?.kind !== "login" : Boolean(previous)) return;
+    if (kind !== "logout" && !password) {
+      setError("Enter the host passphrase before sending this auth operation.");
+      return;
+    }
+    authBusy.current = true;
+    setAuthWorking(true);
+    const epoch = ++authEpoch.current;
+    const credential = password;
+    setPassword("");
+    setError("");
+    try {
+      if (!await requireAuthRecovery() || epoch !== authEpoch.current) return;
+      const operation: PendingAuth = kind === "revoke_login" && previous
+        ? { kind, requestId: crypto.randomUUID(), targetRequestId: previous.requestId }
+        : { kind: kind as "login" | "logout", requestId: crypto.randomUUID() };
+      if (!persistAuth(operation)) return;
+      if (kind === "logout") hideSession();
+      setAuthMessage("The auth outcome is unknown until confirmed. No automatic retry will be sent.");
+      const response = operation.kind === "login"
+        ? await api.api.auth.login.post({ password: credential, requestId: operation.requestId })
+        : operation.kind === "logout"
+          ? await api.api.auth.logout.post({ requestId: operation.requestId })
+          : await api.api.auth.login({ loginRequestId: operation.targetRequestId }).revoke.post({ password: credential, requestId: operation.requestId });
+      if (epoch !== authEpoch.current) return;
+      const { data, error: requestError, status } = response;
+      if (operation.kind === "login" && !requestError && data && "receipt" in data && matchesAuthReceipt(data.receipt, operation)) {
+        if (!await confirmLogin(operation, epoch)) setAuthMessage("Login receipt received, but no matching cookie is confirmed. Check auth receipt or explicitly revoke old login.");
+      } else if (operation.kind !== "login" && !requestError && matchesAuthReceipt(data, operation)) {
+        if (persistAuth(null)) setAuthMessage(operation.kind === "logout" ? "Confirmed logout. Newer sessions are not changed by receipt recovery." : "Confirmed old login revoked or fenced. You may now sign in with a distinct request.");
+      } else if (operation.kind !== "logout" && [401, 403, 422, 426].includes(status)
+        && requestError && typeof requestError.value === "object" && requestError.value !== null
+        && "error" in requestError.value && typeof requestError.value.error === "string"
+        && ["unauthorized", "https_required", "invalid_auth_request", "unsupported_client_version"].includes(requestError.value.error)) {
+        if (persistAuth(previous)) setAuthMessage("The auth request was rejected before acceptance. Check the passphrase and host configuration.");
+        setError(requestErrorMessage(requestError, "The host did not accept this passphrase. Check the host configuration and try again."));
+      }
+    } catch {
+      setAuthMessage("The auth outcome is unknown. Check its receipt without resending.");
+    } finally {
+      authBusy.current = false;
+      setAuthWorking(false);
+    }
+  }
+
+  async function checkAuthReceipt() {
+    const operation = pendingAuthRef.current;
+    if (!operation || authBusy.current || !authStorageReady) return;
+    authBusy.current = true;
+    setAuthWorking(true);
+    const epoch = ++authEpoch.current;
+    const credential = password;
+    setPassword("");
+    setError("");
+    try {
+      if (!await requireAuthRecovery() || epoch !== authEpoch.current) return;
+      if (operation.kind === "login" && await confirmLogin(operation, epoch)) return;
+      const { data, error: lookupError, status } = await api.api.auth.receipts({ requestId: operation.requestId }).lookup.post(credential ? { password: credential } : {});
+      if (epoch !== authEpoch.current) return;
+      if (!lookupError && data && "receipt" in data && matchesAuthReceipt(data.receipt, operation)) {
+        if (operation.kind === "login") {
+          setAuthMessage("Login receipt confirmed, but no matching cookie is confirmed. Enter the host passphrase and explicitly revoke old login before a distinct sign in.");
+        } else if (persistAuth(null)) {
+          setAuthMessage(operation.kind === "logout" ? "Confirmed logout. Newer sessions are not changed by receipt recovery." : "Confirmed old login revoked or fenced. You may now sign in with a distinct request.");
+        }
+      } else {
+        setAuthMessage(status === 401 ? "Enter the current host passphrase to check this auth receipt. The outcome remains unknown."
+          : status === 404 ? "No auth receipt is confirmed yet. The outcome remains unknown; do not resend. You may explicitly revoke old login to fence it."
+            : requestErrorMessage(lookupError, "The auth outcome is unknown. Check its receipt later without resending."));
+      }
+    } catch {
+      setAuthMessage("The auth outcome is unknown. Check its receipt later without resending.");
+    } finally {
+      authBusy.current = false;
+      setAuthWorking(false);
+    }
   }
 
   async function reconnectLiveUpdates() {
@@ -430,11 +586,23 @@ export function App() {
             />
             <Pressable
               accessibilityRole="button"
-              onPress={() => void signIn()}
+              accessibilityState={{ disabled: authWorking || Boolean(pendingAuth) || !authStorageReady || !authCompatible }}
+              disabled={authWorking || Boolean(pendingAuth) || !authStorageReady || !authCompatible}
+              onPress={() => void mutateAuth("login")}
               style={styles.button}
             >
               <Text style={styles.buttonText}>Sign in</Text>
             </Pressable>
+            {pendingAuth ? <View style={styles.recovery}>
+              <Text style={styles.empty}>An auth operation is awaiting confirmation. Checking does not resend it.</Text>
+              <Pressable accessibilityRole="button" disabled={authWorking || !authStorageReady} accessibilityState={{ disabled: authWorking || !authStorageReady }} onPress={() => void checkAuthReceipt()} style={styles.button}>
+                <Text style={styles.buttonText}>{authWorking ? "Checking auth…" : "Check auth receipt"}</Text>
+              </Pressable>
+              {pendingAuth.kind === "login" ? <Pressable accessibilityRole="button" disabled={authWorking || !authStorageReady || !authCompatible} accessibilityState={{ disabled: authWorking || !authStorageReady || !authCompatible }} onPress={() => void mutateAuth("revoke_login")} style={styles.button}>
+                <Text style={styles.buttonText}>Revoke old login</Text>
+              </Pressable> : null}
+            </View> : null}
+            {authMessage ? <Text testID="auth-recovery-status" aria-live="polite" style={styles.empty}>{authMessage}</Text> : null}
             {error ? <Text accessibilityRole="text" aria-live="assertive" style={styles.error}>{error}</Text> : null}
           </View>
         </View>
@@ -453,10 +621,11 @@ export function App() {
 
         <HostHealth />
 
-        <Pressable accessibilityRole="button" onPress={() => void signOut()} style={styles.button}>
+        <Pressable accessibilityRole="button" disabled={authWorking || !authStorageReady || !authCompatible} accessibilityState={{ disabled: authWorking || !authStorageReady || !authCompatible }} onPress={() => void mutateAuth("logout")} style={styles.button}>
           <Text style={styles.buttonText}>Sign out</Text>
         </Pressable>
 
+        {authMessage ? <Text testID="auth-recovery-status" aria-live="polite" style={styles.empty}>{authMessage}</Text> : null}
         <View style={styles.statusRow}>
           <View style={[styles.dot, connected ? styles.online : styles.offline]} />
           <Text accessibilityRole="text" aria-live="polite" testID="connection-status" style={styles.status}>
