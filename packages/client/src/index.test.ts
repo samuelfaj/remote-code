@@ -48,6 +48,48 @@ it("uses the same typed API and session cookie from web and mobile callers", asy
   }
 });
 
+it("keeps a committed write unknown when its response is lost and reconciles from API history", async () => {
+  const app = createApi(databasePath(), undefined, { password: "client-test-password" });
+  const login = await app.handle(new Request("https://localhost/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ password: "client-test-password" }),
+  }));
+  const cookie = login.headers.get("set-cookie")?.split(";")[0];
+  if (!cookie) throw new Error("Test auth cookie missing");
+
+  const server = Bun.serve({
+    port: 0,
+    fetch: async (request) => {
+      const response = await app.handle(request);
+      if (request.method !== "POST" || new URL(request.url).pathname !== "/api/actions") return response;
+      if (response.status !== 201) return response;
+      return new Response(new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('{"receipt":'));
+        },
+      }), { headers: { "content-type": "application/json" } });
+    },
+  });
+  const action = `commit-before-response-loss-${crypto.randomUUID()}`;
+
+  try {
+    const { data, error } = await createApiClient(`http://127.0.0.1:${server.port}`, {
+      timeoutMs: 100,
+      headers: { cookie },
+    }).api.actions.post({ action });
+    expect(data).toBeNull();
+    expectUnknownOutcome(error);
+
+    const history = await app.handle(new Request("http://localhost/api/actions", { headers: { cookie } }));
+    expect(history.status).toBe(200);
+    const receipts = (await history.json() as { actions: Array<{ action: string }> }).actions;
+    expect(receipts.filter((receipt) => receipt.action === action)).toHaveLength(1);
+  } finally {
+    server.stop(true);
+  }
+});
+
 it("identifies the shared client version on requests", async () => {
   let clientVersion: string | null = null;
   const server = Bun.serve({

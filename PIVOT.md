@@ -1,5 +1,20 @@
 # Pivot policy
 
+## Pivot record — RC-017 failure contract and proof boundary — 2026-09-27
+
+- **Eligible task:** RC-017's Start is satisfied by the accepted RC-004 state contract and RC-016 version contract; both direct dependencies are accepted. The task's original six operation classes and three failure points are unchanged.
+- **Implementation:** Added `plan/failure-state-contract.md` to distinguish client wait caps from server execution deadlines and to document the allowed state and recovery owner at each fault point. Added a real shared Eden → Elysia → SQLite test where the action commits but its response body stalls: the caller sees `request_outcome_unknown`, and a separate authoritative history read observes exactly one matching row. This does not prove idempotent retry safety; no retry is attempted.
+- **Open proof:** The full pre-acceptance/commit-without-response/post-response recovery matrix is not yet exercised for every operation. `command`, `routine`, and `billing` routes do not exist. Login response loss can leave a persisted session without a delivered cookie; cleanup is only bounded by session expiry. API-side total deadlines are not configured or measured. These are concrete unaccepted RC-017 criteria, not successful cases.
+- **Gate:** Keep RC-017 In progress, preserve its three-point requirements, and do not start RC-018 or RC-020. Continue only with failure injection and policy work over existing routes; do not fabricate command, routine, or billing success. RC-002 remains unknown/unaccepted and untouched.
+- **Review and checks:** Exact-patch reasoning review `01a0e11e-0c7c-7f50-a7ef-fff6e36d2774` found no concrete issue, with reviewer execution limitations recorded in `plan/checkpoint-evidence.md`. Parent tests/typecheck/docs links/whitespace/68-ticket assertions passed.
+- **X and cleanup:** A fresh timeline check showed the last post was 49 minutes old, so no post was made before the one-hour limit. The owned browser tab was released but removal is unverified (`closed:false`, then `hasTab:false`).
+- **RC-016 evidence correction:** The final native run log's receipts are `2471939c-71d3-4a4f-ae1a-cab0a5a92f74` and `4bb32685-5b5d-4eba-b8c1-1b916a2e7118`; prior run IDs previously copied into the acceptance record were corrected. The four CI jobs for `faf408be2451b7f94f3ec4dd9d0231fd3477be7d` passed. Full evidence is in `plan/checkpoint-evidence.md`.
+
+## Next action
+
+Continue RC-017 within existing read, action-write, and login routes: inject the three required failure points and record the allowed observed state for each. Identify any requirement that needs a new product surface, but do not advance dependent tickets or claim acceptance until every original criterion has evidence.
+
+
 ## Purpose
 
 Keep safe, evidence-backed work moving when a task encounters a blocker. A pivot changes the route or sequence of work; it does not turn missing evidence into success or silently change a task's acceptance criteria.
