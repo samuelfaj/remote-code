@@ -159,6 +159,14 @@ Keep safe, evidence-backed work moving when a task encounters a blocker. A pivot
 - **Telemetry limitation:** `distill subagent begin --node council-rc011-logic` failed with exit 2 (`unrecognized subcommand 'begin'`). Recorded one council telemetry proof gap and skipped later telemetry brackets as required by the council procedure. This was not a Distill prompt and did not investigate the unknown RC-002 effect.
 - **Safe next step:** Do not weaken the original RC-011 acceptance/failure clauses. A later explicitly authorized council continuation may validate a further revised thesis; until then, keep RC-011 unaccepted and reassess only if its prerequisites or authoritative evidence change. RC-012/014 remain partial, RC-016 and dependent tasks remain gated, and RC-002 remains unknown, unaccepted, and untouched. No product code, Docker fixture, account, credential, deployment, or X post was created or changed.
 
+## Pivot record — RC-016 mobile native-proof boundary — 2026-09-26
+
+- **Published work:** The reviewed mobile sign-in/session, authenticated versioned snapshot/event and action-receipt UI checkpoint is commit `52e3c849257a4dd287dda98454583058fac379ba`. Exact-SHA GitHub static/test runs `36286810001` and `36286807179` both succeeded; receipt and local validation are in `plan/checkpoint-evidence.md#rc-016-mobile-implementation-publication-and-ci-receipt--2026-09-26`.
+- **Remaining proof gap:** The simulator Release app displayed the signed-out screen, but the user journey could not be driven. `idb` is missing; the installed semantic mapper, navigator, and keyboard scripts depend on it. A previous `mac-use` window-enumeration attempt timed out and was not repeated. Do not infer authenticated native behavior from build, API tests, or screenshot; do not use unsafe coordinate automation or change security policy as a workaround.
+- **Next action:** Resume RC-016 only when a supported simulator interaction route is available and exercise sign-in through authenticated WebSocket snapshot/events, confirmed receipt, logout, and incompatible-client handling. Until then, RC-016 stays partial/unaccepted and RC-017 remains gated. Reassess other backlog tasks against full Start/dependency/Delivery/proof/failure fields; preserve RC-002 unknown, RC-014 partial, RC-011 `REVISE`, and deployment prohibition.
+- **Posting:** No X post for this checkpoint; there is no newly verified native behavior to announce.
+
+
 ## Final handoff review receipt — 2026-09-26
 
 - **Commit and remote:** `76bb2d33713fd7c9fc2fc96c08cb5d76c09698ee` was confirmed as local and origin branch head and the open PR #2 head.
