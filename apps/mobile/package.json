@@ -9,11 +9,14 @@
     "android": "expo run:android"
   },
   "dependencies": {
+    "@react-native-async-storage/async-storage": "2.2.0",
     "@remotecode/client": "workspace:*",
     "expo": "54.0.33",
+    "expo-crypto": "~15.0.8",
     "expo-linking": "~8.0.12",
     "react": "19.1.0",
-    "react-native": "0.81.5"
+    "react-native": "0.81.5",
+    "react-native-safe-area-context": "~5.6.0"
   },
   "version": "1.0.0"
 }

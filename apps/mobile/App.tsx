@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { applyActionEvent, CLIENT_VERSION, createApiClient, emptyActionEventState, type ActionEventState } from "@remotecode/client";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { randomUUID } from "expo-crypto";
+import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
+import { actionReceiptFromResponse, isDefinitiveActionRejection, applyActionEvent, CLIENT_VERSION, createApiClient, emptyActionEventState, type ActionEventState } from "@remotecode/client";
 
 const apiOrigin = process.env.EXPO_PUBLIC_API_ORIGIN ?? "http://127.0.0.1:3000";
 const clientOrigin = process.env.EXPO_PUBLIC_CLIENT_ORIGIN ?? "http://localhost:5173";
@@ -23,6 +26,12 @@ export default function App() {
   const [error, setError] = useState("");
   const [events, setEvents] = useState<ActionEventState>(emptyActionEventState);
   const [busy, setBusy] = useState(false);
+  const [pendingKey, setPendingKey] = useState<string | null>(null);
+  const [pendingRequestId, setPendingRequestId] = useState<string | null>(null);
+  const [recoveryMessage, setRecoveryMessage] = useState("");
+  const [storageReady, setStorageReady] = useState(false);
+  const actionLock = useRef(false);
+  const storageQueue = useRef(Promise.resolve());
   const socket = useRef<WebSocket | null>(null);
   const syncTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const operationGeneration = useRef(0);
@@ -33,18 +42,55 @@ export default function App() {
     socket.current?.close();
   }, []);
 
+  function withPendingStorage<T>(work: () => Promise<T>): Promise<T> {
+    const result = storageQueue.current.then(work);
+    storageQueue.current = result.then(() => undefined, () => undefined);
+    return result;
+  }
+
+  function validatePendingId(value: string | null) {
+    if (value !== null && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)) {
+      throw new Error("Invalid persisted request identity");
+    }
+    return value;
+  }
+
+  function clearRecoveryView() {
+    actionLock.current = false;
+    setPendingKey(null);
+    setPendingRequestId(null);
+    setStorageReady(false);
+    setRecoveryMessage("");
+  }
+
+  async function forgetPending(key: string, requestId: string) {
+    return withPendingStorage(async () => {
+      if (await AsyncStorage.getItem(key) !== requestId) return false;
+      await AsyncStorage.removeItem(key);
+      return await AsyncStorage.getItem(key) === null;
+    }).catch(() => false);
+  }
+
   async function connect() {
     const generation = ++operationGeneration.current;
     setBusy(true);
     setError("");
+    clearRecoveryView();
     try {
       const client = createApiClient(apiOrigin);
       const { error: loginError } = await client.api.auth.login.post({ password });
       if (loginError) throw loginError;
       if (generation !== operationGeneration.current) return;
-      const { error: sessionError } = await client.api.auth.session.get();
+      const { data: session, error: sessionError } = await client.api.auth.session.get();
       if (sessionError) throw sessionError;
+      if (!session || typeof session.userId !== "string") throw new Error("Missing session identity");
       if (generation !== operationGeneration.current) return;
+      const key = `remotecode.pending-action:${JSON.stringify([apiOrigin, session.userId])}`;
+      const pending = await withPendingStorage(async () => validatePendingId(await AsyncStorage.getItem(key)));
+      if (generation !== operationGeneration.current) return;
+      setPendingKey(key);
+      setPendingRequestId(pending);
+      setStorageReady(true);
 
       eventState.current = emptyActionEventState();
       setEvents(eventState.current);
@@ -108,6 +154,7 @@ export default function App() {
         if (socket.current !== ws || generation !== operationGeneration.current) return;
         socket.current = null;
         if (syncTimeout.current) clearTimeout(syncTimeout.current);
+        setRecoveryMessage("");
         setConnection("disconnected");
         setError("Could not connect to the host event stream. Reconnect to try again.");
         ws.close();
@@ -116,6 +163,7 @@ export default function App() {
         if (socket.current !== ws || generation !== operationGeneration.current) return;
         socket.current = null;
         if (syncTimeout.current) clearTimeout(syncTimeout.current);
+        setRecoveryMessage("");
         if (event.code === 4401) {
           operationGeneration.current += 1;
           eventState.current = emptyActionEventState();
@@ -123,6 +171,7 @@ export default function App() {
           setPassword("");
           setAction("");
           setBusy(false);
+          clearRecoveryView();
           setConnection("signed_out");
           setError("The host session expired or was revoked. Sign in again.");
         } else {
@@ -144,25 +193,127 @@ export default function App() {
   }
 
   async function submitAction() {
-    if (connection !== "connected" || eventState.current.needsSnapshot || !action.trim() || busy) return;
+    if (connection !== "connected" || eventState.current.needsSnapshot || !action.trim() || busy
+      || actionLock.current || pendingRequestId || !pendingKey || !storageReady) return;
     const generation = operationGeneration.current;
+    const activeSocket = socket.current;
+    const isCurrent = () => generation === operationGeneration.current && socket.current === activeSocket;
+    const key = pendingKey;
+    actionLock.current = true;
     setBusy(true);
     setError("");
+    setRecoveryMessage("");
+    let sent = false;
     try {
-      const { data, error: requestError } = await createApiClient(apiOrigin).api.actions.post({ action: action.trim() });
-      if (requestError) throw requestError;
-      if (!data || "error" in data) throw new Error("Missing action receipt");
-      if (generation !== operationGeneration.current) return;
-      setAction("");
-      const createdAt: unknown = data.createdAt;
-      const receipt = { ...data, createdAt: createdAt instanceof Date ? createdAt.toISOString() : String(createdAt) };
-      const next = { ...eventState.current, actions: [receipt, ...eventState.current.actions.filter((item) => item.id !== receipt.id)] };
-      eventState.current = next;
-      setEvents(next);
-    } catch (cause) {
-      if (generation === operationGeneration.current) setError(errorMessage(cause));
+      const client = createApiClient(apiOrigin);
+      const version = await client.api.version.get();
+      if (!isCurrent()) return;
+      if (version.error || !version.data?.capabilities.includes("action-request-recovery-v1")) {
+        setRecoveryMessage("Update the host to support action receipt recovery. No action was sent.");
+        return;
+      }
+      const prepared = await withPendingStorage(async () => {
+        const existing = validatePendingId(await AsyncStorage.getItem(key));
+        if (existing) return { requestId: existing, send: false };
+        if (!isCurrent()) return null;
+        const requestId = randomUUID();
+        await AsyncStorage.setItem(key, requestId);
+        if (await AsyncStorage.getItem(key) !== requestId) throw new Error("Pending identity was not retained");
+        if (!isCurrent()) {
+          await AsyncStorage.removeItem(key);
+          return null;
+        }
+        return { requestId, send: true };
+      });
+      if (!isCurrent() || !prepared) return;
+      setPendingRequestId(prepared.requestId);
+      if (!prepared.send) {
+        setRecoveryMessage("An earlier outcome is unknown. Check its receipt before sending another action.");
+        return;
+      }
+      sent = true;
+      const response = await client.api.actions.post({ action: action.trim(), requestId: prepared.requestId });
+      if (!isCurrent()) return;
+      const receipt = actionReceiptFromResponse(response);
+      if (receipt || isDefinitiveActionRejection(response)) {
+        const cleared = await forgetPending(key, prepared.requestId);
+        if (!isCurrent()) return;
+        if (cleared) setPendingRequestId(null);
+        if (receipt) {
+          setAction("");
+          const next = { ...eventState.current, actions: [receipt, ...eventState.current.actions.filter((item) => item.id !== receipt.id)] };
+          eventState.current = next;
+          setEvents(next);
+          setRecoveryMessage(cleared ? "" : `Confirmed receipt ${receipt.id}. Device storage could not clear the pending identity; check again.`);
+        } else {
+          setError(errorMessage(response.error));
+          if (!cleared) setRecoveryMessage("The host rejected the action, but device storage could not clear its identity. Sending remains disabled.");
+        }
+      } else {
+        setRecoveryMessage("The outcome is unknown. Check the action receipt before sending another action.");
+      }
+    } catch {
+      if (isCurrent()) {
+        if (!sent) setStorageReady(false);
+        setRecoveryMessage(sent
+          ? "The outcome is unknown. Check the action receipt before sending another action."
+          : "The action could not be prepared safely. No action was sent. Sign out and sign in again to check the host and device storage.");
+      }
     } finally {
-      if (generation === operationGeneration.current) setBusy(false);
+      if (generation === operationGeneration.current) {
+        actionLock.current = false;
+        setBusy(false);
+      }
+    }
+  }
+
+  async function checkActionReceipt() {
+    if (connection !== "connected" || eventState.current.needsSnapshot || busy || actionLock.current || !pendingKey || !pendingRequestId) return;
+    const generation = operationGeneration.current;
+    const activeSocket = socket.current;
+    const isCurrent = () => generation === operationGeneration.current && socket.current === activeSocket;
+    const key = pendingKey;
+    const requestId = pendingRequestId;
+    actionLock.current = true;
+    setBusy(true);
+    setRecoveryMessage("");
+    try {
+      const response = await createApiClient(apiOrigin).api.actions.receipts({ requestId }).get();
+      if (!isCurrent()) return;
+      const receipt = actionReceiptFromResponse(response);
+      if (receipt) {
+        const cleared = await forgetPending(key, requestId);
+        if (!isCurrent()) return;
+        if (cleared) setPendingRequestId(null);
+        const next = { ...eventState.current, actions: [receipt, ...eventState.current.actions.filter((item) => item.id !== receipt.id)] };
+        eventState.current = next;
+        setEvents(next);
+        setRecoveryMessage(`Confirmed receipt ${receipt.id}.${cleared ? "" : " Device storage could not clear the pending identity; check again."}`);
+      } else if (response.status === 401) {
+        operationGeneration.current += 1;
+        socket.current = null;
+        activeSocket?.close();
+        if (syncTimeout.current) clearTimeout(syncTimeout.current);
+        eventState.current = emptyActionEventState();
+        setEvents(eventState.current);
+        clearRecoveryView();
+        setPassword("");
+        setAction("");
+        setBusy(false);
+        setConnection("signed_out");
+        setError("The host session expired or was revoked. Sign in again.");
+      } else {
+        setRecoveryMessage(response.status === 404
+          ? "No receipt is confirmed yet. The outcome is still unknown; check again later without resending."
+          : "The host could not check the receipt. The outcome is still unknown.");
+      }
+    } catch {
+      if (isCurrent()) setRecoveryMessage("The host could not check the receipt. The outcome is still unknown.");
+    } finally {
+      if (generation === operationGeneration.current) {
+        actionLock.current = false;
+        setBusy(false);
+      }
     }
   }
 
@@ -176,6 +327,7 @@ export default function App() {
     eventState.current = emptyActionEventState();
     setEvents(eventState.current);
     setConnection("signed_out");
+    clearRecoveryView();
     setPassword("");
     setAction("");
     setError("");
@@ -192,42 +344,55 @@ export default function App() {
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.page}>
-      <Text accessibilityRole="header" style={styles.title}>RemoteCode mobile</Text>
-      <Text style={styles.endpoint}>Host: {apiOrigin}</Text>
-      <View style={styles.card}>
-        <Text accessibilityRole="header" style={styles.heading}>Host connection</Text>
-        <Text accessibilityLiveRegion="polite" testID="connection-status" style={styles.status}>{connection.replace("_", " ")}</Text>
-        {connection === "signed_out" || connection === "disconnected" || connection === "incompatible" ? <>
-          <TextInput accessibilityLabel="Host password" autoCapitalize="none" secureTextEntry value={password} onChangeText={setPassword} placeholder="Host password" style={styles.input} />
-          <Pressable accessibilityRole="button" accessibilityLabel="Sign in to host" disabled={busy || !password} onPress={() => void connect()} style={styles.button}>
-            {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Sign in to host</Text>}
-          </Pressable>
-        </> : null}
-        {connection === "connected" ? <>
-          <TextInput accessibilityLabel="Action" value={action} onChangeText={setAction} placeholder="Send an action" maxLength={120} style={styles.input} />
-          <Pressable accessibilityRole="button" accessibilityLabel="Submit action" disabled={busy || !action.trim()} onPress={() => void submitAction()} style={styles.button}>
-            {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Submit action</Text>}
-          </Pressable>
-        </> : null}
-        {connection !== "signed_out" ? <Pressable accessibilityRole="button" accessibilityLabel="Sign out" disabled={busy && connection !== "connected"} onPress={() => void signOut()} style={styles.secondaryButton}><Text style={styles.secondaryText}>Sign out</Text></Pressable> : null}
-        {error ? <Text accessibilityRole="alert" testID="connection-error" style={styles.error}>{error}</Text> : null}
-      </View>
-      {connection === "connected" ? <View style={styles.card}>
-        <Text accessibilityRole="header" style={styles.heading}>Confirmed receipts</Text>
-        {events.actions.length === 0 ? <Text style={styles.muted}>No confirmed actions yet.</Text> : events.actions.map((receipt) => (
-          <View key={receipt.id} style={styles.receipt}>
-            <Text style={styles.actionText}>{receipt.action}</Text>
-            <Text style={styles.muted}>Receipt {receipt.id}</Text>
-            <Text style={styles.muted}>{String(receipt.createdAt)}</Text>
+    <SafeAreaProvider>
+      <SafeAreaView style={styles.safeArea}>
+        <ScrollView contentContainerStyle={styles.page}>
+          <Text accessibilityRole="header" style={styles.title}>RemoteCode mobile</Text>
+          <Text style={styles.endpoint}>Host: {apiOrigin}</Text>
+          <View style={styles.card}>
+            <Text accessibilityRole="header" style={styles.heading}>Host connection</Text>
+            <Text accessibilityLiveRegion="polite" testID="connection-status" style={styles.status}>{connection.replace("_", " ")}</Text>
+            {connection === "signed_out" || connection === "disconnected" || connection === "incompatible" ? <>
+              <TextInput accessibilityLabel="Host password" autoCapitalize="none" secureTextEntry value={password} onChangeText={setPassword} placeholder="Host password" style={styles.input} />
+              <Pressable accessibilityRole="button" accessibilityLabel="Sign in to host" disabled={busy || !password} onPress={() => void connect()} style={styles.button}>
+                {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Sign in to host</Text>}
+              </Pressable>
+            </> : null}
+            {connection === "connected" ? <>
+              <TextInput accessibilityLabel="Action" value={action} onChangeText={setAction} placeholder="Send an action" maxLength={120} style={styles.input} />
+              <Pressable accessibilityRole="button" accessibilityLabel="Submit action" accessibilityState={{ disabled: busy || !action.trim() || Boolean(pendingRequestId) || !storageReady }} disabled={busy || !action.trim() || Boolean(pendingRequestId) || !storageReady} onPress={() => void submitAction()} style={[styles.button, (busy || !action.trim() || Boolean(pendingRequestId) || !storageReady) && styles.disabled]}>
+                {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Submit action</Text>}
+              </Pressable>
+            </> : null}
+            {connection === "connected" && pendingRequestId ? <View style={styles.recovery}>
+              <Text style={styles.muted}>An action is awaiting confirmation. Checking its receipt will not resend it.</Text>
+              <Pressable accessibilityRole="button" accessibilityLabel="Check action receipt" accessibilityState={{ disabled: busy }} disabled={busy} onPress={() => void checkActionReceipt()} style={[styles.button, busy && styles.disabled]}>
+                <Text style={styles.buttonText}>Check action receipt</Text>
+              </Pressable>
+            </View> : null}
+            {connection === "connected" && recoveryMessage ? <Text accessibilityLiveRegion="polite" testID="action-recovery-status" style={styles.muted}>{recoveryMessage}</Text> : null}
+            {connection !== "signed_out" ? <Pressable accessibilityRole="button" accessibilityLabel="Sign out" disabled={busy && connection !== "connected"} onPress={() => void signOut()} style={styles.secondaryButton}><Text style={styles.secondaryText}>Sign out</Text></Pressable> : null}
+            {error ? <Text accessibilityRole="alert" testID="connection-error" style={styles.error}>{error}</Text> : null}
           </View>
-        ))}
-      </View> : null}
-    </ScrollView>
+          {connection === "connected" ? <View style={styles.card}>
+            <Text accessibilityRole="header" style={styles.heading}>Confirmed receipts</Text>
+            {events.actions.length === 0 ? <Text style={styles.muted}>No confirmed actions yet.</Text> : events.actions.map((receipt) => (
+              <View key={receipt.id} style={styles.receipt}>
+                <Text style={styles.actionText}>{receipt.action}</Text>
+                <Text style={styles.muted}>Receipt {receipt.id}</Text>
+                <Text style={styles.muted}>{String(receipt.createdAt)}</Text>
+              </View>
+            ))}
+          </View> : null}
+        </ScrollView>
+      </SafeAreaView>
+    </SafeAreaProvider>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: { flex: 1, backgroundColor: "#f4f7f5" },
+  disabled: { opacity: 0.5 },
   page: { flexGrow: 1, gap: 16, justifyContent: "center", padding: 24, backgroundColor: "#f4f7f5" },
   title: { color: "#183337", fontSize: 28, fontWeight: "700" },
   endpoint: { color: "#50696b", fontSize: 14, marginBottom: 4 },
@@ -240,6 +405,7 @@ const styles = StyleSheet.create({
   secondaryButton: { alignItems: "center", minHeight: 42, justifyContent: "center" },
   secondaryText: { color: "#126b54", fontWeight: "700" },
   error: { color: "#9c3026", fontSize: 14 },
+  recovery: { gap: 12 },
   muted: { color: "#50696b", fontSize: 12 },
   receipt: { borderTopColor: "#e3ebe7", borderTopWidth: 1, gap: 5, paddingTop: 12 },
   actionText: { color: "#183337", fontSize: 15, fontWeight: "600" },

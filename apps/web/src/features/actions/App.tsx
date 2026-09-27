@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native-web";
-import { applyActionEvent, CLIENT_VERSION, createApiClient, emptyActionEventState } from "@remotecode/client";
+import { actionReceiptFromResponse, isDefinitiveActionRejection, applyActionEvent, CLIENT_VERSION, createApiClient, emptyActionEventState } from "@remotecode/client";
 import type { ActionEventState } from "@remotecode/client";
 import { getWebHealth } from "../health/api";
 
@@ -342,13 +342,15 @@ export function App() {
         return;
       }
       setPendingRequestId(requestId);
-      const { data, error: requestError } = await api.api.actions.post({ action: value, requestId });
+      const response = await api.api.actions.post({ action: value, requestId });
       if (!isCurrent()) return;
-      if (!requestError && data && "id" in data) {
+      const receipt = actionReceiptFromResponse(response);
+      const requestError = response.error;
+      if (receipt) {
         const cleared = forgetPendingAction(sessionUserId, requestId);
-        setRecoveryMessage(cleared ? "" : `Confirmed receipt ${data.id}. Browser storage could not clear the pending identity; check the receipt again.`);
+        setRecoveryMessage(cleared ? "" : `Confirmed receipt ${receipt.id}. Browser storage could not clear the pending identity; check the receipt again.`);
         if (socketRef.current?.readyState === WebSocket.OPEN) socketRef.current.send(JSON.stringify({ type: "sync" }));
-      } else if (requestError && [401, 403, 422, 426].includes(requestError.status)) {
+      } else if (isDefinitiveActionRejection(response)) {
         const cleared = forgetPendingAction(sessionUserId, requestId);
         setError(requestErrorMessage(requestError, "The host rejected this action before acceptance."));
         if (!cleared) setRecoveryMessage("Browser storage could not clear the rejected request. Sending remains disabled.");
@@ -376,11 +378,13 @@ export function App() {
     setActionPhase("checking");
     setRecoveryMessage("");
     try {
-      const { data, error: requestError, status } = await api.api.actions.receipts({ requestId: pendingRequestId }).get();
+      const response = await api.api.actions.receipts({ requestId: pendingRequestId }).get();
       if (!isCurrent()) return;
-      if (!requestError && data && "id" in data) {
+      const receipt = actionReceiptFromResponse(response);
+      const { error: requestError, status } = response;
+      if (receipt) {
         const cleared = forgetPendingAction(sessionUserId, pendingRequestId);
-        setRecoveryMessage(`Confirmed receipt ${data.id}.${cleared ? "" : " Browser storage could not clear the pending identity; check the receipt again."}`);
+        setRecoveryMessage(`Confirmed receipt ${receipt.id}.${cleared ? "" : " Browser storage could not clear the pending identity; check the receipt again."}`);
         if (socketRef.current?.readyState === WebSocket.OPEN) socketRef.current.send(JSON.stringify({ type: "sync" }));
       } else if (status === 401) {
         authEpoch.current += 1;

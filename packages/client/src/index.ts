@@ -1,3 +1,4 @@
+export { actionReceiptFromResponse, isDefinitiveActionRejection } from "./action-recovery";
 export { applyActionEvent, emptyActionEventState } from "./action-events";
 export type { ActionEventState, ActionReceipt } from "./action-events";
 

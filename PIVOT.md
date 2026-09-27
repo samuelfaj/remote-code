@@ -5,7 +5,7 @@
 - **Decision:** Replace aggregate RC-017 prerequisites on RC-018/019/020/027 with accepted RC-004/016 plus the reviewed written failure contract. Preserve every other prerequisite and the Phase 01 promotion gate. RC-018/020 implementation can proceed; no full-task acceptance is inferred.
 - **Reason:** Command, routine, and billing runtime proofs require routes downstream of the original aggregate gate. The contract now assigns their evidence to the implementing tasks and requires aggregate RC-017 acceptance before RC-065. All six original operation outcomes remain open until verified.
 - **Independent review:** Reasoning reviewer `01a0e365-2ffd-76f2-8e2d-29f28971ab15` identified RC-019/027 as additional cycle edges and the unchanged phase gate. Applied those dependency corrections; early Phase 02 implementation is outside this amendment.
-- **Progress/next action:** Action stable-ID persistence and lookup are now implemented and tested as the first RC-018 slice. Web recovery now queries retained action IDs without replay and survives tab reload. Continue with native recovery and remaining mutation families. Keep login/session and gateway gaps explicit; existing actions alone cannot accept RC-018.
+- **Progress/next action:** Action stable-ID persistence and lookup are now implemented and tested as the first RC-018 slice. Web recovery now queries retained action IDs without replay and survives tab reload. Native iOS recovery is now proven through logout/relogin and process restart. Continue with the unresolved login/session mutation identity and recovery policy, then remaining mutation families. Keep login/session and gateway gaps explicit; existing actions alone cannot accept RC-018.
 
 ## Prior RC-017 failure contract and proof boundary — 2026-09-27
 
@@ -22,7 +22,7 @@
 
 ## Next action
 
-RC-018 now has tested optional action request IDs, atomic persistence, and authenticated canonical lookup. The web flow now retains pending IDs across reload, checks the capability before sending, and uses the shared Eden receipt route for explicit no-replay recovery. Next, implement native recovery and cover every other mutation. Keep login/session, gateway, total-deadline, and visible-client requirements open until proven.
+RC-018 now has tested optional action request IDs, atomic persistence, and authenticated canonical lookup. The web flow now retains pending IDs across reload, checks the capability before sending, and uses the shared Eden receipt route for explicit no-replay recovery. Native iOS persistence/recovery is now tested, including a failed lookup, logout/relogin and process restart. Next, resolve login/session mutation identity and the lost-cookie recovery policy, then cover every other mutation. Keep login/session, gateway, total-deadline, and visible-client requirements open until proven.
 
 
 ## Purpose
