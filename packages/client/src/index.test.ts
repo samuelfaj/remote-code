@@ -49,6 +49,23 @@ it("uses the same typed API and session cookie from web and mobile callers", asy
   }
 });
 
+it("does not return empty history when the API is offline before a read", async () => {
+  const server = Bun.serve({ port: 0, fetch: () => Response.json({ actions: [] }) });
+  const origin = `http://127.0.0.1:${server.port}`;
+  server.stop(true);
+
+  let result: Awaited<ReturnType<ReturnType<typeof createApiClient>["api"]["actions"]["get"]>> | undefined;
+  let transportFailure: unknown;
+  try {
+    result = await createApiClient(origin, { timeoutMs: 100 }).api.actions.get();
+  } catch (error) {
+    transportFailure = error;
+  }
+
+  expect(transportFailure !== undefined || (result?.data === null && result.error !== null)).toBe(true);
+  expect(result?.data).not.toEqual({ actions: [] });
+});
+
 it("keeps a committed write unknown when its response is lost and reconciles from API history", async () => {
   const app = createApi(databasePath(), undefined, { password: "client-test-password" });
   const login = await app.handle(new Request("https://localhost/api/auth/login", {
