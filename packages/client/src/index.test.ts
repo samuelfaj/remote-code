@@ -66,6 +66,58 @@ it("does not return empty history when the API is offline before a read", async 
   expect(result?.data).not.toEqual({ actions: [] });
 });
 
+it("recovers authoritative history after the API restarts following a successful read", async () => {
+  const path = databasePath();
+  const authConfig = { password: "client-test-password" };
+  const app = createApi(path, undefined, authConfig);
+  const login = await app.handle(new Request("https://localhost/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ password: authConfig.password }),
+  }));
+  const cookie = login.headers.get("set-cookie")?.split(";")[0];
+  if (!cookie) throw new Error("Test auth cookie missing");
+
+  const write = await app.handle(new Request("http://localhost/api/actions", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify({ action: "recover history after API restart" }),
+  }));
+  const receipt = await write.json() as { id: string; action: string };
+  expect(write.status).toBe(201);
+
+  const firstServer = app.listen(0);
+  const firstPort = firstServer.server?.port;
+  if (!firstPort) throw new Error("Elysia did not bind the initial read test port");
+  try {
+    const firstRead = await createApiClient(`http://127.0.0.1:${firstPort}`, { headers: { cookie } })
+      .api.actions.get();
+    expect(firstRead.error).toBeNull();
+    if (!firstRead.data || !("actions" in firstRead.data) || !Array.isArray(firstRead.data.actions)) {
+      throw new Error("Expected an action history response");
+    }
+    expect(firstRead.data.actions.some((stored) => stored.id === receipt.id && stored.action === receipt.action)).toBe(true);
+  } finally {
+    await firstServer.stop(true);
+  }
+
+  const recoveredApi = createApi(path, undefined, authConfig);
+  const recoveredServer = recoveredApi.listen(0);
+  const recoveredPort = recoveredServer.server?.port;
+  if (!recoveredPort) throw new Error("Elysia did not bind after the API restart");
+  try {
+    const recoveredRead = await createApiClient(`http://127.0.0.1:${recoveredPort}`, { headers: { cookie } })
+      .api.actions.get();
+    expect(recoveredRead.error).toBeNull();
+    if (!recoveredRead.data || !("actions" in recoveredRead.data) || !Array.isArray(recoveredRead.data.actions)) {
+      throw new Error("Expected recovered action history");
+    }
+    expect(recoveredRead.data.actions.some((stored) => stored.id === receipt.id && stored.action === receipt.action)).toBe(true);
+  } finally {
+    await recoveredServer.stop(true);
+  }
+});
+
 it("keeps a committed write unknown when its response is lost and reconciles from API history", async () => {
   const app = createApi(databasePath(), undefined, { password: "client-test-password" });
   const login = await app.handle(new Request("https://localhost/api/auth/login", {
@@ -157,6 +209,80 @@ it("keeps the confirmed write receipt when the later history read times out", as
     expect(receipts.filter((stored) => stored.id === receipt.id && stored.action === action)).toHaveLength(1);
   } finally {
     server.stop(true);
+  }
+});
+
+it("does not create a session when shared-client login is rejected before acceptance", async () => {
+  const path = databasePath();
+  const app = createApi(path, undefined, { password: "client-test-password" });
+  const server = app.listen(0);
+  const port = server.server?.port;
+  if (!port) throw new Error("Elysia did not bind an ephemeral auth test port");
+
+  try {
+    const { data, error } = await createApiClient(`http://127.0.0.1:${port}`)
+      .api.auth.login.post({ password: "incorrect-password" });
+    expect(data).toBeNull();
+    expect(error).toMatchObject({ status: 401, value: { error: "unauthorized" } });
+
+    const database = new Database(path);
+    try {
+      const sessions = database.query<{ count: number }, []>("SELECT COUNT(*) AS count FROM sessions").get();
+      expect(sessions?.count).toBe(0);
+    } finally {
+      database.close();
+    }
+  } finally {
+    await server.stop(true);
+  }
+});
+
+it("recovers session validation after the login response was confirmed", async () => {
+  const app = createApi(databasePath(), undefined, { password: "client-test-password" });
+  const apiServer = app.listen(0);
+  const apiPort = apiServer.server?.port;
+  if (!apiPort) throw new Error("Elysia did not bind an ephemeral auth test port");
+  let cookie: string | undefined;
+  let failSessionCheck = true;
+  const proxy = Bun.serve({
+    port: 0,
+    fetch: async (request) => {
+      const url = new URL(request.url);
+      if (request.method === "GET" && url.pathname === "/api/auth/session" && failSessionCheck) {
+        failSessionCheck = false;
+        return Response.json({ error: "session_observation_unavailable" }, { status: 503 });
+      }
+      const body = request.method === "GET" ? undefined : await request.text();
+      const response = await fetch(`http://127.0.0.1:${apiPort}${url.pathname}`, {
+        method: request.method,
+        headers: request.headers,
+        ...(body === undefined ? {} : { body }),
+      });
+      if (url.pathname === "/api/auth/login" && response.status === 200) {
+        cookie = response.headers.get("set-cookie")?.split(";")[0];
+      }
+      return response;
+    },
+  });
+  const origin = `http://127.0.0.1:${proxy.port}`;
+
+  try {
+    const login = await createApiClient(origin).api.auth.login.post({ password: "client-test-password" });
+    expect(login.error).toBeNull();
+    expect(login.data?.userId).toBe("local");
+    if (!cookie) throw new Error("Login response did not include a session cookie");
+
+    const sessionClient = createApiClient(origin, { headers: { cookie } });
+    const failedObservation = await sessionClient.api.auth.session.get();
+    expect(failedObservation.data).toBeNull();
+    expect(failedObservation.error?.status).toBe(503);
+
+    const recoveredSession = await sessionClient.api.auth.session.get();
+    expect(recoveredSession.error).toBeNull();
+    expect(recoveredSession.data).toEqual({ userId: "local" });
+  } finally {
+    proxy.stop(true);
+    await apiServer.stop(true);
   }
 });
 

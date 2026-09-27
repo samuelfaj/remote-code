@@ -1,19 +1,28 @@
 # Pivot policy
 
-## Pivot record — RC-017 failure contract and proof boundary — 2026-09-27
+## Pivot record — RC-017 implementation sequencing — 2026-09-27
+
+- **Decision:** Replace aggregate RC-017 prerequisites on RC-018/019/020/027 with accepted RC-004/016 plus the reviewed written failure contract. Preserve every other prerequisite and the Phase 01 promotion gate. RC-018/020 implementation can proceed; no full-task acceptance is inferred.
+- **Reason:** Command, routine, and billing runtime proofs require routes downstream of the original aggregate gate. The contract now assigns their evidence to the implementing tasks and requires aggregate RC-017 acceptance before RC-065. All six original operation outcomes remain open until verified.
+- **Independent review:** Reasoning reviewer `01a0e365-2ffd-76f2-8e2d-29f28971ab15` identified RC-019/027 as additional cycle edges and the unchanged phase gate. Applied those dependency corrections; early Phase 02 implementation is outside this amendment.
+- **Next action:** Implement stable IDs and canonical receipt recovery for existing mutations under RC-018, starting with actions. Keep login/session and gateway gaps explicit; existing actions alone cannot accept RC-018.
+
+## Prior RC-017 failure contract and proof boundary — 2026-09-27
+
+> Historical sequence, superseded above. Test and unresolved-effect evidence remains valid.
 
 - **Eligible task:** RC-017's Start is satisfied by the accepted RC-004 state contract and RC-016 version contract; both direct dependencies are accepted. The task's original six operation classes and three failure points are unchanged.
-- **Implementation:** Added `plan/failure-state-contract.md` to distinguish client wait caps from server execution deadlines and to document the allowed state and recovery owner at each fault point. Shared Eden → Elysia → SQLite tests cover an action committed before its response stalls, a timed-out history read after the caller has received an action receipt, an offline action-history read, and login response loss after session insertion. The two action cases reconcile to exactly one stored receipt without resubmission; the offline read does not return empty history. The login case leaves one orphaned session in SQLite, a concrete unresolved gap. These tests do not prove idempotent retry safety.
-- **Open proof:** The full pre-acceptance/commit-without-response/post-response recovery matrix is not yet exercised for every operation. `command`, `routine`, and `billing` routes do not exist. Login response loss can leave a persisted session without a delivered cookie; cleanup is only bounded by session expiry. API-side total deadlines are not configured or measured. These are concrete unaccepted RC-017 criteria, not successful cases.
+- **Implementation:** Added the operation-state contract and shared Eden/Elysia/SQLite tests for lost write responses, history recovery after API-instance restart, offline history, invalid login before session creation, session revalidation after an observation failure, and the unresolved lost-cookie orphan session. Replaced the synthetic caller-throw read test with the real Elysia/SQLite restart and reread path; no login production behavior changed.
+- **Open proof:** A lost login cookie still leaves an orphan session with no caller recovery handle; that recovery policy remains open. Visible web/mobile consumer paths and total server-side deadlines are not verified. `command`, `routine`, and `billing` routes do not exist, so their three-point proofs cannot be claimed. RC-017 remains unaccepted; no outcome is inferred from absent routes.
 - **Gate:** Keep RC-017 In progress, preserve its three-point requirements, and do not start RC-018 or RC-020. Continue only with failure injection and policy work over existing routes; do not fabricate command, routine, or billing success. RC-002 remains unknown/unaccepted and untouched.
-- **Review and checks:** Final exact-patch review `01a0e138-cdc8-7991-9b2f-dff5a0a0de28` found no issue in the offline-read code change; the stale validation claim and receipt chronology findings were corrected, with follow-up reviews `01a0e137-04ef-7702-a403-9203a6b20712` and `01a0e148-1f59-7212-8416-e27490ba8e20`. Parent checks: 45 tests / 234 expectations, typecheck, docs links, and whitespace passed. Run records `36295807211` and `36295809113` were independently queried by `gh run view`; each reports head SHA `306702c3a2adb8d882751e589cf5cc74a0780028` and success.
+- **Review and checks:** Final code review `01a0e138-cdc8-7991-9b2f-dff5a0a0de28` found no issue in the offline-read tests. Validation wording was corrected and rechecked by `01a0e137-04ef-7702-a403-9203a6b20712`; receipt chronology was corrected and rechecked by `01a0e148-1f59-7212-8416-e27490ba8e20`. The current follow-up adds read post-response and login pre/post-acceptance integration cases. Parent checks pass: 48 tests / 248 expectations, typecheck, docs links, and whitespace.
 - **X and cleanup:** A fresh timeline check showed the last post was 49 minutes old, so no post was made before the one-hour limit. The owned browser tab was released but removal is unverified (`closed:false`, then `hasTab:false`).
-- **Publication:** The partial offline-read checkpoint `306702c3a2adb8d882751e589cf5cc74a0780028` was pushed; its exact-SHA static/test runs passed. Receipt-only handoff commits followed in Git history. The later head `5fe89b8c432af2619931df1a7727f43133038820` and its successful checks were confirmed at that checkpoint; all head statements in this record are historical. RC-017 remains In progress and dependents remain gated.
+- **Publication:** Offline-read implementation checkpoint `306702c3a2adb8d882751e589cf5cc74a0780028` passed exact-SHA static/test workflows `36295807211` and `36295809113`; subsequent receipt-only commits remain visible in Git history. RC-017 remains In progress and dependents remain gated.
 - **RC-016 evidence correction:** The final native run log's receipts are `2471939c-71d3-4a4f-ae1a-cab0a5a92f74` and `4bb32685-5b5d-4eba-b8c1-1b916a2e7118`; prior run IDs previously copied into the acceptance record were corrected. The four CI jobs for `faf408be2451b7f94f3ec4dd9d0231fd3477be7d` passed. Full evidence is in `plan/checkpoint-evidence.md`.
 
 ## Next action
 
-Continue RC-017 within existing read, action-write, and login routes: inject the three required failure points and record the allowed observed state for each. Identify any requirement that needs a new product surface, but do not advance dependent tickets or claim acceptance until every original criterion has evidence.
+Implement RC-018 over existing action routes using stable caller IDs and durable canonical receipts, then extend to every existing mutation. Keep login/session, gateway, total-deadline, and visible-client requirements open until proven.
 
 
 ## Purpose
