@@ -2,6 +2,23 @@
 
 This file records local observations for the current backlog checkpoint. It distinguishes source inventory and environment probes from accepted product behavior. The raw command output was also captured in the session scratch directory during this run; this repository note preserves the observations needed for another agent to resume.
 
+## Native UI automation route assessment — 2026-09-26
+
+- **Repository baseline:** Root `/Users/samuelfajreldines/dev/new-remote-code`; pre-change commit `34d15535f95abd608981a86ee63a0e5b510a9a5e`; branch `checkpoint/rc002-linux-runtime-evidence`. Before this handoff edit the only worktree item was the pre-existing untracked `scripts/__pycache__/`, which remains excluded.
+- **Task eligibility:** Independent planning review `01a0e0a2-c24c-7b72-8c76-2196e8f09834` parsed the actual Start/dependency/delivery/proof/failure fields. RC-016 remains eligible via accepted RC-013 and has a concrete native interaction proof gap. RC-012 has no further existing resource route beyond accepted RC-068's workspace/profile/history scope; RC-014 still lacks the real run executor needed for its disconnect proof; RC-011 lacks routing and remains `REVISE`; RC-007/009/015 retain the RC-002 gate. No other unaccepted task can currently advance without inventing features or changing acceptance.
+- **Native runner inventory:** `xcodebuild -list -project apps/mobile/ios/RemoteCodeMobileProof.xcodeproj` reports one app target (`RemoteCodeMobileProof`) and no test target. The shared scheme has a testable reference, but its referenced UI-test target is not defined in the project. `apps/mobile/ios` is ignored by `.gitignore`; an in-place generated project edit alone would not be a durable test deliverable. Existing web Playwright, simulator build/install, and screenshots do not drive the shipped native app behavior.
+- **Candidate continuation:** Add a reproducible, tracked XCUITest integration (potentially generated from a committed XcodeGen specification or another tracked project source), then drive the real Expo app against an isolated running API via native accessibility. Required direct observations: successful session login and accepted authoritative snapshot/event, exactly one native submission, receipt text matching SQLite readback, and sign-out with server revocation. Existing incompatible-version browser proof must remain intact. This is a proposed next route only; it must be tested on the current Xcode/simulator and no native success is claimed here.
+- **Checks:** `python3 scripts/check-doc-links.py` passed (`Checked local links in README.md and 3 plan pages`); `git diff --check` passed; a parser found 68 unique ticket detail blocks and no duplicate IDs. `xcodebuild -list` output, including app-only target list, was saved to `{SCRATCH}/eligibility-check.log`.
+- **Review:** Planning review `01a0e0a2-c24c-7b72-8c76-2196e8f09834` was read-only and classified task eligibility. Code reviewer `01a0e0ac-172e-7192-9ad1-23386155822b` found no concrete defect in the handoff text but could not inspect Git or run checks. The parent inspected the complete three-file diff, confirmed only `CHANGELOG.md`, `PIVOT.md`, and this evidence file changed, and reran the configured link/whitespace and structure checks; output is `{SCRATCH}/handoff-validation.log`.
+- **External state:** At assessment, origin and open PR #2 both pointed to the pre-change baseline SHA; its existing exact-SHA static/test checks were green. No X post was made because there was no new verified product behavior; the previous `mac-use` timeout was not retried. No Distill authentication/prompt, deployment, account, or credential action occurred.
+- **Status:** RC-016 remains partial/unaccepted; RC-017 remains gated. No acceptance criteria or dependency graph changed.
+
+## Prior checkpoint records
+
+The historical checkpoint evidence below is retained in its original order and scope.
+
+---
+
 ## RC-001 — current-app parity inventory
 
 - **Result:** Accepted as inventory only, not as implementation proof.
