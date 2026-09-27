@@ -141,6 +141,8 @@ export function createApiClient(origin: string, options: ApiClientOptions = {}) 
 
 export async function getHealth(origin: string, options?: ApiClientOptions) {
   const { data, error } = await createApiClient(origin, options).api.health.ready.get();
+  if (error?.status === 503 && typeof error.value === "object" && error.value !== null
+    && "status" in error.value && error.value.status === "not_ready") return "not_ready";
   if (error) throw error;
   return data?.status;
 }
