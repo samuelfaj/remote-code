@@ -1,3 +1,4 @@
+import { Database } from "bun:sqlite";
 import { expect, it } from "bun:test";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -85,6 +86,99 @@ it("keeps a committed write unknown when its response is lost and reconciles fro
     expect(history.status).toBe(200);
     const receipts = (await history.json() as { actions: Array<{ action: string }> }).actions;
     expect(receipts.filter((receipt) => receipt.action === action)).toHaveLength(1);
+  } finally {
+    server.stop(true);
+  }
+});
+
+it("keeps the confirmed write receipt when the later history read times out", async () => {
+  const app = createApi(databasePath(), undefined, { password: "client-test-password" });
+  const login = await app.handle(new Request("https://localhost/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ password: "client-test-password" }),
+  }));
+  const cookie = login.headers.get("set-cookie")?.split(";")[0];
+  if (!cookie) throw new Error("Test auth cookie missing");
+
+  let delayHistoryResponse = true;
+  const server = Bun.serve({
+    port: 0,
+    fetch: async (request) => {
+      const response = await app.handle(request);
+      if (request.method !== "GET" || new URL(request.url).pathname !== "/api/actions" || !delayHistoryResponse) {
+        return response;
+      }
+      delayHistoryResponse = false;
+      return new Response(new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('{"actions":['));
+        },
+      }), { headers: { "content-type": "application/json" } });
+    },
+  });
+  const action = `confirmed-before-history-timeout-${crypto.randomUUID()}`;
+
+  try {
+    const { data: receipt, error: writeError } = await createApiClient(`http://127.0.0.1:${server.port}`, {
+      timeoutMs: 100,
+      headers: { cookie },
+    }).api.actions.post({ action });
+    expect(writeError).toBeNull();
+    if (!receipt || !("id" in receipt)) throw new Error("Expected a confirmed write receipt");
+
+    const history = await createApiClient(`http://127.0.0.1:${server.port}`, {
+      timeoutMs: 100,
+      headers: { cookie },
+    }).api.actions.get();
+    expect(history.data).toBeNull();
+    expectUnknownOutcome(history.error);
+
+    const authoritativeHistory = await app.handle(new Request("http://localhost/api/actions", { headers: { cookie } }));
+    expect(authoritativeHistory.status).toBe(200);
+    const receipts = (await authoritativeHistory.json() as { actions: Array<{ id: string; action: string }> }).actions;
+    expect(receipts.filter((stored) => stored.id === receipt.id && stored.action === action)).toHaveLength(1);
+  } finally {
+    server.stop(true);
+  }
+});
+
+it("leaves a login outcome unknown when session storage commits before the cookie response is lost", async () => {
+  const path = databasePath();
+  const app = createApi(path, undefined, { password: "client-test-password" });
+  const server = Bun.serve({
+    port: 0,
+    fetch: async (request) => {
+      const url = new URL(request.url);
+      const response = await app.handle(url.pathname === "/api/auth/login"
+        ? new Request(`https://localhost${url.pathname}`, {
+          method: request.method,
+          headers: request.headers,
+          body: await request.text(),
+        })
+        : request);
+      if (url.pathname !== "/api/auth/login" || response.status !== 200) return response;
+      return new Response(new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('{"userId":'));
+        },
+      }), { headers: { "content-type": "application/json" } });
+    },
+  });
+
+  try {
+    const { data, error } = await createApiClient(`http://127.0.0.1:${server.port}`, { timeoutMs: 100 })
+      .api.auth.login.post({ password: "client-test-password" });
+    expect(data).toBeNull();
+    expectUnknownOutcome(error);
+
+    const database = new Database(path);
+    try {
+      const sessions = database.query<{ count: number }, []>("SELECT COUNT(*) AS count FROM sessions").get();
+      expect(sessions?.count).toBe(1);
+    } finally {
+      database.close();
+    }
   } finally {
     server.stop(true);
   }
