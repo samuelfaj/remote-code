@@ -1,7 +1,7 @@
 import { Database } from "bun:sqlite";
 import { Elysia } from "elysia";
 import { actionsFeature } from "./features/actions";
-import { authFeature } from "./features/auth";
+import { authFeature, sessionToken } from "./features/auth";
 import { compatibilityFeature } from "./features/compatibility";
 import { storageFeature } from "./features/storage";
 import { checkDatabase, healthFeature, initializeDatabase, type ReadinessCheck } from "./features/health";
@@ -52,9 +52,17 @@ export function createApi(
     return probe;
   };
   return new Elysia()
-    .onRequest(async ({ request, set }) => {
+    .onBeforeHandle({ as: "global" }, async ({ request, set }) => {
       if (!["POST", "PUT", "PATCH", "DELETE"].includes(request.method)) return;
-      if (!storageUnavailable || await observeReadiness()) return;
+      const path = new URL(request.url).pathname;
+      const receiptLookup = request.method === "POST" && /^\/api\/auth\/receipts\/[^/]+\/lookup$/.test(path);
+      // Password-only receipt lookup is read-only; a cookie-carrying lookup
+      // may delete an expired session row, so it still probes storage below.
+      if (receiptLookup && !sessionToken(request)) return;
+      const publicCredentialMutation = path === "/api/auth/login" || /^\/api\/auth\/login\/[^/]+\/revoke$/.test(path);
+      if (!publicCredentialMutation && !sessionToken(request)) return;
+      await observeReadiness();
+      if (!storageUnavailable) return;
       set.status = 503;
       return { error: "storage_unavailable" as const };
     })

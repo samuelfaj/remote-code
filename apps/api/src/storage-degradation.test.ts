@@ -105,6 +105,114 @@ it("latches runtime corruption after readiness fails and refuses a keyed action 
   }
 });
 
+it("rejects a keyed action after runtime corruption before the first readiness request", async () => {
+  mkdirSync(root, { recursive: true });
+  const path = join(root, `corrupt-before-probe-${crypto.randomUUID()}.sqlite`);
+  try {
+    const app = createApi(path, undefined, { password: "test-storage-password" });
+    const login = await app.handle(new Request("https://localhost/api/auth/login", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ password: "test-storage-password" }),
+    }));
+    expect(login.status).toBe(200);
+    const cookie = login.headers.get("set-cookie")?.split(";")[0];
+    expect(cookie).toBeTruthy();
+
+    const baselineId = crypto.randomUUID();
+    const baseline = await app.handle(new Request("http://localhost/api/actions", {
+      method: "POST", headers: { "content-type": "application/json", cookie: cookie! },
+      body: JSON.stringify({ action: "previous durable action", requestId: baselineId }),
+    }));
+    expect(baseline.status).toBe(201);
+    const baselineReceipt = await baseline.json() as { id: string };
+
+    const database = new Database(path);
+    database.exec("CREATE TABLE corruption_probe (payload BLOB NOT NULL)");
+    database.query("INSERT INTO corruption_probe (payload) VALUES (?)").run(Buffer.alloc(16384, 42));
+    database.close();
+    const healthyBytes = readFileSync(path);
+    const fd = openSync(path, "r+");
+    try {
+      writeSync(fd, Buffer.alloc(512, 0xff), 0, 512, healthyBytes.length - 4096);
+    } finally {
+      closeSync(fd);
+    }
+    const corruptedBytes = readFileSync(path);
+
+    const requestId = crypto.randomUUID();
+    const attempted = await app.handle(new Request("http://localhost/api/actions", {
+      method: "POST", headers: { "content-type": "application/json", cookie: cookie! },
+      body: JSON.stringify({ action: "must not be confirmed before readiness", requestId }),
+    }));
+    const outcome = await attempted.json();
+    const state = new Database(path, { readonly: true, create: false });
+    try {
+      expect(state.query("SELECT id, action FROM actions WHERE id = ?").get(baselineReceipt.id))
+        .toEqual({ id: baselineReceipt.id, action: "previous durable action" });
+      expect(state.query("SELECT action_id FROM action_requests WHERE request_id = ?").get(baselineId))
+        .toEqual({ action_id: baselineReceipt.id });
+      expect(state.query("SELECT COUNT(*) AS count FROM actions").get()).toEqual({ count: 1 });
+      expect(state.query("SELECT COUNT(*) AS count FROM action_requests WHERE request_id = ?").get(requestId))
+        .toEqual({ count: 0 });
+      expect(readFileSync(path)).toEqual(corruptedBytes);
+    } finally {
+      state.close();
+    }
+    expect(attempted.status).toBe(503);
+    expect(outcome).toEqual({ error: "storage_unavailable" });
+  } finally {
+    removeDatabase(path);
+  }
+});
+
+it("does not start integrity probes for anonymous, unmatched, or read-only requests", async () => {
+  mkdirSync(root, { recursive: true });
+  const path = join(root, `mutation-probe-auth-${crypto.randomUUID()}.sqlite`);
+  let readinessCalls = 0;
+  try {
+    const app = createApi(path, async () => { readinessCalls++; return true; }, { password: "test-storage-password" });
+    const anonymous = await app.handle(new Request("http://localhost/api/actions", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "anonymous mutation must not probe" }),
+    }));
+    const unmatched = await app.handle(new Request("http://localhost/api/not-a-route", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: `remotecode_session=${"a".repeat(64)}` },
+      body: JSON.stringify({}),
+    }));
+    const lookup = await app.handle(new Request(`https://localhost/api/auth/receipts/${crypto.randomUUID()}/lookup`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ password: "test-storage-password" }),
+    }));
+    expect({ anonymous: anonymous.status, unmatched: unmatched.status, lookup: lookup.status, readinessCalls })
+      .toEqual({ anonymous: 401, unmatched: 404, lookup: 404, readinessCalls: 0 });
+
+    const login = await app.handle(new Request("https://localhost/api/auth/login", {      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ password: "test-storage-password" }),
+    }));
+    expect(login.status).toBe(200);
+    expect(readinessCalls).toBe(1);
+    const cookie = login.headers.get("set-cookie")?.split(";")[0];
+    expect(cookie).toBeTruthy();
+    const action = await app.handle(new Request("http://localhost/api/actions", {
+      method: "POST", headers: { "content-type": "application/json", cookie: cookie! },
+      body: JSON.stringify({ action: "authorized mutation probes storage", requestId: crypto.randomUUID() }),
+    }));
+    expect(action.status).toBe(201);
+    expect(readinessCalls).toBe(2);
+
+    // A cookie-carrying receipt lookup may delete an expired session row, so it still probes.
+    const cookieLookup = await app.handle(new Request(`https://localhost/api/auth/receipts/${crypto.randomUUID()}/lookup`, {
+      method: "POST", headers: { "content-type": "application/json", cookie: cookie! },
+      body: JSON.stringify({}),
+    }));
+    expect(cookieLookup.status).toBe(404);
+    expect(readinessCalls).toBe(3);
+  } finally {
+    removeDatabase(path);
+  }
+});
+
 it("rechecks readiness before a blocked mutation so a recovered host does not wait for another health poll", async () => {
   mkdirSync(root, { recursive: true });
   const path = join(root, `recovered-probe-${crypto.randomUUID()}.sqlite`);
