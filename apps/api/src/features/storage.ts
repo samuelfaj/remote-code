@@ -87,6 +87,13 @@ export function initializeStorage(databasePath: string) {
           created_at TEXT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS history_workspace_id ON history(workspace_id, created_at, id);
+        CREATE TABLE IF NOT EXISTS history_requests (
+          user_id TEXT NOT NULL,
+          request_id TEXT NOT NULL,
+          workspace_id TEXT NOT NULL REFERENCES workspaces(id),
+          history_id TEXT NOT NULL UNIQUE REFERENCES history(id),
+          PRIMARY KEY (user_id, request_id)
+        );
       `);
     } finally {
       database.close();
@@ -274,6 +281,38 @@ export function storageFeature(databasePath: string) {
         database.close();
       }
     })
+    .get("/api/workspaces/:workspaceId/history/receipts/:requestId", ({ params, request, set }) => {
+      const userId = sessionUserId(databasePath, request);
+      if (!userId) {
+        set.status = 401;
+        return { error: "unauthorized" as const };
+      }
+      const database = openDatabase(databasePath);
+      try {
+        if (!database.query("SELECT 1 FROM workspaces WHERE id = ? AND user_id = ?").get(params.workspaceId, userId)) {
+          set.status = 404;
+          return { error: "not_found" as const };
+        }
+        const row = database.query<unknown, [string, string, string]>(`
+          SELECT history.id, history.type, history.content, history.created_at AS createdAt
+          FROM history_requests JOIN history ON history.id = history_requests.history_id
+          WHERE history_requests.user_id = ? AND history_requests.request_id = ? AND history_requests.workspace_id = ?
+        `).get(userId, params.requestId, params.workspaceId);
+        if (!row) {
+          const usedElsewhere = database.query("SELECT 1 FROM history_requests WHERE user_id = ? AND request_id = ?")
+            .get(userId, params.requestId);
+          if (usedElsewhere) {
+            set.status = 409;
+            return { error: "request_id_conflict" as const };
+          }
+          set.status = 404;
+          return { error: "receipt_not_found" as const };
+        }
+        return readHistoryEntry(row);
+      } finally {
+        database.close();
+      }
+    }, { params: t.Object({ workspaceId: t.String(), requestId: requestIdSchema }) })
     .post("/api/workspaces/:workspaceId/history", ({ body, params, request, set }) => {
       const userId = sessionUserId(databasePath, request);
       if (!userId) {
@@ -283,18 +322,49 @@ export function storageFeature(databasePath: string) {
       const entry = { id: crypto.randomUUID(), type: body.type, content: body.content, createdAt: new Date().toISOString() };
       const database = openDatabase(databasePath);
       try {
-        database.query(`
-          INSERT INTO history (id, user_id, workspace_id, type, content, created_at)
-          SELECT ?, ?, id, ?, ?, ? FROM workspaces WHERE id = ? AND user_id = ?
-        `).run(entry.id, userId, entry.type, entry.content, entry.createdAt, params.workspaceId, userId);
-        if ((database.query("SELECT changes() AS count").get() as { count: number } | null)?.count !== 1) {
+        const result = database.transaction(() => {
+          if (!database.query("SELECT 1 FROM workspaces WHERE id = ? AND user_id = ?").get(params.workspaceId, userId)) {
+            return { kind: "not_found" as const };
+          }
+          if (body.requestId) {
+            const row = database.query<unknown, [string, string]>(`
+              SELECT history.id, history.type, history.content, history.created_at AS createdAt,
+                history_requests.workspace_id AS workspaceId
+              FROM history_requests JOIN history ON history.id = history_requests.history_id
+              WHERE history_requests.user_id = ? AND history_requests.request_id = ?
+            `).get(userId, body.requestId);
+            if (row) {
+              const existing = readHistoryEntry(row);
+              if (typeof row !== "object" || !("workspaceId" in row) || typeof row.workspaceId !== "string") {
+                throw new Error("Stored history request is invalid");
+              }
+              return { kind: "existing" as const, existing, workspaceId: row.workspaceId };
+            }
+          }
+          database.query(`
+            INSERT INTO history (id, user_id, workspace_id, type, content, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+          `).run(entry.id, userId, params.workspaceId, entry.type, entry.content, entry.createdAt);
+          if (body.requestId) database.query(`
+            INSERT INTO history_requests (user_id, request_id, workspace_id, history_id) VALUES (?, ?, ?, ?)
+          `).run(userId, body.requestId, params.workspaceId, entry.id);
+          return { kind: "created" as const };
+        }).immediate();
+        if (result.kind === "not_found") {
           set.status = 404;
           return { error: "not_found" as const };
+        }
+        if (result.kind === "existing") {
+          if (result.workspaceId !== params.workspaceId || result.existing.type !== body.type || result.existing.content !== body.content) {
+            set.status = 409;
+            return { error: "request_id_conflict" as const };
+          }
+          return result.existing;
         }
       } finally {
         database.close();
       }
       set.status = 201;
       return entry;
-    }, { body: t.Object({ type: t.String({ minLength: 1, maxLength: 80 }), content: t.String({ minLength: 1, maxLength: 10000 }) }) });
+    }, { body: t.Object({ type: t.String({ minLength: 1, maxLength: 80 }), content: t.String({ minLength: 1, maxLength: 10000 }), requestId: t.Optional(requestIdSchema) }) });
 }
