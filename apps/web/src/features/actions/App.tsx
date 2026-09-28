@@ -38,10 +38,20 @@ function readPendingAuth(): PendingAuth | null {
   return value;
 }
 
+function isAuthReceiptTimestamp(value: unknown) {
+  if (value instanceof Date) return Number.isFinite(value.getTime());
+  if (typeof value !== "string") return false;
+  const timestamp = new Date(value);
+  return Number.isFinite(timestamp.getTime()) && timestamp.toISOString() === value;
+}
+
 function matchesAuthReceipt(value: unknown, operation: PendingAuth) {
-  if (!value || typeof value !== "object") return false;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const receipt = value as Record<string, unknown>;
-  return receipt.requestId === operation.requestId && receipt.kind === operation.kind
+  if (Object.keys(receipt).sort().join(",") !== "createdAt,expiresAt,kind,outcome,requestId,targetRequestId") return false;
+  const validExpiry = operation.kind === "login" ? isAuthReceiptTimestamp(receipt.expiresAt) : receipt.expiresAt === null;
+  return isAuthReceiptTimestamp(receipt.createdAt) && validExpiry
+    && receipt.requestId === operation.requestId && receipt.kind === operation.kind
     && receipt.targetRequestId === (operation.kind === "revoke_login" ? operation.targetRequestId : null)
     && receipt.outcome === ({ login: "session_created", logout: "sessions_revoked", revoke_login: "login_revoked" }[operation.kind]);
 }
@@ -372,19 +382,17 @@ export function App() {
     }
   }
 
-  async function consultUncertainLogin(operation: PendingAuth, credential: string, epoch: number, deadline: number) {
+  async function consultUncertainAuth(operation: Exclude<PendingAuth, { kind: "logout" }>, credential: string, epoch: number, deadline: number) {
     if (epoch !== authEpoch.current || Date.now() >= deadline) return;
-    if (await beforeDeadline(confirmLogin(operation, epoch, deadline), deadline)) return;
+    if (operation.kind === "login" && await beforeDeadline(confirmLogin(operation, epoch, deadline), deadline)) return;
     if (epoch !== authEpoch.current) return;
     if (Date.now() >= deadline) {
       setAuthMessage("The auth outcome is unknown. Check its receipt later without resending.");
       return;
     }
-    // Bounded multi-attempt observation mirroring the action path: a first
-    // immediate receipt read, then one delayed reread after an increasing wait,
-    // each clamped to the remaining absolute deadline. No POST is replayed; a
-    // missing or stalled read keeps the pending login for explicit later
-    // lookup or revocation.
+    // Bounded receipt observation: read once now, then once after a delay if
+    // the result is missing or unknown. The UI stops awaiting at the deadline;
+    // neither the login nor revocation is replayed.
     for (let attempt = 0; attempt < 2; attempt++) {
       if (epoch !== authEpoch.current || Date.now() >= deadline) break;
       if (attempt > 0) {
@@ -403,7 +411,11 @@ export function App() {
       if (!response) continue;
       const { data, error: lookupError, status } = response as { data?: unknown; error?: unknown; status?: number };
       if (!lookupError && data && typeof data === "object" && "receipt" in data && matchesAuthReceipt((data as { receipt: unknown }).receipt, operation)) {
-        setAuthMessage("Login receipt confirmed, but no matching cookie is confirmed. Enter the host passphrase and explicitly revoke old login before a distinct sign in.");
+        if (operation.kind === "login") {
+          setAuthMessage("Login receipt confirmed, but no matching cookie is confirmed. Enter the host passphrase and explicitly revoke old login before a distinct sign in.");
+        } else if (persistAuth(null)) {
+          setAuthMessage("Confirmed old login revoked or fenced. You may now sign in with a distinct request.");
+        }
         return;
       } else if (status === 404 || isUnknownOutcomeError(lookupError)) {
         continue;
@@ -418,7 +430,9 @@ export function App() {
       return;
     }
     // Both automatic reads saw no receipt yet: stay unknown without resending.
-    setAuthMessage("No auth receipt is confirmed yet. The outcome remains unknown; do not resend. You may explicitly revoke old login to fence it.");
+    setAuthMessage(operation.kind === "login"
+      ? "No auth receipt is confirmed yet. The outcome remains unknown; do not resend. You may explicitly revoke old login to fence it."
+      : "No revocation receipt is confirmed yet. The outcome remains unknown; do not resubmit it. Check its receipt later.");
   }
 
   async function mutateAuth(kind: PendingAuth["kind"]) {
@@ -435,8 +449,8 @@ export function App() {
     const credential = password;
     setPassword("");
     setError("");
-    let loginRecovery: PendingAuth | null = null;
-    let loginDeadline = 0;
+    let authRecovery: Exclude<PendingAuth, { kind: "logout" }> | null = null;
+    let authDeadline = 0;
     try {
       if (!await requireAuthRecovery() || epoch !== authEpoch.current) return;
       const operation: PendingAuth = kind === "revoke_login" && previous
@@ -444,16 +458,16 @@ export function App() {
         : { kind: kind as "login" | "logout", requestId: crypto.randomUUID() };
       if (!persistAuth(operation)) return;
       if (kind === "logout") hideSession();
-      setAuthMessage("The auth outcome is unknown until confirmed. No automatic retry will be sent.");
-      if (operation.kind === "login") {
-        loginRecovery = operation;
-        loginDeadline = Date.now() + 13_000;
+      setAuthMessage("The auth outcome is unknown until confirmed. The mutation will not be resent automatically.");
+      if (operation.kind !== "logout") {
+        authRecovery = operation;
+        authDeadline = Date.now() + 13_000;
       }
       const response = operation.kind === "login"
         ? await authPostApi.api.auth.login.post({ password: credential, requestId: operation.requestId })
         : operation.kind === "logout"
           ? await api.api.auth.logout.post({ requestId: operation.requestId })
-          : await api.api.auth.login({ loginRequestId: operation.targetRequestId }).revoke.post({ password: credential, requestId: operation.requestId });
+          : await authPostApi.api.auth.login({ loginRequestId: operation.targetRequestId }).revoke.post({ password: credential, requestId: operation.requestId });
       if (epoch !== authEpoch.current) return;
       const { data, error: requestError, status } = response;
       if (operation.kind === "login" && !requestError && data && "receipt" in data && matchesAuthReceipt(data.receipt, operation)) {
@@ -466,11 +480,11 @@ export function App() {
         && ["unauthorized", "https_required", "invalid_auth_request", "unsupported_client_version"].includes(requestError.value.error)) {
         if (persistAuth(previous)) setAuthMessage("The auth request was rejected before acceptance. Check the passphrase and host configuration.");
         setError(requestErrorMessage(requestError, "The host did not accept this passphrase. Check the host configuration and try again."));
-      } else if (operation.kind === "login") {
-        await consultUncertainLogin(operation, credential, epoch, loginDeadline);
+      } else if (operation.kind !== "logout") {
+        await consultUncertainAuth(operation, credential, epoch, authDeadline);
       }
     } catch {
-      if (loginRecovery) await consultUncertainLogin(loginRecovery, credential, epoch, loginDeadline);
+      if (authRecovery) await consultUncertainAuth(authRecovery, credential, epoch, authDeadline);
       else if (epoch === authEpoch.current) setAuthMessage("The auth outcome is unknown. Check its receipt without resending.");
     } finally {
       authBusy.current = false;

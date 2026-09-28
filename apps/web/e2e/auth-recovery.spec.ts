@@ -18,6 +18,29 @@ async function pending(page: Page) {
   return page.evaluate((key) => JSON.parse(sessionStorage.getItem(key) ?? "null"), pendingKey);
 }
 
+async function startLostCookieLogin(page: Page) {
+  let posts = 0;
+  let requestId = "";
+  await page.route("**/api/auth/login", async (route) => {
+    posts++;
+    requestId = route.request().postDataJSON().requestId;
+    const response = await route.fetch();
+    expect(response.status()).toBe(200);
+    await page.context().clearCookies();
+    await route.abort("failed");
+  });
+  await page.goto("/");
+  await enterPassword(page);
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Revoke old login" })).toBeEnabled();
+  expect(posts).toBe(1);
+  expect(await pending(page)).toEqual({ kind: "login", requestId });
+  expect((await page.request.get("/api/auth/session")).status()).toBe(401);
+  await expect(page.getByTestId("connection-status")).toHaveCount(0);
+  expect(await page.evaluate(() => JSON.stringify(sessionStorage))).not.toContain(password);
+  return requestId;
+}
+
 for (const viewport of [{ name: "desktop", width: 1280, height: 900 }, { name: "mobile", width: 390, height: 844 }]) {
   test.describe(viewport.name, () => {
     test.use({ viewport });
@@ -265,24 +288,229 @@ for (const viewport of [{ name: "desktop", width: 1280, height: 900 }, { name: "
       await expect(page.getByTestId("connection-status")).toHaveText("Live updates connected");
     });
 
-    test("lost targeted revocation response is recovered without repeating the mutation", async ({ page }) => {
-      let posts = 0;
-      await page.route("**/api/auth/login", async (route) => { await route.fetch(); await page.context().clearCookies(); await route.abort(); });
-      await page.goto("/");
-      await enterPassword(page);
-      await page.getByRole("button", { name: "Sign in", exact: true }).click();
-      await expect(page.getByRole("button", { name: "Revoke old login" })).toBeEnabled();
-      const loginId = (await pending(page)).requestId;
-      await page.context().clearCookies();
+    test("a committed targeted revocation is confirmed by its delayed receipt without resending", async ({ page }) => {
+      let revokePosts = 0;
+      let revokeLookups = 0;
+      let revokeId = "";
+      const loginId = await startLostCookieLogin(page);
       await page.route("**/api/auth/login/*/revoke", async (route) => {
-        posts++;
-        expect(await pending(page)).toEqual({ kind: "revoke_login", requestId: route.request().postDataJSON().requestId, targetRequestId: loginId });
+        revokePosts++;
+        revokeId = route.request().postDataJSON().requestId;
+        expect(route.request().postDataJSON().password).toBe(password);
         expect((await route.fetch()).status()).toBe(200);
-        await route.abort();
+        await route.abort("failed");
+      });
+      await page.route("**/api/auth/receipts/*/lookup", async (route) => {
+        expect(route.request().postDataJSON()).toEqual({ password });
+        const path = new URL(route.request().url()).pathname;
+        if (revokeId && path.endsWith(`/receipts/${revokeId}/lookup`)) {
+          revokeLookups++;
+          if (revokeLookups === 1) {
+            await route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ error: "not_found" }) });
+          } else {
+            await route.continue();
+          }
+        } else {
+          await route.continue();
+        }
+      });
+      await enterPassword(page);
+      const started = Date.now();
+      await page.getByRole("button", { name: "Revoke old login" }).click();
+      await expect(page.getByTestId("auth-recovery-status")).toContainText("Confirmed old login revoked", { timeout: 15_000 });
+      expect(Date.now() - started).toBeLessThan(13_000);
+      expect(revokePosts).toBe(1);
+      expect(revokeLookups).toBe(2);
+      expect(await pending(page)).toBeNull();
+      await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeEnabled();
+      expect((await page.request.get("/api/auth/session")).status()).toBe(401);
+      const receipt = await page.request.post(`/api/auth/receipts/${revokeId}/lookup`, { data: { password } });
+      expect(receipt.status()).toBe(200);
+      expect(await receipt.json()).toMatchObject({
+        receipt: { requestId: revokeId, kind: "revoke_login", targetRequestId: loginId, outcome: "login_revoked" },
+        sessionStatus: "not_applicable",
+      });
+    });
+
+    test("a missing targeted revocation receipt stays unknown without resending", async ({ page }) => {
+      let revokePosts = 0;
+      let revokeLookups = 0;
+      let revokeId = "";
+      const loginId = await startLostCookieLogin(page);
+      await page.route("**/api/auth/login/*/revoke", async (route) => {
+        revokePosts++;
+        revokeId = route.request().postDataJSON().requestId;
+        await route.abort("failed");
+      });
+      await page.route("**/api/auth/receipts/*/lookup", async (route) => {
+        const path = new URL(route.request().url()).pathname;
+        if (revokeId && path.endsWith(`/receipts/${revokeId}/lookup`)) revokeLookups++;
+        await route.continue();
+      });
+      await enterPassword(page);
+      const started = Date.now();
+      await page.getByRole("button", { name: "Revoke old login" }).click();
+      await expect(page.getByTestId("auth-recovery-status")).toContainText("remains unknown; do not resubmit", { timeout: 10_000 });
+      expect(Date.now() - started).toBeLessThan(13_000);
+      expect(revokePosts).toBe(1);
+      expect(revokeLookups).toBe(2);
+      expect(await pending(page)).toMatchObject({ kind: "revoke_login", targetRequestId: loginId });
+      await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeDisabled();
+      await expect(page.getByTestId("connection-status")).toHaveCount(0);
+      expect((await page.request.get("/api/auth/session")).status()).toBe(401);
+      expect(await page.evaluate(() => JSON.stringify(sessionStorage))).not.toContain(password);
+    });
+
+    test("stalled targeted-revocation receipt reads leave the committed result unknown", async ({ page }) => {
+      let revokePosts = 0;
+      let receiptLookups = 0;
+      let revokeId = "";
+      const loginId = await startLostCookieLogin(page);
+      await page.route("**/api/auth/login/*/revoke", async (route) => {
+        revokePosts++;
+        revokeId = route.request().postDataJSON().requestId;
+        expect((await route.fetch()).status()).toBe(200);
+        await route.abort("failed");
+      });
+      await page.route("**/api/auth/receipts/*/lookup", async (route) => {
+        const path = new URL(route.request().url()).pathname;
+        if (revokeId && path.endsWith(`/receipts/${revokeId}/lookup`)) {
+          receiptLookups++;
+          await new Promise((resolve) => setTimeout(resolve, 5_000));
+          await route.abort("failed").catch(() => {});
+        } else {
+          await route.continue();
+        }
+      });
+      await enterPassword(page);
+      const started = Date.now();
+      await page.getByRole("button", { name: "Revoke old login" }).click();
+      await expect(page.getByTestId("auth-recovery-status")).toContainText("No revocation receipt is confirmed yet", { timeout: 15_000 });
+      expect(Date.now() - started).toBeLessThan(11_000);
+      expect(revokePosts).toBe(1);
+      expect(receiptLookups).toBe(2);
+      expect(await pending(page)).toMatchObject({ kind: "revoke_login", targetRequestId: loginId });
+      await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeDisabled();
+      expect((await page.request.get("/api/auth/session")).status()).toBe(401);
+      const receipt = await page.request.post(`/api/auth/receipts/${revokeId}/lookup`, { data: { password } });
+      expect(await receipt.json()).toMatchObject({ receipt: { requestId: revokeId, outcome: "login_revoked", targetRequestId: loginId } });
+    });
+
+    test("a mismatched targeted-revocation receipt does not clear the pending operation", async ({ page }) => {
+      let revokePosts = 0;
+      let receiptLookups = 0;
+      const loginId = await startLostCookieLogin(page);
+      let revokeId = "";
+      await page.route("**/api/auth/login/*/revoke", async (route) => {
+        revokePosts++;
+        revokeId = route.request().postDataJSON().requestId;
+        expect((await route.fetch()).status()).toBe(200);
+        await route.abort("failed");
+      });
+      await page.route("**/api/auth/receipts/*/lookup", async (route) => {
+        const path = new URL(route.request().url()).pathname;
+        if (revokeId && path.endsWith(`/receipts/${revokeId}/lookup`)) {
+          receiptLookups++;
+          await route.fulfill({ json: {
+            receipt: { requestId: revokeId, kind: "revoke_login", targetRequestId: crypto.randomUUID(), outcome: "login_revoked", createdAt: new Date().toISOString(), expiresAt: null },
+            sessionStatus: "not_applicable",
+          } });
+        } else {
+          await route.continue();
+        }
       });
       await enterPassword(page);
       await page.getByRole("button", { name: "Revoke old login" }).click();
       await expect(page.getByRole("button", { name: "Check auth receipt" })).toBeEnabled();
+      await expect(page.getByTestId("auth-recovery-status")).toContainText("Check its receipt later without resending");
+      expect(revokePosts).toBe(1);
+      expect(receiptLookups).toBe(1);
+      expect(await pending(page)).toMatchObject({ kind: "revoke_login", targetRequestId: loginId });
+      await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeDisabled();
+      expect((await page.request.get("/api/auth/session")).status()).toBe(401);
+      const receipt = await page.request.post(`/api/auth/receipts/${revokeId}/lookup`, { data: { password } });
+      expect(await receipt.json()).toMatchObject({ receipt: { requestId: revokeId, kind: "revoke_login", targetRequestId: loginId, outcome: "login_revoked" } });
+    });
+
+    for (const malformed of [
+      { label: "missing createdAt", createdAt: undefined },
+      { label: "non-ISO but parseable createdAt", createdAt: "September 28, 2026" },
+    ]) {
+      test(`a matching targeted-revocation receipt with ${malformed.label} remains unknown`, async ({ page }) => {
+        let revokePosts = 0;
+        let receiptLookups = 0;
+        let revokeId = "";
+        const loginId = await startLostCookieLogin(page);
+        await page.route("**/api/auth/login/*/revoke", async (route) => {
+          revokePosts++;
+          revokeId = route.request().postDataJSON().requestId;
+          expect((await route.fetch()).status()).toBe(200);
+          await route.abort("failed");
+        });
+        await page.route("**/api/auth/receipts/*/lookup", async (route) => {
+          const path = new URL(route.request().url()).pathname;
+          if (revokeId && path.endsWith(`/receipts/${revokeId}/lookup`)) {
+            receiptLookups++;
+            await route.fulfill({ json: {
+              receipt: {
+                requestId: revokeId,
+                kind: "revoke_login",
+                targetRequestId: loginId,
+                outcome: "login_revoked",
+                ...(malformed.createdAt === undefined ? {} : { createdAt: malformed.createdAt }),
+                expiresAt: null,
+              },
+              sessionStatus: "not_applicable",
+            } });
+          } else {
+            await route.continue();
+          }
+        });
+        await enterPassword(page);
+        await page.getByRole("button", { name: "Revoke old login" }).click();
+        await expect(page.getByRole("button", { name: "Check auth receipt" })).toBeEnabled();
+        await expect(page.getByTestId("auth-recovery-status")).toContainText("Check its receipt later without resending");
+        expect(revokePosts).toBe(1);
+        expect(receiptLookups).toBe(1);
+        expect(await pending(page)).toMatchObject({ kind: "revoke_login", targetRequestId: loginId });
+        await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeDisabled();
+        expect((await page.request.get("/api/auth/session")).status()).toBe(401);
+        expect(await page.evaluate(() => JSON.stringify(sessionStorage))).not.toContain(password);
+        const receipt = await page.request.post(`/api/auth/receipts/${revokeId}/lookup`, { data: { password } });
+        expect(await receipt.json()).toMatchObject({
+          receipt: { requestId: revokeId, kind: "revoke_login", targetRequestId: loginId, outcome: "login_revoked" },
+          sessionStatus: "not_applicable",
+        });
+      });
+    }
+
+    test("lost targeted revocation response is recovered without repeating the mutation", async ({ page }) => {
+      let posts = 0;
+      let revokeId = "";
+      let revokeLookups = 0;
+      const loginId = await startLostCookieLogin(page);
+      await page.route("**/api/auth/login/*/revoke", async (route) => {
+        posts++;
+        revokeId = route.request().postDataJSON().requestId;
+        expect(await pending(page)).toEqual({ kind: "revoke_login", requestId: revokeId, targetRequestId: loginId });
+        expect((await route.fetch()).status()).toBe(200);
+        await route.abort();
+      });
+      await page.route("**/api/auth/receipts/*/lookup", async (route) => {
+        const path = new URL(route.request().url()).pathname;
+        if (revokeId && path.endsWith(`/receipts/${revokeId}/lookup`)) {
+          revokeLookups++;
+          if (revokeLookups <= 2) {
+            await route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ error: "not_found" }) });
+            return;
+          }
+        }
+        await route.continue();
+      });
+      await enterPassword(page);
+      await page.getByRole("button", { name: "Revoke old login" }).click();
+      await expect(page.getByTestId("auth-recovery-status")).toContainText("remains unknown; do not resubmit", { timeout: 10_000 });
+      expect(revokeLookups).toBe(2);
       expect((await pending(page)).kind).toBe("revoke_login");
       await page.reload();
       await page.getByLabel("Host passphrase").fill("wrong-password");
@@ -293,6 +521,7 @@ for (const viewport of [{ name: "desktop", width: 1280, height: 900 }, { name: "
       await page.getByRole("button", { name: "Check auth receipt" }).click();
       await expect(page.getByTestId("auth-recovery-status")).toContainText("Confirmed old login revoked");
       expect(posts).toBe(1);
+      expect(revokeLookups).toBe(4);
       expect(await pending(page)).toBeNull();
     });
 
