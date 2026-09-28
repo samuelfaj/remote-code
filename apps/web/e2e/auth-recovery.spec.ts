@@ -126,7 +126,7 @@ for (const viewport of [{ name: "desktop", width: 1280, height: 900 }, { name: "
       expect(await page.evaluate(() => JSON.stringify(sessionStorage))).not.toContain(password);
     });
 
-    test("unknown login and missing receipt remain pending after automatic lookup", async ({ page }) => {
+    test("unknown login and missing receipt remain pending after automatic lookups", async ({ page }) => {
       let posts = 0;
       let lookups = 0;
       await page.route("**/api/auth/login", async (route) => { posts++; await route.abort("failed"); });
@@ -136,9 +136,48 @@ for (const viewport of [{ name: "desktop", width: 1280, height: 900 }, { name: "
       await page.getByRole("button", { name: "Sign in", exact: true }).click();
       await expect(page.getByTestId("auth-recovery-status")).toContainText("No auth receipt", { timeout: 15_000 });
       expect(posts).toBe(1);
-      expect(lookups).toBe(1);
+      expect(lookups).toBe(2);
       expect((await pending(page)).kind).toBe("login");
       await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeDisabled();
+    });
+
+    test("a delayed login receipt is confirmed on the second automatic read without resending", async ({ page }) => {
+      let posts = 0;
+      let lookups = 0;
+      // Commit the login, then lose the response and cookie so the browser
+      // must observe the receipt rather than authenticate from the session.
+      await page.route("**/api/auth/login", async (route) => {
+        posts++;
+        const response = await route.fetch();
+        expect(response.status()).toBe(200);
+        await page.context().clearCookies();
+        await route.abort("failed");
+      });
+      await page.route("**/api/auth/receipts/*/lookup", async (route) => {
+        lookups++;
+        expect(route.request().postDataJSON()).toEqual({ password });
+        if (lookups === 1) {
+          await route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ error: "not_found" }) });
+        } else {
+          await route.continue();
+        }
+      });
+      await page.goto("/");
+      await enterPassword(page);
+      await page.getByRole("button", { name: "Sign in", exact: true }).click();
+      await expect(page.getByTestId("auth-recovery-status")).toContainText("no matching cookie", { timeout: 20_000 });
+      expect(posts).toBe(1);
+      expect(lookups).toBe(2);
+      const operation = await pending(page);
+      expect(operation.kind).toBe("login");
+      await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeDisabled();
+      await expect(page.getByTestId("connection-status")).toHaveCount(0);
+      expect((await page.request.get("/api/auth/session")).status()).toBe(401);
+      const receipt = await page.request.post(`/api/auth/receipts/${operation.requestId}/lookup`, { data: { password } });
+      expect(receipt.status()).toBe(200);
+      expect(await receipt.json()).toMatchObject({
+        receipt: { requestId: operation.requestId, kind: "login", outcome: "session_created" },
+      });
     });
 
     test("stalled automatic receipt lookup ends with an unknown pending login", async ({ page }) => {
@@ -152,13 +191,16 @@ for (const viewport of [{ name: "desktop", width: 1280, height: 900 }, { name: "
       });
       await page.goto("/");
       await enterPassword(page);
+      const started = Date.now();
       await page.getByRole("button", { name: "Sign in", exact: true }).click();
       await expect(page.getByRole("button", { name: "Check auth receipt" })).toBeEnabled({ timeout: 15_000 });
-      await expect(page.getByTestId("auth-recovery-status")).toContainText("unknown");
+      await expect(page.getByTestId("auth-recovery-status")).toContainText("remains unknown; do not resend");
+      expect(Date.now() - started).toBeLessThan(11_000);
       expect(posts).toBe(1);
-      expect(lookups).toBe(1);
+      expect(lookups).toBe(2);
       expect((await pending(page)).kind).toBe("login");
       await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeDisabled();
+      await expect(page.getByTestId("connection-status")).toHaveCount(0);
     });
 
     test("lost logout response is looked up after reload without revoking a newer session", async ({ page }) => {

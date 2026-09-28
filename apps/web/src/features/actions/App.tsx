@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native-web";
-import { actionReceiptFromResponse, isDefinitiveActionRejection, applyActionEvent, CLIENT_VERSION, createApiClient, emptyActionEventState } from "@remotecode/client";
+import { actionReceiptFromResponse, isDefinitiveActionRejection, isUnknownOutcomeError, applyActionEvent, CLIENT_VERSION, createApiClient, emptyActionEventState } from "@remotecode/client";
 import type { ActionEventState } from "@remotecode/client";
 import { getWebHealth } from "../health/api";
 
@@ -380,24 +380,45 @@ export function App() {
       setAuthMessage("The auth outcome is unknown. Check its receipt later without resending.");
       return;
     }
-    try {
-      const response = await beforeDeadline(authReadApi.api.auth.receipts({ requestId: operation.requestId }).lookup.post({ password: credential }), deadline);
+    // Bounded multi-attempt observation mirroring the action path: a first
+    // immediate receipt read, then one delayed reread after an increasing wait,
+    // each clamped to the remaining absolute deadline. No POST is replayed; a
+    // missing or stalled read keeps the pending login for explicit later
+    // lookup or revocation.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      if (epoch !== authEpoch.current || Date.now() >= deadline) break;
+      if (attempt > 0) {
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) break;
+        await new Promise<void>((resolve) => { setTimeout(resolve, Math.min(1500 * attempt, remaining)); });
+        if (epoch !== authEpoch.current || Date.now() >= deadline) break;
+      }
+      let response: Awaited<ReturnType<typeof beforeDeadline<unknown>>> | null = null;
+      try {
+        response = await beforeDeadline(authReadApi.api.auth.receipts({ requestId: operation.requestId }).lookup.post({ password: credential }), deadline);
+      } catch {
+        continue;
+      }
       if (epoch !== authEpoch.current) return;
-      if (!response) {
+      if (!response) continue;
+      const { data, error: lookupError, status } = response as { data?: unknown; error?: unknown; status?: number };
+      if (!lookupError && data && typeof data === "object" && "receipt" in data && matchesAuthReceipt((data as { receipt: unknown }).receipt, operation)) {
+        setAuthMessage("Login receipt confirmed, but no matching cookie is confirmed. Enter the host passphrase and explicitly revoke old login before a distinct sign in.");
+        return;
+      } else if (status === 404 || isUnknownOutcomeError(lookupError)) {
+        continue;
+      } else {
         setAuthMessage("The auth outcome is unknown. Check its receipt later without resending.");
         return;
       }
-      const { data, error: lookupError, status } = response;
-      if (!lookupError && data && "receipt" in data && matchesAuthReceipt(data.receipt, operation)) {
-        setAuthMessage("Login receipt confirmed, but no matching cookie is confirmed. Enter the host passphrase and explicitly revoke old login before a distinct sign in.");
-      } else if (status === 404) {
-        setAuthMessage("No auth receipt is confirmed yet. The outcome remains unknown; do not resend. You may explicitly revoke old login to fence it.");
-      } else {
-        setAuthMessage("The auth outcome is unknown. Check its receipt later without resending.");
-      }
-    } catch {
-      if (epoch === authEpoch.current) setAuthMessage("The auth outcome is unknown. Check its receipt later without resending.");
     }
+    if (epoch !== authEpoch.current) return;
+    if (Date.now() >= deadline) {
+      setAuthMessage("The auth outcome is unknown. Check its receipt later without resending.");
+      return;
+    }
+    // Both automatic reads saw no receipt yet: stay unknown without resending.
+    setAuthMessage("No auth receipt is confirmed yet. The outcome remains unknown; do not resend. You may explicitly revoke old login to fence it.");
   }
 
   async function mutateAuth(kind: PendingAuth["kind"]) {

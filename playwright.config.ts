@@ -11,6 +11,8 @@ export default defineConfig({
   testDir: "./apps/web/e2e",
   timeout: 30_000,
   expect: { timeout: 5_000 },
+  // Browser tests share one API process and SQLite database.
+  workers: 1,
   use: {
     baseURL: remoteWeb ?? localWeb,
     browserName: "chromium",
