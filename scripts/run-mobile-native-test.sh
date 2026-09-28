@@ -124,7 +124,7 @@ if ! EXPO_PUBLIC_API_ORIGIN="$API_ORIGIN" \
     RC_NATIVE_TEST_API_ORIGIN="$API_ORIGIN" \
     -only-testing:"$TEST_SELECTION" \
     ${SKIP_TEST_ARG:+"$SKIP_TEST_ARG"} \
-    "${EXTRA_SKIP_ARGS[@]}" \
+    ${EXTRA_SKIP_ARGS[@]+"${EXTRA_SKIP_ARGS[@]}"} \
     -resultBundlePath "$WORK_DIR/NativeTests.xcresult" \
     test > "$WORK_DIR/xcodebuild-test.log" 2>&1; then
   tail -100 "$WORK_DIR/xcodebuild-test.log" >&2

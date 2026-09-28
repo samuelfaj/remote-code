@@ -80,20 +80,26 @@ export function createNativeRecoveryTestApi(databasePath: string, password: stri
         set.status = 401;
         return { error: "unauthorized" };
       }
-      if (body.locked && !lockOwner) {
+      if (!lockOwner) {
         const owner = new Database(databasePath);
         try { owner.exec("BEGIN EXCLUSIVE"); }
         catch (error) { owner.close(); throw error; }
         lockOwner = owner;
         lockCookie = cookie;
-      } else if (!body.locked && lockOwner) {
-        lockOwner.exec("ROLLBACK");
-        lockOwner.close();
-        lockOwner = undefined;
-        lockCookie = undefined;
       }
-      return { locked: Boolean(lockOwner) };
-    }, { body: t.Object({ locked: t.Boolean() }) })
+      return { locked: true };
+    }, { body: t.Object({ locked: t.Literal(true) }) })
+    .get("/__test__/storage-unlock", ({ request, set }) => {
+      if (!lockOwner || request.headers.get("cookie") !== lockCookie) {
+        set.status = 401;
+        return { error: "unauthorized" };
+      }
+      lockOwner.exec("ROLLBACK");
+      lockOwner.close();
+      lockOwner = undefined;
+      lockCookie = undefined;
+      return { locked: false };
+    })
     .post("/__test__/auth-fault", ({ request, body, set }) => {
       if (!isAuthenticated(databasePath, request)) {
         set.status = 401;

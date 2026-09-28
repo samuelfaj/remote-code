@@ -16,9 +16,11 @@ it("native fixture holds a real SQLite lock until released and preserves authent
     const login = await fetch(`${origin}/api/auth/login`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ password }) });
     expect(login.status).toBe(200);
     const cookie = login.headers.get("set-cookie")!.split(";")[0]!;
-    const lock = (locked: boolean, credential = cookie) => fetch(`${origin}/__test__/storage-lock`, {
-      method: "POST", headers: { "content-type": "application/json", cookie: credential }, body: JSON.stringify({ locked }),
-    });
+    const lock = (locked: boolean, credential = cookie) => locked
+      ? fetch(`${origin}/__test__/storage-lock`, {
+        method: "POST", headers: { "content-type": "application/json", cookie: credential }, body: JSON.stringify({ locked: true }),
+      })
+      : fetch(`${origin}/__test__/storage-unlock`, { headers: { cookie: credential } });
     expect((await lock(true, "")).status).toBe(401);
     expect((await lock(true)).status).toBe(200);
     expect((await fetch(`${origin}/api/health/ready`)).status).toBe(503);

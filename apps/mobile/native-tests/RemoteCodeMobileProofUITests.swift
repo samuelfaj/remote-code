@@ -75,10 +75,12 @@ final class RemoteCodeMobileProofUITests: XCTestCase {
     }
 
     private func setStorageLock(_ locked: Bool, using session: URLSession) async throws {
-        var request = URLRequest(url: URL(string: "/__test__/storage-lock", relativeTo: api)!)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONSerialization.data(withJSONObject: ["locked": locked])
+        var request = URLRequest(url: URL(string: locked ? "/__test__/storage-lock" : "/__test__/storage-unlock", relativeTo: api)!)
+        if locked {
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try JSONSerialization.data(withJSONObject: ["locked": true])
+        }
         let (_, response) = try await session.data(for: request)
         XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
     }

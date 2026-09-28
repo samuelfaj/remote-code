@@ -39,15 +39,27 @@ export function createApi(
 ) {
   initializeDatabase(configuredDatabasePath);
   const actions = actionsFeature(configuredDatabasePath, authConfig.webOrigin ?? "http://localhost:5173");
-  const corrupt = corruptAtStartup(configuredDatabasePath);
+  let storageUnavailable = corruptAtStartup(configuredDatabasePath);
+  let probe: Promise<boolean> | null = null;
+  const observeReadiness = () => {
+    if (probe) return probe;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    probe = Promise.race([
+      Promise.resolve().then(readinessCheck).catch(() => false),
+      new Promise<boolean>((resolve) => { timer = setTimeout(() => resolve(false), 400); }),
+    ]).then((ready) => { storageUnavailable = !ready; return ready; })
+      .finally(() => { if (timer) clearTimeout(timer); probe = null; });
+    return probe;
+  };
   return new Elysia()
-    .onRequest(({ request, set }) => {
-      if (!corrupt || !["POST", "PUT", "PATCH", "DELETE"].includes(request.method)) return;
+    .onRequest(async ({ request, set }) => {
+      if (!["POST", "PUT", "PATCH", "DELETE"].includes(request.method)) return;
+      if (!storageUnavailable || await observeReadiness()) return;
       set.status = 503;
       return { error: "storage_unavailable" as const };
     })
     .use(compatibilityFeature())
-    .use(healthFeature(readinessCheck))
+    .use(healthFeature(observeReadiness))
     .use(authFeature(configuredDatabasePath, authConfig, actions.revokeSessions))
     .use(actions.routes)
     .use(storageFeature(configuredDatabasePath));
