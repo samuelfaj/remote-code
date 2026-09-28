@@ -1,5 +1,13 @@
 # Pivot policy
 
+## Pivot record — RC-020 3GiB local readiness boundary — partial — 2026-09-28
+
+- **Decision:** Measure the midpoint between the accepted 2-GiB local writes and the 4-GiB readiness failure; no code or task criteria changed. RC-020 remains In Progress.
+- **Observed:** On macOS 26.6.2 arm64, a nominal 3-GiB database measured 3,225,546,752 bytes. Five direct `quick_check` calls were individually `ok` at 468.05–514.21 ms. The health route returned 503 `not_ready` at 402.58 ms; five sequential and eight concurrent authenticated action POSTs returned 503 `storage_unavailable`. Durable readback showed zero action rows and mappings for the 13 rejected requests, with final integrity `ok`.
+- **Limits/review:** Probe exit 0, directory absent, 864 GiB free before/after. The 2–3 GiB transition remains approximate and environment-specific. Reviewer `01a0ea18-d2d9-77d3-81c4-8632d1a942a7` found no method defect and confirmed the limited rejection claim. This is not production/Linux performance or RC-020 acceptance.
+- **Next:** Measure 2.5 GiB through the same local path and retain durable readback for any rejected write. Keep full-disk, lock, corruption, restart, and production Linux gates open.
+- **X:** No account check or post; local capacity measurement only, with no new deployed user-facing behavior.
+
 ## Pivot record — RC-020 4GiB local readiness boundary — partial — 2026-09-28
 
 - **Decision:** Continue the local cost curve after the 2-GiB point, without changing production code or task criteria. The 4-GiB sample exposed fail-closed unavailability in the existing readiness gate; RC-020 remains In Progress.
@@ -92,7 +100,7 @@ Recover the authoritative login receipt, not the original bearer cookie. Preserv
 
 ## Next action
 
-RC-018 remains in progress with bounded browser receipt checks for keyed login and targeted revocation; logout remains manual because a revoked cookie may no longer authorize its receipt lookup without a passphrase. RC-020's 2-GiB local cost point is recorded in `plan/checkpoint-evidence.md#rc-020-2gib-quick_check-cost-assessment--partial--2026-09-28`; the next independent slice is a 3-GiB midpoint through the same readiness/action path on macOS, with durable readback after any rejected write. These are local measurements only; production Linux behavior and full RC-020 acceptance remain open. RC-012 and RC-014 remain partial; RC-011 remains `REVISE`. RC-002's prior provider operation remains unknown and untouched. RC-004 is complete as a design contract; preserve actual task dependencies and do not claim full-backlog completion.
+RC-018 remains in progress with bounded browser receipt checks for keyed login and targeted revocation; logout remains manual because a revoked cookie may no longer authorize its receipt lookup without a passphrase. RC-020's 2-GiB local cost point is recorded in `plan/checkpoint-evidence.md#rc-020-2gib-quick_check-cost-assessment--partial--2026-09-28`; the next independent slice is a 2.5-GiB midpoint through the same readiness/action path on macOS, with durable readback after any rejected write. These are local measurements only; production Linux behavior and full RC-020 acceptance remain open. RC-012 and RC-014 remain partial; RC-011 remains `REVISE`. RC-002's prior provider operation remains unknown and untouched. RC-004 is complete as a design contract; preserve actual task dependencies and do not claim full-backlog completion.
 
 
 ## Purpose
