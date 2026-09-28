@@ -8,6 +8,10 @@ type Workspace = { id: string; name: string; createdAt: string };
 type Profile = { userId: string; displayName: string; updatedAt: string };
 type HistoryEntry = { id: string; type: string; content: string; createdAt: string };
 
+const requestIdSchema = t.Transform(t.String({ format: "uuid", minLength: 36, maxLength: 36 }))
+  .Decode((value) => value.toLowerCase())
+  .Encode((value) => value.toLowerCase());
+
 function openDatabase(databasePath: string) {
   mkdirSync(dirname(databasePath), { recursive: true });
   return new Database(databasePath, { create: true });
@@ -56,6 +60,12 @@ export function initializeStorage(databasePath: string) {
           created_at TEXT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS workspaces_user_id ON workspaces(user_id);
+        CREATE TABLE IF NOT EXISTS workspace_requests (
+          user_id TEXT NOT NULL,
+          request_id TEXT NOT NULL,
+          workspace_id TEXT NOT NULL UNIQUE REFERENCES workspaces(id),
+          PRIMARY KEY (user_id, request_id)
+        );
         CREATE TABLE IF NOT EXISTS profiles (
           user_id TEXT PRIMARY KEY,
           display_name TEXT NOT NULL,
@@ -98,6 +108,28 @@ export function storageFeature(databasePath: string) {
         database.close();
       }
     })
+    .get("/api/workspaces/receipts/:requestId", ({ params, request, set }) => {
+      const userId = sessionUserId(databasePath, request);
+      if (!userId) {
+        set.status = 401;
+        return { error: "unauthorized" as const };
+      }
+      const database = openDatabase(databasePath);
+      try {
+        const receipt = database.query<unknown, [string, string]>(`
+          SELECT workspaces.id, workspaces.name, workspaces.created_at AS createdAt
+          FROM workspace_requests JOIN workspaces ON workspaces.id = workspace_requests.workspace_id
+          WHERE workspace_requests.user_id = ? AND workspace_requests.request_id = ?
+        `).get(userId, params.requestId);
+        if (!receipt) {
+          set.status = 404;
+          return { error: "receipt_not_found" as const };
+        }
+        return readWorkspace(receipt);
+      } finally {
+        database.close();
+      }
+    }, { params: t.Object({ requestId: requestIdSchema }) })
     .post("/api/workspaces", ({ body, request, set }) => {
       const userId = sessionUserId(databasePath, request);
       if (!userId) {
@@ -107,15 +139,35 @@ export function storageFeature(databasePath: string) {
       const workspace = { id: crypto.randomUUID(), name: body.name, createdAt: new Date().toISOString() };
       const database = openDatabase(databasePath);
       try {
-        database.query("INSERT INTO workspaces (id, user_id, name, created_at) VALUES (?, ?, ?, ?)").run(
-          workspace.id, userId, workspace.name, workspace.createdAt,
-        );
+        const result = database.transaction(() => {
+          if (body.requestId) {
+            const existing = database.query<unknown, [string, string]>(`
+              SELECT workspaces.id, workspaces.name, workspaces.created_at AS createdAt
+              FROM workspace_requests JOIN workspaces ON workspaces.id = workspace_requests.workspace_id
+              WHERE workspace_requests.user_id = ? AND workspace_requests.request_id = ?
+            `).get(userId, body.requestId);
+            if (existing) return readWorkspace(existing);
+          }
+          database.query("INSERT INTO workspaces (id, user_id, name, created_at) VALUES (?, ?, ?, ?)").run(
+            workspace.id, userId, workspace.name, workspace.createdAt,
+          );
+          if (body.requestId) database.query("INSERT INTO workspace_requests (user_id, request_id, workspace_id) VALUES (?, ?, ?)")
+            .run(userId, body.requestId, workspace.id);
+          return null;
+        }).immediate();
+        if (result) {
+          if (result.name !== body.name) {
+            set.status = 409;
+            return { error: "request_id_conflict" as const };
+          }
+          return result;
+        }
       } finally {
         database.close();
       }
       set.status = 201;
       return workspace;
-    }, { body: t.Object({ name: t.String({ minLength: 1, maxLength: 120 }) }) })
+    }, { body: t.Object({ name: t.String({ minLength: 1, maxLength: 120 }), requestId: t.Optional(requestIdSchema) }) })
     .get("/api/profile", ({ request, set }) => {
       const userId = sessionUserId(databasePath, request);
       if (!userId) {

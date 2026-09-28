@@ -15,6 +15,7 @@ self.onmessage = (event: MessageEvent<string>) => {
 
     database.query("SELECT sequence FROM actions LIMIT 1").get();
     database.query("SELECT user_id, request_id, action_id FROM action_requests LIMIT 1").get();
+    database.query("SELECT user_id, request_id, workspace_id FROM workspace_requests LIMIT 1").get();
     database.query("SELECT user_id, request_id, kind, outcome, session_token_hash FROM auth_requests LIMIT 1").get();
     for (const table of ["workspaces", "history", "profiles", "sessions"]) {
       database.query(`SELECT 1 FROM ${table} LIMIT 1`).get();

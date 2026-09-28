@@ -1,5 +1,12 @@
 # Pivot policy
 
+## Pivot record — RC-020 runtime corruption — 2026-09-27
+
+- **Outcome still required:** A corrupted database must reject writes before acknowledging them; readiness alone is not acceptance. RC-020 and the phase gate remain open.
+- **Reproduced gap:** After an API instance started against healthy SQLite, altering a noncritical page made readiness return 503, yet an authenticated keyed action returned 201 with a persisted receipt. A startup-only integrity guard cannot detect this transition.
+- **Decision/next:** Do not label the write safe or add an unbounded full-database scan to every mutation without measuring concurrency and database-size effects. Preserve the isolated reproduction, design a bounded fail-closed write boundary and test it against the existing concurrent-action oracle. Meanwhile advance independent RC-018 mutation receipt work: keyed workspace creation and authenticated lookup are implemented locally; profile and workspace-history writes are next. Do not start downstream tasks that require RC-020 acceptance. RC-002's uncertain provider operation remains untouched.
+
+
 ## Pivot record — RC-017 implementation sequencing — 2026-09-27
 
 - **Decision:** Replace aggregate RC-017 prerequisites on RC-018/019/020/027 with accepted RC-004/016 plus the reviewed written failure contract. Preserve every other prerequisite and the Phase 01 promotion gate. RC-018/020 implementation can proceed; no full-task acceptance is inferred.
