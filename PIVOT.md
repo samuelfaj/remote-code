@@ -1,5 +1,13 @@
 # Pivot policy
 
+## Pivot record — RC-020 4GiB local readiness boundary — partial — 2026-09-28
+
+- **Decision:** Continue the local cost curve after the 2-GiB point, without changing production code or task criteria. The 4-GiB sample exposed fail-closed unavailability in the existing readiness gate; RC-020 remains In Progress.
+- **Observed:** At source commit `3987e6b1785485ee08dce5a589103bce03565b3a`, the nominal 4,294,967,296-byte payload produced a 4,300,693,504-byte SQLite file. All five direct `PRAGMA quick_check` verdicts were `ok` at 628.88–680.86 ms. The in-process readiness route returned 503 `not_ready` in 402.71 ms; five sequential and eight concurrent keyed action writes returned 503 `storage_unavailable`. Durable SQL readback found zero actions and mappings for the 13 rejected requests and final `quick_check=ok`.
+- **Evidence limit:** The request timings are in-process, not TCP or server-deadline proof. The probe exited 0 and verified its cleanup, but available space read 864 GiB before and 865 GiB in the probe's after check; a later parent check read 864 GiB. Reviewer `01a0ea0c-0dc8-70b3-acb6-1deba275246a` found no method defect and asked that these readings and the limited no-action/no-mapping claim remain explicit. This is not native/production Linux or full RC-020 acceptance.
+- **Next:** Measure a nominal 3-GiB sample through the same local path to locate the 2–4 GiB readiness boundary. Preserve the 400-ms behavior until an explicit design change is reviewed; do not claim task acceptance from fail-closed responses.
+- **X:** No account check or post; this is a local capacity observation, not a deployed user-facing milestone.
+
 ## Pivot record — RC-020 2GiB local cost assessment — partial — 2026-09-28
 
 - **Decision:** Continue the above-1-GiB cost question with a 2-GiB nominal SQLite payload through the existing readiness/action path. No product source or acceptance criteria changed; RC-020 remains In progress.
@@ -84,7 +92,7 @@ Recover the authoritative login receipt, not the original bearer cookie. Preserv
 
 ## Next action
 
-RC-018 remains in progress with bounded browser receipt checks for keyed login and targeted revocation; logout remains manual because a revoked cookie may no longer authorize its receipt lookup without a passphrase. RC-020's 2-GiB local cost point is recorded in `plan/checkpoint-evidence.md#rc-020-2gib-quick_check-cost-assessment--partial--2026-09-28`; the next independent slice is a 4-GiB sample through the same readiness/action path on macOS, with durable readback after any rejected write. These are local measurements only; production Linux behavior and full RC-020 acceptance remain open. RC-012 and RC-014 remain partial; RC-011 remains `REVISE`. RC-002's prior provider operation remains unknown and untouched. RC-004 is complete as a design contract; preserve actual task dependencies and do not claim full-backlog completion.
+RC-018 remains in progress with bounded browser receipt checks for keyed login and targeted revocation; logout remains manual because a revoked cookie may no longer authorize its receipt lookup without a passphrase. RC-020's 2-GiB local cost point is recorded in `plan/checkpoint-evidence.md#rc-020-2gib-quick_check-cost-assessment--partial--2026-09-28`; the next independent slice is a 3-GiB midpoint through the same readiness/action path on macOS, with durable readback after any rejected write. These are local measurements only; production Linux behavior and full RC-020 acceptance remain open. RC-012 and RC-014 remain partial; RC-011 remains `REVISE`. RC-002's prior provider operation remains unknown and untouched. RC-004 is complete as a design contract; preserve actual task dependencies and do not claim full-backlog completion.
 
 
 ## Purpose
