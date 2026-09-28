@@ -585,35 +585,56 @@ export function App() {
     }
   }
 
+  async function readActionReceiptOnce(requestId: string, deadline: number) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) return null;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        actionReceiptApi.api.actions.receipts({ requestId }).get(),
+        new Promise<null>((resolve) => { timer = setTimeout(() => resolve(null), Math.min(2_000, remaining)); }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
   async function consultUncertainAction(requestId: string, userId: string, deadline: number, isCurrent: () => boolean) {
     if (!isCurrent()) return;
     setActionPhase("checking");
-    const remaining = deadline - Date.now();
-    if (remaining > 0) {
-      let timer: ReturnType<typeof setTimeout> | undefined;
+    // Bounded multi-attempt observation: a first immediate receipt read, then one
+    // delayed reread after an increasing wait (2s cap each), still inside the
+    // ten-second post-persistence window. No POST is replayed; a missing or
+    // stalled read keeps the pending identity for explicit later lookup.
+    const attempts = 2;
+    for (let attempt = 0; attempt < attempts; attempt++) {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) break;
+      if (attempt > 0) {
+        const waitMs = Math.min(1500 * attempt, remaining);
+        await new Promise<void>((resolve) => { setTimeout(resolve, waitMs); });
+        if (!isCurrent() || Date.now() >= deadline) break;
+      }
+      let response: Awaited<ReturnType<typeof readActionReceiptOnce>> = null;
       try {
-        const response = await Promise.race([
-          actionReceiptApi.api.actions.receipts({ requestId }).get(),
-          new Promise<null>((resolve) => { timer = setTimeout(() => resolve(null), remaining); }),
-        ]);
-        if (!isCurrent()) return;
-        if (response?.status === 401) {
-          authEpoch.current += 1;
-          hideSession();
-          setError("The host session expired or was revoked.");
-          return;
-        }
-        const receipt = response && actionReceiptFromResponse(response);
-        if (receipt) {
-          const cleared = forgetPendingAction(userId, requestId);
-          setRecoveryMessage(`Confirmed receipt ${receipt.id}.${cleared ? "" : " Browser storage could not clear the pending identity; check the receipt again."}`);
-          if (socketRef.current?.readyState === WebSocket.OPEN) socketRef.current.send(JSON.stringify({ type: "sync" }));
-          return;
-        }
+        response = await readActionReceiptOnce(requestId, deadline);
       } catch {
         // An unavailable read does not determine the mutation outcome.
-      } finally {
-        if (timer) clearTimeout(timer);
+        continue;
+      }
+      if (!isCurrent()) return;
+      if (response?.status === 401) {
+        authEpoch.current += 1;
+        hideSession();
+        setError("The host session expired or was revoked.");
+        return;
+      }
+      const receipt = response && actionReceiptFromResponse(response);
+      if (receipt) {
+        const cleared = forgetPendingAction(userId, requestId);
+        setRecoveryMessage(`Confirmed receipt ${receipt.id}.${cleared ? "" : " Browser storage could not clear the pending identity; check the receipt again."}`);
+        if (socketRef.current?.readyState === WebSocket.OPEN) socketRef.current.send(JSON.stringify({ type: "sync" }));
+        return;
       }
     }
     if (isCurrent()) setRecoveryMessage("The outcome is unknown. Check the action receipt later without resending.");

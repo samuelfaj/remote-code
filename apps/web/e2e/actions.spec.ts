@@ -675,6 +675,36 @@ test("automatically consults the canonical receipt after a lost POST response wi
   expect(requestId).toMatch(/^[0-9a-f-]{36}$/);
 });
 
+test("a delayed receipt becomes visible on the second automatic read without resending", async ({ page }) => {
+  let posts = 0;
+  let lookups = 0;
+  await signIn(page);
+  await page.route("**/api/actions", async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    posts++;
+    expect((await route.fetch()).status()).toBe(201);
+    await route.abort("failed");
+  });
+  await page.route("**/api/actions/receipts/*", async (route) => {
+    lookups++;
+    // First automatic read sees nothing yet; the delayed reread finds the receipt.
+    if (lookups === 1) {
+      await route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ error: "not_found" }) });
+    } else {
+      await route.continue();
+    }
+  });
+  const action = `delayed observation ${crypto.randomUUID()}`;
+  await page.getByLabel("Action description").fill(action);
+  await page.getByRole("button", { name: "Write backend receipt" }).click();
+  await expect(page.getByTestId("action-recovery-status")).toContainText("Confirmed receipt", { timeout: 11_000 });
+  await expect(page.getByTestId("latest-receipt")).toContainText(action);
+  expect(posts).toBe(1);
+  expect(lookups).toBe(2);
+  expect(await page.evaluate(() => sessionStorage.getItem("remotecode.pending-action:local"))).toBeNull();
+  expect((await confirmedIds(page)).filter((receipt) => receipt.action === action)).toHaveLength(1);
+});
+
 test("a stalled automatic receipt lookup ends waiting without resending an uncertain action", async ({ page }) => {
   let posts = 0;
   await signIn(page);

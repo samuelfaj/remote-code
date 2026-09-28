@@ -1,3 +1,10 @@
+# RC-018 bounded second automatic action receipt read — partial — 2026-09-28
+
+- **Scope:** One bounded RC-018 slice: the web action screen now makes up to two automatic receipt reads after an uncertain POST (immediate + one delayed reread after an increasing wait), still inside the existing ten-second post-persistence window, with no POST replay. RC-002 was not called or investigated.
+- **Correction/review:** Independent review `01a0e904` PASS on test validity and regressions but FAIL on deadline correctness: each read was capped at 2s without clamping to the remaining deadline, so a slow POST plus two stalled reads and the wait could run ~11.5s past the 10s deadline. Fixed by clamping each read's cap to `min(2_000, remaining)`; logout/reload still invalidate via `isCurrent`, and 401 on either attempt still hides the session.
+- **Proof:** New browser test makes the first automatic GET return 404 and the second reach the backend: asserts 1 POST, 2 GETs, cleared pending storage, one durable action, and visible confirmed receipt — passed (2.4s). Existing stalled-lookup test (both reads stalled, unknown outcome, no resend) passed (6.4s); existing immediate-confirm test (single lookup, `lookups==1`) passed, proving no extra read on the fast path. Full API/client suite 97/650 green; typecheck green. Evidence: `{SCRATCH}/rc018-delayed-e2e.log`, `{SCRATCH}/rc018-multiread-unit.log`.
+- **Boundary:** This is two reads with increasing wait, not full jitter/backoff or gateway/click deadlines. Android, other mutation consumers, total click/gateway deadlines, and full RC-018 acceptance remain open. No phase or dependent ticket is accepted.
+
 # RC-020 1GiB quick_check cost assessment — partial — 2026-09-28
 
 - **Scope:** Bounded follow-up to the remaining above-512MiB cost question. No product code changed; measurement-only assessment driving the shipped path (`createApi` default readiness worker → `PRAGMA quick_check` → `POST /api/actions` gate → route), same method as the 1/16/64/128/256/512MiB runs. RC-002 was not called or investigated.
