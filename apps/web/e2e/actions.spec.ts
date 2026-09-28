@@ -601,6 +601,7 @@ test("recovers an ambiguous action by its retained ID after reload without anoth
     expect((await route.fetch()).status()).toBe(201);
     await route.abort("failed");
   });
+  await page.route("**/api/actions/receipts/*", (route) => route.fulfill({ status: 404, json: { error: "not_found" } }));
   await signIn(page);
   const action = `recover by stable identity ${crypto.randomUUID()}`;
   await page.getByLabel("Action description").fill(action);
@@ -617,6 +618,7 @@ test("recovers an ambiguous action by its retained ID after reload without anoth
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({ path: testInfo.outputPath("pending-mobile.png"), fullPage: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await page.unroute("**/api/actions/receipts/*");
   const recoveredResponse = page.waitForResponse((response) =>
     new URL(response.url()).pathname === `/api/actions/receipts/${requestId}` && response.request().method() === "GET");
   await page.getByRole("button", { name: "Check action receipt" }).click();
@@ -634,6 +636,89 @@ test("recovers an ambiguous action by its retained ID after reload without anoth
   expect(posts).toBe(1);
   expect(pageErrors).toEqual([]);
   await page.screenshot({ path: testInfo.outputPath("recovered-mobile.png"), fullPage: true });
+});
+
+test("automatically consults the canonical receipt after a lost POST response without replay on desktop and mobile", async ({ page }) => {
+  let posts = 0;
+  let lookups = 0;
+  let requestId = "";
+  await page.routeWebSocket("**/api/events*", (socket) => {
+    const server = socket.connectToServer();
+    socket.onMessage((message) => server.send(message));
+    server.onMessage((message) => {
+      if (JSON.parse(String(message)).type !== "action.created") socket.send(message);
+    });
+  });
+  await page.route("**/api/actions/receipts/*", (route) => { lookups++; void route.continue(); });
+  await page.route("**/api/actions", async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    posts++;
+    requestId = route.request().postDataJSON().requestId;
+    expect((await route.fetch()).status()).toBe(201);
+    await route.abort("failed");
+  });
+  await signIn(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  const action = `automatic recovery ${crypto.randomUUID()}`;
+  await page.getByLabel("Action description").fill(action);
+  await page.getByRole("button", { name: "Write backend receipt" }).click();
+  await expect(page.getByTestId("action-recovery-status")).toContainText("Confirmed receipt");
+  await expect(page.getByTestId("latest-receipt")).toContainText(action);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  expect(posts).toBe(1);
+  expect(lookups).toBe(1);
+  expect(await page.evaluate(() => sessionStorage.getItem("remotecode.pending-action:local"))).toBeNull();
+  expect((await confirmedIds(page)).filter((item) => item.action === action)).toHaveLength(1);
+  await page.reload();
+  await expect(page.getByTestId("latest-receipt")).toContainText(action);
+  expect(posts).toBe(1);
+  expect(requestId).toMatch(/^[0-9a-f-]{36}$/);
+});
+
+test("a stalled automatic receipt lookup ends waiting without resending an uncertain action", async ({ page }) => {
+  let posts = 0;
+  await signIn(page);
+  await page.route("**/api/actions", async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    posts++;
+    expect((await route.fetch()).status()).toBe(201);
+    await route.abort("failed");
+  });
+  await page.route("**/api/actions/receipts/*", () => new Promise<void>(() => {}));
+  const action = `stalled observation ${crypto.randomUUID()}`;
+  await page.getByLabel("Action description").fill(action);
+  const started = Date.now();
+  await page.getByRole("button", { name: "Write backend receipt" }).click();
+  await expect(page.getByTestId("action-recovery-status")).toContainText("outcome is unknown", { timeout: 11_000 });
+  expect(Date.now() - started).toBeLessThan(11_000);
+  await expect(page.getByRole("button", { name: "Check action receipt" })).toBeEnabled();
+  expect(posts).toBe(1);
+  expect((await confirmedIds(page)).filter((receipt) => receipt.action === action)).toHaveLength(1);
+});
+
+test("an automatic receipt authorization failure hides private state without repeating the action", async ({ page }) => {
+  let posts = 0;
+  await signIn(page);
+  const existing = `private before rejection ${crypto.randomUUID()}`;
+  expect((await page.request.post(`${apiUrl}/api/actions`, { data: { action: existing } })).status()).toBe(201);
+  await expect(page.getByTestId("latest-receipt")).toContainText(existing);
+  await page.route("**/api/actions", async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    posts++;
+    expect((await route.fetch()).status()).toBe(201);
+    await route.abort("failed");
+  });
+  await page.route("**/api/actions/receipts/*", async (route) => {
+    const response = await route.fetch({ headers: { ...route.request().headers(), cookie: "" } });
+    expect(response.status()).toBe(401);
+    await route.fulfill({ response });
+  });
+  await page.getByLabel("Action description").fill(`unknown after rejection ${crypto.randomUUID()}`);
+  await page.getByRole("button", { name: "Write backend receipt" }).click();
+  await expect(page.getByRole("heading", { name: "Sign in to your host" })).toBeVisible();
+  await expect(page.getByText(existing)).toHaveCount(0);
+  expect(posts).toBe(1);
+  expect(await page.evaluate(() => Object.keys(sessionStorage).some((key) => key.startsWith("remotecode.pending-action")))).toBe(true);
 });
 
 test("a missing or unavailable receipt never enables resubmission of an ambiguous action", async ({ page }) => {
@@ -676,11 +761,13 @@ test("a receipt response after logout cannot restore private UI, and the same us
     await route.fetch();
     await route.abort("failed");
   });
+  await page.route("**/api/actions/receipts/*", (route) => route.fulfill({ status: 404, json: { error: "not_found" } }));
   await signIn(page);
   const action = `late recovery ${crypto.randomUUID()}`;
   await page.getByLabel("Action description").fill(action);
   await page.getByRole("button", { name: "Write backend receipt" }).click();
   await expect(page.getByRole("button", { name: "Check action receipt" })).toBeEnabled();
+  await page.unroute("**/api/actions/receipts/*");
   const routePattern = `**/api/actions/receipts/${requestId}`;
   await page.route(routePattern, async (route) => {
     const response = await route.fetch();
@@ -724,7 +811,7 @@ test("requires host recovery support and durable tab storage before submitting a
   expect(posts).toBe(0);
 });
 
-test("a real client timeout preserves its pending ID and recovers the committed action without replay", async ({ page }) => {
+test("a real client timeout automatically recovers the committed action without replay", async ({ page }) => {
   let release!: () => void;
   const held = new Promise<void>((resolve) => { release = resolve; });
   let completed!: () => void;
@@ -746,10 +833,9 @@ test("a real client timeout preserves its pending ID and recovers the committed 
     const action = `recover real timeout ${crypto.randomUUID()}`;
     await page.getByLabel("Action description").fill(action);
     await page.getByRole("button", { name: "Write backend receipt" }).click();
-    await expect(page.getByTestId("action-recovery-status")).toContainText("outcome is unknown", { timeout: 15_000 });
+    await expect(page.getByTestId("action-recovery-status")).toContainText("Confirmed receipt", { timeout: 15_000 });
     expect(requestId).toMatch(/^[0-9a-f-]{36}$/);
-    await page.getByRole("button", { name: "Check action receipt" }).click();
-    await expect(page.getByTestId("action-recovery-status")).toContainText("Confirmed receipt");
+    await expect(page.getByTestId("pending-action")).toHaveCount(0);
     expect((await confirmedIds(page)).filter((item) => item.action === action)).toHaveLength(1);
     expect(posts).toBe(1);
   } finally {
@@ -786,8 +872,10 @@ test("receipt authorization failure requires a fresh snapshot before recovery ca
     await route.abort("failed");
   });
   await signIn(page);
+  await page.route("**/api/actions/receipts/*", (route) => route.fulfill({ status: 404, json: { error: "receipt_not_found" } }));
   await page.getByRole("button", { name: "Write backend receipt" }).click();
   await expect(page.getByRole("button", { name: "Check action receipt" })).toBeEnabled();
+  await page.unroute("**/api/actions/receipts/*");
   await page.route("**/api/actions/receipts/*", async (route) => {
     const response = await route.fetch({ headers: { ...route.request().headers(), cookie: "" } });
     expect(response.status()).toBe(401);

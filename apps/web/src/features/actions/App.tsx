@@ -82,6 +82,8 @@ function HostHealth() {
 
 export function App() {
   const api = useMemo(() => createApiClient(window.location.origin), []);
+  const actionPostApi = useMemo(() => createApiClient(window.location.origin, { timeoutMs: 6_000 }), []);
+  const actionReceiptApi = useMemo(() => createApiClient(window.location.origin, { timeoutMs: 3_500 }), []);
   const [action, setAction] = useState("Verify shared Linux backend");
   const [eventState, setEventState] = useState<ActionEventState>(emptyActionEventState);
   const eventStateRef = useRef(eventState);
@@ -476,6 +478,7 @@ export function App() {
     setError("");
     setRecoveryMessage("");
     let requestId: string | undefined;
+    let deadline = 0;
     try {
       const version = await api.api.version.get();
       if (!isCurrent()) return;
@@ -498,31 +501,72 @@ export function App() {
         return;
       }
       setPendingRequestId(requestId);
-      const response = await api.api.actions.post({ action: value, requestId });
+      deadline = Date.now() + 10_000;
+      let postTimer: ReturnType<typeof setTimeout> | undefined;
+      const response = await Promise.race([
+        actionPostApi.api.actions.post({ action: value, requestId }),
+        new Promise<null>((resolve) => { postTimer = setTimeout(() => resolve(null), 6_000); }),
+      ]);
+      if (postTimer) clearTimeout(postTimer);
       if (!isCurrent()) return;
-      const receipt = actionReceiptFromResponse(response);
-      const requestError = response.error;
+      const receipt = response && actionReceiptFromResponse(response);
+      const requestError = response?.error;
       if (receipt) {
         const cleared = forgetPendingAction(sessionUserId, requestId);
         setRecoveryMessage(cleared ? "" : `Confirmed receipt ${receipt.id}. Browser storage could not clear the pending identity; check the receipt again.`);
         if (socketRef.current?.readyState === WebSocket.OPEN) socketRef.current.send(JSON.stringify({ type: "sync" }));
-      } else if (isDefinitiveActionRejection(response)) {
+      } else if (response && isDefinitiveActionRejection(response)) {
         const cleared = forgetPendingAction(sessionUserId, requestId);
         setError(requestErrorMessage(requestError, "The host rejected this action before acceptance."));
         if (!cleared) setRecoveryMessage("Browser storage could not clear the rejected request. Sending remains disabled.");
       } else {
-        setRecoveryMessage("The outcome is unknown. Check the action receipt before sending another action.");
+        await consultUncertainAction(requestId, sessionUserId, deadline, isCurrent);
       }
     } catch {
-      if (isCurrent()) setRecoveryMessage(requestId
-        ? "The outcome is unknown. Check the action receipt before sending another action."
-        : "The host could not be checked. No action was sent.");
+      if (isCurrent()) {
+        if (requestId) await consultUncertainAction(requestId, sessionUserId, deadline, isCurrent);
+        else setRecoveryMessage("The host could not be checked. No action was sent.");
+      }
     } finally {
       if (isCurrent()) {
         actionBusy.current = false;
         setActionPhase(null);
       }
     }
+  }
+
+  async function consultUncertainAction(requestId: string, userId: string, deadline: number, isCurrent: () => boolean) {
+    if (!isCurrent()) return;
+    setActionPhase("checking");
+    const remaining = deadline - Date.now();
+    if (remaining > 0) {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        const response = await Promise.race([
+          actionReceiptApi.api.actions.receipts({ requestId }).get(),
+          new Promise<null>((resolve) => { timer = setTimeout(() => resolve(null), remaining); }),
+        ]);
+        if (!isCurrent()) return;
+        if (response?.status === 401) {
+          authEpoch.current += 1;
+          hideSession();
+          setError("The host session expired or was revoked.");
+          return;
+        }
+        const receipt = response && actionReceiptFromResponse(response);
+        if (receipt) {
+          const cleared = forgetPendingAction(userId, requestId);
+          setRecoveryMessage(`Confirmed receipt ${receipt.id}.${cleared ? "" : " Browser storage could not clear the pending identity; check the receipt again."}`);
+          if (socketRef.current?.readyState === WebSocket.OPEN) socketRef.current.send(JSON.stringify({ type: "sync" }));
+          return;
+        }
+      } catch {
+        // An unavailable read does not determine the mutation outcome.
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+    }
+    if (isCurrent()) setRecoveryMessage("The outcome is unknown. Check the action receipt later without resending.");
   }
 
   async function checkActionReceipt() {
@@ -544,13 +588,7 @@ export function App() {
         if (socketRef.current?.readyState === WebSocket.OPEN) socketRef.current.send(JSON.stringify({ type: "sync" }));
       } else if (status === 401) {
         authEpoch.current += 1;
-        setAuthenticated(false);
-        setConnected(false);
-        setConnectionFailed(false);
-        clearActionRecoveryView();
-        eventStateRef.current = emptyActionEventState();
-        setEventState(eventStateRef.current);
-        setActionPhase(null);
+        hideSession();
         setError("The host session expired or was revoked.");
       } else {
         setRecoveryMessage(status === 404
