@@ -1,5 +1,12 @@
 # Pivot policy
 
+## Pivot record — native automatic login observation — 2026-09-27
+
+- **Outcome still required:** A lost keyed-login response on iOS should be reconciled within a bounded wait without replaying the login or losing the durable request ID. Existing explicit lookup/revoke remains safe and tested; it is not automatic deadline acceptance.
+- **Attempt retracted:** A proposed native automatic session/receipt read used a 13-second deadline. Independent review `01a0e5cf-edb6-75d3-b0a3-8c99b53671e6` found that an asynchronous AsyncStorage removal could finish *after* the deadline, erasing the pending ID while leaving the UI signed out, and a definitive rejection could similarly clear it late. Deadline checks around the asynchronous removal were insufficient to make storage and UI state atomic, so the uncommitted implementation was removed. The restored baseline passed five installed iOS tests and SQLite readback; it does not prove automatic login observation.
+- **Next route:** Preserve manual matching-cookie/receipt/fence recovery. Design a safe durable completion transition with bounded waiting before adding automation; never fabricate an accepted deadline or retry an uncertain login. Continue independent RC-020 Linux storage proof and RC-018 gateway/other-consumer work while this high-risk transition stays open. RC-002's unknown provider operation is not repeated.
+
+
 ## Pivot record — RC-020 runtime corruption — 2026-09-27
 
 - **Outcome still required:** A corrupted database must reject writes before acknowledging them; readiness alone is not acceptance. RC-020 and the phase gate remain open.
