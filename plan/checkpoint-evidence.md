@@ -1,3 +1,11 @@
+# RC-020 512MiB quick_check cost assessment — partial — 2026-09-28
+
+- **Scope:** Bounded follow-up to the remaining above-256MiB cost question. No product code changed; measurement-only assessment driving the shipped path (`createApi` default readiness worker → `PRAGMA quick_check` → `POST /api/actions` gate → route), same method as the 1/16/64/128/256MiB runs. RC-002 was not called or investigated.
+- **Environment:** Bun 1.3.13 on macOS arm64, real Elysia requests with the production middleware, SQLite file of 537,686,016 bytes (512MiB nominal filler payload in a task-owned temp database).
+- **Observed:** Direct `PRAGMA quick_check=ok` five-run timings 73.64, 73.62, 75.50, 75.98, 75.92 ms. Five sequential keyed writes: 81.52, 82.13, 81.30, 84.52, 84.46 ms (max 84.52 ms, all 201). Eight simultaneous keyed writes completed in 85.99 ms (all 201). Durable readback: 13 actions, 13 owner-scoped request mappings, final `quick_check=ok`. Output: `{SCRATCH}/rc020-512mib-probe.log`.
+- **Cleanup:** The 512MiB `probe.sqlite` temp dir was removed after the run (`rm -rf`, verified absent). The probe script has no cleanup step; a rerun leaves its temp dir behind for manual removal (same caveat as prior runs).
+- **Boundary:** This closes the 512MiB cost point only. It does not establish latency on larger hosted databases, production Linux-host behavior, or full RC-020 acceptance. The 400 ms worker timeout bound still comfortably covers the observed ~75 ms check at this size. No phase or dependent ticket is accepted by this measurement. Independent review `01a0e8d7-904a-7531-8db3-01a8e9465063`: PASS on numbers, shipped path, and boundaries; cleanup UNVERIFIED from the log alone, closed by parent: no `rc020-512m-*` temp dir remains in the goal scratch dir (only the probe script and log), confirming the recorded `rm -rf` removal.
+
 # RC-020 256MiB quick_check cost assessment — partial — 2026-09-28
 
 - **Scope:** Bounded follow-up to the remaining above-128MiB cost question. No product code changed; measurement-only assessment driving the shipped path (`createApi` default readiness worker → `PRAGMA quick_check` → `POST /api/actions` gate → route), same method as the 1/16/64/128MiB runs. RC-002 was not called or investigated.
