@@ -14,6 +14,25 @@
 - **Observed behavior:** The baseline keyed action and canonical receipt were read back. A bounded write loop reached real `ENOSPC` at 50,110,464 filler bytes. Readiness returned 503 `not_ready`; one distinct keyed POST returned 503 `storage_unavailable`. After deleting only the filler and restarting the API against the same tmpfs database, the baseline action, receipt, and request mapping were unchanged; lookup of the attempted ID returned 404 and its SQL mapping was absent; `PRAGMA quick_check` returned `ok`. A distinct post-recovery action returned 201 and its exact receipt/database mapping matched. The unique task-owned container was absent after cleanup.
 - **Acceptance boundary:** This verifies Linux/amd64 filesystem-full behavior under Mac Docker emulation, not a production Linux host. It does not prove RC-002 or resolve RC-020: a write immediately after runtime corruption but before any readiness observation can still be falsely accepted; production-host behavior and the complete corruption failure contract remain open.
 
+# RC-018/RC-020 checkpoint publication and CI — partial — 2026-09-28
+
+- **Root/baseline:** `/Users/samuelfajreldines/dev/new-remote-code`; parent `19ccf40474ce34d32261921f82a2f735320471b6`; branch `checkpoint/rc002-linux-runtime-evidence`.
+- **Reasoning review:** Reviewer `01a0e627-0a6c-7281-a94c-ad6227420937` read every line in the frozen 591-line patch, SHA-256 `faa72485a3056ff19cfb4c765c3c0e9296ff2ae214682a7a2c2bd1c4797ed839`, including the two new proof files. It found no concrete defect. The reviewer did not run commands or independently verify the patch hash/provenance; the parent matched the staged patch to the frozen artifact and ran the recorded validations.
+- **Commit/remote:** Commit `0deea88d11ec08385b3c47246e7b264220138b33` (`feat: add bounded native login receipt observation`) has parent `19ccf40474ce34d32261921f82a2f735320471b6`. The branch was pushed and `git ls-remote` read back the exact commit. `scripts/__pycache__/` was left untracked and excluded.
+- **CI:** GitHub Actions runs `36375765958` and `36375762600` both match the exact commit. Each completed successfully with both `static` and `test` jobs successful; job IDs are `108781159535`/`108781243100` and `108781150044`/`108781239814`, respectively. This is repository CI evidence, not product acceptance.
+- **Acceptance boundary:** RC-018 and RC-020 remain In progress. The native login observation remains one read-only check; Android, remaining mutation families, total gateway/click deadlines, retry budgets and full task proof are open. The Linux full-volume proof ran under Mac Docker emulation and does not close immediate-corruption-before-readiness or production Linux-host requirements. RC-002 remains unknown, untouched and unaccepted. No release or deployment was performed.
+
+## X publication check — draft retained — 2026-09-28
+
+- **Account/interval:** The signed-in account was confirmed as `@samfajreldines`; the latest visible own post was 12 hours old, so the one-hour rule allowed a new post. The proposed text was exactly 280 characters and describes only the emulated Linux storage proof and its open corruption boundary.
+- **Draft (not submitted):**
+
+> I filled a 48 MiB tmpfs until Linux ran out of space. Readiness and a write returned 503. After restart, the old receipt remained; the rejected write had no effect.
+>
+> Linux/amd64 ran in Docker on my Mac, not in production. Corruption before readiness is open. #buildingRemoteCode
+
+- **Outcome/cleanup:** No Post-button click was issued and no publication URL is claimed. A subsequent navigation action returned “page did not return a snapshot”; `browser_close` returned `closed:false, released:true`, then `browser_status` reported `connected:true, hasTab:false`. Physical removal is unverified; no replacement tab or resubmission was attempted.
+
 # RC-020 isolated Linux tmpfs full-volume proof — partial — 2026-09-27
 
 - **Environment/version:** `scripts/run-storage-linux-full-proof.sh` uses the already-local image `remotecode-rc010-final-20260925:local` by inspected digest, Linux/amd64 under Docker on a Mac host with Docker reporting linux/aarch64. Source `apps/api/src` is bind-mounted read-only; the image entrypoint is explicitly Bun, with `--network none`, `--pull never` and a 48 MiB tmpfs at the SQLite database path. Distill was neither started nor authenticated. The initial checked-in-script run used repository HEAD `19ccf40474ce34d32261921f82a2f735320471b6`; source file mounts did not change from the prior product commit. This is not a production Linux host or RC-002 provider proof.
