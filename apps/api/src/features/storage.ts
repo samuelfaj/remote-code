@@ -71,6 +71,13 @@ export function initializeStorage(databasePath: string) {
           display_name TEXT NOT NULL,
           updated_at TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS profile_requests (
+          user_id TEXT NOT NULL,
+          request_id TEXT NOT NULL,
+          display_name TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          PRIMARY KEY (user_id, request_id)
+        );
         CREATE TABLE IF NOT EXISTS history (
           id TEXT PRIMARY KEY,
           user_id TEXT NOT NULL,
@@ -184,6 +191,27 @@ export function storageFeature(databasePath: string) {
         database.close();
       }
     })
+    .get("/api/profile/receipts/:requestId", ({ params, request, set }) => {
+      const userId = sessionUserId(databasePath, request);
+      if (!userId) {
+        set.status = 401;
+        return { error: "unauthorized" as const };
+      }
+      const database = openDatabase(databasePath);
+      try {
+        const row = database.query<unknown, [string, string]>(`
+          SELECT user_id AS userId, display_name AS displayName, updated_at AS updatedAt
+          FROM profile_requests WHERE user_id = ? AND request_id = ?
+        `).get(userId, params.requestId);
+        if (!row) {
+          set.status = 404;
+          return { error: "receipt_not_found" as const };
+        }
+        return readProfile(row);
+      } finally {
+        database.close();
+      }
+    }, { params: t.Object({ requestId: requestIdSchema }) })
     .put("/api/profile", ({ body, request, set }) => {
       const userId = sessionUserId(databasePath, request);
       if (!userId) {
@@ -193,15 +221,35 @@ export function storageFeature(databasePath: string) {
       const profile = { userId, displayName: body.displayName, updatedAt: new Date().toISOString() };
       const database = openDatabase(databasePath);
       try {
-        database.query(`
-          INSERT INTO profiles (user_id, display_name, updated_at) VALUES (?, ?, ?)
-          ON CONFLICT(user_id) DO UPDATE SET display_name = excluded.display_name, updated_at = excluded.updated_at
-        `).run(profile.userId, profile.displayName, profile.updatedAt);
+        const existing = database.transaction(() => {
+          if (body.requestId) {
+            const row = database.query<unknown, [string, string]>(`
+              SELECT user_id AS userId, display_name AS displayName, updated_at AS updatedAt
+              FROM profile_requests WHERE user_id = ? AND request_id = ?
+            `).get(userId, body.requestId);
+            if (row) return readProfile(row);
+          }
+          database.query(`
+            INSERT INTO profiles (user_id, display_name, updated_at) VALUES (?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET display_name = excluded.display_name, updated_at = excluded.updated_at
+          `).run(profile.userId, profile.displayName, profile.updatedAt);
+          if (body.requestId) database.query(`
+            INSERT INTO profile_requests (user_id, request_id, display_name, updated_at) VALUES (?, ?, ?, ?)
+          `).run(userId, body.requestId, profile.displayName, profile.updatedAt);
+          return null;
+        }).immediate();
+        if (existing) {
+          if (existing.displayName !== body.displayName) {
+            set.status = 409;
+            return { error: "request_id_conflict" as const };
+          }
+          return existing;
+        }
       } finally {
         database.close();
       }
       return profile;
-    }, { body: t.Object({ displayName: t.String({ minLength: 1, maxLength: 120 }) }) })
+    }, { body: t.Object({ displayName: t.String({ minLength: 1, maxLength: 120 }), requestId: t.Optional(requestIdSchema) }) })
     .get("/api/workspaces/:workspaceId/history", ({ params, request, set }) => {
       const userId = sessionUserId(databasePath, request);
       if (!userId) {
