@@ -1,5 +1,13 @@
 # Pivot policy
 
+## Pivot record — RC-020 2GiB local cost assessment — partial — 2026-09-28
+
+- **Decision:** Continue the above-1-GiB cost question with a 2-GiB nominal SQLite payload through the existing readiness/action path. No product source or acceptance criteria changed; RC-020 remains In progress.
+- **Observed:** On macOS 26.6.2 arm64 with Bun 1.3.13 and Node 22.23.2, the database measured 2,150,408,192 bytes. Five direct `PRAGMA quick_check` calls took 299.34–349.81 ms. Through `createApi`'s default Worker-backed readiness gate and in-process Elysia action handler, five sequential keyed writes returned 201 (max 304.51 ms) and eight concurrent keyed writes returned 201 in 299.86 ms total. Durable readback confirmed 13 actions, 13 exact owner-scoped mappings, and final `quick_check=ok`.
+- **Evidence limit:** The direct check times are not Worker timings; the authenticated route timings include the default Worker-backed gate but not network latency. The Zsh wrapper exited 1 after the Bun probe because `status` is reserved; the Bun exit code was not captured. Parent readback assertions confirmed all recorded fields, and the owned directory was absent with 865 GiB free after the run. Independent reviewer `01a0e9f4-0975-7921-bf22-c6f2ad0a9b52` found no method/evidence defect; it did not rerun the probe. No native/production Linux or full RC-020 acceptance is claimed.
+- **Next:** Measure a 4-GiB sample through the same local path, then compare the observed action path with the 400-ms readiness bound. Keep RC-020 In progress and all existing full-disk, lock, corruption, restart, and Linux evidence gates unchanged.
+- **X:** No account check or post was made for this local measurement; it is not a deployed user-facing milestone.
+
 ## Pivot record — RC-018 targeted revocation receipt retry — 2026-09-28
 
 - **Outcome:** A keyed targeted revocation may commit while its response is lost. Keep the operation ID and block a distinct login until a matching durable revocation receipt is confirmed; never replay the revocation.
@@ -76,7 +84,7 @@ Recover the authoritative login receipt, not the original bearer cookie. Preserv
 
 ## Next action
 
-RC-018 remains in progress with bounded browser receipt checks for keyed login and targeted revocation; logout remains manual because a revoked cookie may no longer authorize its receipt lookup without a passphrase. The next independent eligible slice is RC-020's above-1-GiB cost assessment through the shipped readiness/action gate, starting with a 2-GiB SQLite sample on macOS. This is local performance evidence only; production Linux behavior remains unverified. RC-012 and RC-014 remain partial; RC-011 remains `REVISE`. RC-002's prior provider operation remains unknown and untouched. RC-004 is complete as a design contract; preserve actual task dependencies and do not claim full-backlog completion.
+RC-018 remains in progress with bounded browser receipt checks for keyed login and targeted revocation; logout remains manual because a revoked cookie may no longer authorize its receipt lookup without a passphrase. RC-020's 2-GiB local cost point is recorded in `plan/checkpoint-evidence.md#rc-020-2gib-quick_check-cost-assessment--partial--2026-09-28`; the next independent slice is a 4-GiB sample through the same readiness/action path on macOS, with durable readback after any rejected write. These are local measurements only; production Linux behavior and full RC-020 acceptance remain open. RC-012 and RC-014 remain partial; RC-011 remains `REVISE`. RC-002's prior provider operation remains unknown and untouched. RC-004 is complete as a design contract; preserve actual task dependencies and do not claim full-backlog completion.
 
 
 ## Purpose
