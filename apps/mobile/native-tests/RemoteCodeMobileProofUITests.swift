@@ -34,6 +34,56 @@ final class RemoteCodeMobileProofUITests: XCTestCase {
     private let password = "remote-code-native-test-passphrase"
 
     @MainActor
+    func testReadinessShowsRealSQLiteLockAndRecoversWithoutBlockingLogin() async throws {
+        let app = XCUIApplication(bundleIdentifier: "com.remotecode.mobileproof")
+        let observer = URLSession(configuration: .ephemeral)
+        app.launch()
+        let readiness = app.staticTexts.matching(identifier: "host-readiness").firstMatch
+        XCTAssertTrue(readiness.waitForLabel("Host ready", timeout: 15))
+        try await observer.signIn(at: api, password: password)
+        try await setStorageLock(true, using: observer)
+        let locked = try await observer.get(URL(string: "/api/health/ready", relativeTo: api)!)
+        XCTAssertEqual(locked.statusCode, 503)
+        XCTAssertTrue(readiness.waitForLabel("Host not ready", timeout: 15))
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "Native host readiness under SQLite lock"
+        shot.lifetime = .keepAlways
+        add(shot)
+        try await setStorageLock(false, using: observer)
+        let recovered = try await observer.get(URL(string: "/api/health/ready", relativeTo: api)!)
+        XCTAssertEqual(recovered.statusCode, 200)
+        XCTAssertTrue(readiness.waitForLabel("Host ready", timeout: 15))
+        signIn(app)
+        XCTAssertTrue(app.staticTexts.matching(identifier: "connection-status").firstMatch.waitForLabel("connected", timeout: 15))
+        let action = "native-health-\(UUID().uuidString)"
+        let actionInput = app.textFields["Action"]
+        actionInput.tap()
+        actionInput.typeText(action)
+        app.keyboards.buttons["Return"].tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+        XCTAssertEqual(actionInput.value as? String, action)
+        let submit = app.buttons["Submit action"]
+        XCTAssertTrue(submit.isEnabled && submit.isHittable)
+        submit.tap()
+        XCTAssertTrue(app.staticTexts[action].waitForExistence(timeout: 15), "The installed app must submit after readiness recovers")
+        let history = try await observer.actions(at: api)
+        let receipt = try XCTUnwrap(history.first(where: { $0.action == action }))
+        XCTAssertEqual(history.filter { $0.action == action }.count, 1)
+        XCTAssertTrue(app.staticTexts["Receipt \(receipt.id)"].exists)
+        app.buttons["Sign out"].tap()
+        XCTAssertTrue(app.staticTexts.matching(identifier: "connection-status").firstMatch.waitForLabel("signed out", timeout: 15))
+    }
+
+    private func setStorageLock(_ locked: Bool, using session: URLSession) async throws {
+        var request = URLRequest(url: URL(string: "/__test__/storage-lock", relativeTo: api)!)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["locked": locked])
+        let (_, response) = try await session.data(for: request)
+        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
+    }
+
+    @MainActor
     func testInstalledAppUsesAuthenticatedSnapshotEventsAndReceipts() async throws {
         let runID = UUID().uuidString
         let apiSession = URLSession(configuration: .ephemeral)
@@ -68,9 +118,18 @@ final class RemoteCodeMobileProofUITests: XCTestCase {
         XCTAssertTrue(actionInput.waitForExistence(timeout: 10))
         actionInput.tap()
         actionInput.typeText(submittedAction)
-        app.staticTexts["Confirmed receipts"].firstMatch.tap()
-        app.buttons["Submit action"].tap()
-        XCTAssertTrue(app.staticTexts[submittedAction].waitForExistence(timeout: 15))
+        app.keyboards.buttons["Return"].tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5), "The keyboard must be dismissed before tapping Submit action")
+        XCTAssertEqual(actionInput.value as? String, submittedAction, "The submitted action must not be changed by keyboard suggestions")
+        let submit = app.buttons["Submit action"]
+        XCTAssertTrue(submit.isEnabled && submit.isHittable, "Native submit must be interactable after editing the action")
+        submit.tap()
+        guard app.staticTexts[submittedAction].waitForExistence(timeout: 15) else {
+            let actions = try await apiSession.actions(at: api)
+            let visibleError = app.staticTexts.matching(identifier: "connection-error").firstMatch
+            XCTFail("Native submission did not appear. Input: \(String(describing: actionInput.value)); connection: \(connection.label); error: \(visibleError.exists ? visibleError.label : "none"); persisted actions: \(actions.map(\.action))")
+            return
+        }
         let history = try await apiSession.actions(at: api)
         let nativeReceipt = try XCTUnwrap(history.first(where: { $0.action == submittedAction }))
         XCTAssertTrue(app.staticTexts["Receipt \(nativeReceipt.id)"].waitForExistence(timeout: 10), "The displayed native receipt ID must match the authoritative API history")

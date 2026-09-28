@@ -6,6 +6,36 @@ import { join } from "node:path";
 import { createNativeRecoveryTestApi } from "./native-recovery";
 
 const scratch = process.env.RC_NATIVE_TEST_WORK_DIR ?? tmpdir();
+it("native fixture holds a real SQLite lock until released and preserves authentication", async () => {
+  const directory = mkdtempSync(join(scratch, "health-fixture-"));
+  const databasePath = join(directory, "host.sqlite");
+  const password = "native-health-fixture-password";
+  const app = createNativeRecoveryTestApi(databasePath, password).listen({ hostname: "127.0.0.1", port: 0 });
+  const origin = `http://127.0.0.1:${app.server!.port}`;
+  try {
+    const login = await fetch(`${origin}/api/auth/login`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ password }) });
+    expect(login.status).toBe(200);
+    const cookie = login.headers.get("set-cookie")!.split(";")[0]!;
+    const lock = (locked: boolean, credential = cookie) => fetch(`${origin}/__test__/storage-lock`, {
+      method: "POST", headers: { "content-type": "application/json", cookie: credential }, body: JSON.stringify({ locked }),
+    });
+    expect((await lock(true, "")).status).toBe(401);
+    expect((await lock(true)).status).toBe(200);
+    expect((await fetch(`${origin}/api/health/ready`)).status).toBe(503);
+    const blocked = await fetch(`${origin}/api/actions`, {
+      method: "POST", headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({ action: "must not commit under lock", requestId: crypto.randomUUID() }),
+    });
+    expect(blocked.status).not.toBe(201);
+    expect((await lock(false)).status).toBe(200);
+    expect((await fetch(`${origin}/api/health/ready`)).status).toBe(200);
+    expect((await fetch(`${origin}/api/auth/session`, { headers: { cookie } })).status).toBe(200);
+  } finally {
+    await app.stop(true);
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 it("native auth faults lose transport evidence, not real committed effects; fencing blocks delayed login", async () => {
   const directory = mkdtempSync(join(scratch, "auth-fixture-"));
   const databasePath = join(directory, "host.sqlite");

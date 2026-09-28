@@ -17,9 +17,16 @@ API_PID=""
 DERIVED_DATA_PATH="${RC_NATIVE_TEST_DERIVED_DATA:-$WORK_DIR/DerivedData}"
 API_ENTRY="apps/api/src/index.ts"
 TEST_SELECTION="RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testInstalledAppUsesAuthenticatedSnapshotEventsAndReceipts"
+SKIP_TEST_ARG=""
 if [[ "${RC_NATIVE_TEST_RECOVERY:-0}" == "1" ]]; then
   API_ENTRY="apps/api/test-support/native-recovery.ts"
   TEST_SELECTION="RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests"
+  SKIP_TEST_ARG="-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testReadinessShowsRealSQLiteLockAndRecoversWithoutBlockingLogin"
+fi
+if [[ "${RC_NATIVE_TEST_HEALTH:-0}" == "1" ]]; then
+  API_ENTRY="apps/api/test-support/native-recovery.ts"
+  TEST_SELECTION="RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testReadinessShowsRealSQLiteLockAndRecoversWithoutBlockingLogin"
+  SKIP_TEST_ARG=""
 fi
 
 if [[ -z "$DEVICE_ID" ]]; then
@@ -109,13 +116,14 @@ if ! EXPO_PUBLIC_API_ORIGIN="$API_ORIGIN" \
     -derivedDataPath "$DERIVED_DATA_PATH" \
     RC_NATIVE_TEST_API_ORIGIN="$API_ORIGIN" \
     -only-testing:"$TEST_SELECTION" \
+    ${SKIP_TEST_ARG:+"$SKIP_TEST_ARG"} \
     -resultBundlePath "$WORK_DIR/NativeTests.xcresult" \
     test > "$WORK_DIR/xcodebuild-test.log" 2>&1; then
   tail -100 "$WORK_DIR/xcodebuild-test.log" >&2
   exit 1
 fi
 
-python3 - "$DATABASE_PATH" "${RC_NATIVE_TEST_RECOVERY:-0}" <<'PY'
+python3 - "$DATABASE_PATH" "${RC_NATIVE_TEST_RECOVERY:-0}" "${RC_NATIVE_TEST_HEALTH:-0}" <<'PY'
 import json
 import sqlite3
 import sys
@@ -127,6 +135,16 @@ try:
     auth_rows = connection.execute("SELECT request_id, kind, target_request_id, outcome FROM auth_requests ORDER BY created_at").fetchall()
 finally:
     connection.close()
+if sys.argv[3] == "1":
+    connection = sqlite3.connect(sys.argv[1])
+    try:
+        health_mappings = connection.execute("SELECT request_id, action_id FROM action_requests WHERE action_id = ?", (rows[0][0],)).fetchall() if rows else []
+    finally:
+        connection.close()
+    if len(rows) != 1 or not rows[0][1].startswith("native-health-") or len(health_mappings) != 1 or session_count != 0 or len(auth_rows) != 2 or sorted(row[1] for row in auth_rows) != ["login", "logout"]:
+        raise SystemExit(f"Native health proof left unexpected persisted state: actions={rows!r}, mappings={health_mappings!r}, sessions={session_count}, auth={auth_rows!r}")
+    print(json.dumps({"healthNativeActions": rows, "requestMapping": health_mappings, "remainingSessions": session_count, "authKinds": [row[1] for row in auth_rows]}))
+    sys.exit(0)
 expected_count = 3 if sys.argv[2] == "1" else 2
 if len(rows) != expected_count or len({row[1] for row in rows}) != expected_count:
     raise SystemExit(f"Expected exactly {expected_count} distinct native test actions, observed: {rows!r}")

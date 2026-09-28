@@ -1,8 +1,11 @@
+import { Database } from "bun:sqlite";
 import { Elysia, t } from "elysia";
 import { createApi } from "../src/app";
 import { isAuthenticated } from "../src/features/auth";
 
 export function createNativeRecoveryTestApi(databasePath: string, password: string) {
+  let lockOwner: Database | undefined;
+  let lockCookie: string | undefined;
   let authFault: string | null = null;
   let loginPosts = 0;
   let revokePosts = 0;
@@ -63,6 +66,26 @@ export function createNativeRecoveryTestApi(databasePath: string, password: stri
       }), { status: 201, headers: { "content-type": "application/json" } });
     })
     .use(createApi(databasePath, undefined, { password, webOrigin: "http://localhost:5173" }))
+    .post("/__test__/storage-lock", ({ request, body, set }) => {
+      const cookie = request.headers.get("cookie") ?? "";
+      if (!cookie || (lockOwner ? cookie !== lockCookie : !isAuthenticated(databasePath, request))) {
+        set.status = 401;
+        return { error: "unauthorized" };
+      }
+      if (body.locked && !lockOwner) {
+        const owner = new Database(databasePath);
+        try { owner.exec("BEGIN EXCLUSIVE"); }
+        catch (error) { owner.close(); throw error; }
+        lockOwner = owner;
+        lockCookie = cookie;
+      } else if (!body.locked && lockOwner) {
+        lockOwner.exec("ROLLBACK");
+        lockOwner.close();
+        lockOwner = undefined;
+        lockCookie = undefined;
+      }
+      return { locked: Boolean(lockOwner) };
+    }, { body: t.Object({ locked: t.Boolean() }) })
     .post("/__test__/auth-fault", ({ request, body, set }) => {
       if (!isAuthenticated(databasePath, request)) {
         set.status = 401;

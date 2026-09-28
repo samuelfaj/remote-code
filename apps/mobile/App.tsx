@@ -4,6 +4,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { randomUUID } from "expo-crypto";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { actionReceiptFromResponse, isDefinitiveActionRejection, applyActionEvent, CLIENT_VERSION, createApiClient, emptyActionEventState, type ActionEventState } from "@remotecode/client";
+import { getMobileHealth } from "./src/features/health/api";
 
 const apiOrigin = process.env.EXPO_PUBLIC_API_ORIGIN ?? "http://127.0.0.1:3000";
 const clientOrigin = process.env.EXPO_PUBLIC_CLIENT_ORIGIN ?? "http://localhost:5173";
@@ -36,6 +37,28 @@ function errorMessage(error: unknown) {
     if (error.status === 401) return "Sign in failed. Check the host password.";
   }
   return "The host could not confirm this request. Check the receipt before trying again.";
+}
+
+function HostReadiness() {
+  const [readiness, setReadiness] = useState<"ready" | "not_ready" | "unknown">("unknown");
+  useEffect(() => {
+    let active = true;
+    let timer: ReturnType<typeof setTimeout>;
+    async function poll() {
+      try {
+        const result = await getMobileHealth(apiOrigin);
+        if (active) setReadiness(result ?? "unknown");
+      } catch {
+        if (active) setReadiness("unknown");
+      }
+      if (active) timer = setTimeout(poll, 2000);
+    }
+    void poll();
+    return () => { active = false; clearTimeout(timer); };
+  }, []);
+  return <Text accessibilityLiveRegion="polite" testID="host-readiness" style={readiness === "not_ready" ? styles.error : styles.status}>
+    {readiness === "ready" ? "Host ready" : readiness === "not_ready" ? "Host not ready" : "Host readiness unavailable"}
+  </Text>;
 }
 
 export default function App() {
@@ -519,6 +542,7 @@ export default function App() {
         <ScrollView contentContainerStyle={styles.page}>
           <Text accessibilityRole="header" style={styles.title}>RemoteCode mobile</Text>
           <Text style={styles.endpoint}>Host: {apiOrigin}</Text>
+          <HostReadiness />
           <View style={styles.card}>
             <Text accessibilityRole="header" style={styles.heading}>Host connection</Text>
             <Text accessibilityLiveRegion="polite" testID="connection-status" style={styles.status}>{connection.replace("_", " ")}</Text>
@@ -539,7 +563,7 @@ export default function App() {
             </View> : null}
             {authMessage ? <Text accessibilityLiveRegion="polite" testID="auth-recovery-status" style={styles.muted}>{authMessage}</Text> : null}
             {connection === "connected" ? <>
-              <TextInput accessibilityLabel="Action" value={action} onChangeText={setAction} placeholder="Send an action" maxLength={120} style={styles.input} />
+              <TextInput accessibilityLabel="Action" value={action} onChangeText={setAction} autoCorrect={false} placeholder="Send an action" maxLength={120} style={styles.input} />
               <Pressable accessibilityRole="button" accessibilityLabel="Submit action" accessibilityState={{ disabled: busy || !action.trim() || Boolean(pendingRequestId) || !storageReady }} disabled={busy || !action.trim() || Boolean(pendingRequestId) || !storageReady} onPress={() => void submitAction()} style={[styles.button, (busy || !action.trim() || Boolean(pendingRequestId) || !storageReady) && styles.disabled]}>
                 {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Submit action</Text>}
               </Pressable>
