@@ -214,23 +214,64 @@ export default function App() {
     return true;
   }
 
+  async function beforeLoginDeadline<T>(work: Promise<T>, deadline: number): Promise<T | null> {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) return null;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([work, new Promise<null>((resolve) => { timer = setTimeout(() => resolve(null), remaining); })]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
+  async function consultUncertainLogin(pending: PendingAuth, credential: string, generation: number, deadline: number) {
+    try {
+      const response = await beforeLoginDeadline(createApiClient(apiOrigin, { timeoutMs: 3_500 }).api.auth.receipts({ requestId: pending.requestId }).lookup.post({ password: credential }), deadline);
+      if (generation !== operationGeneration.current) return;
+      if (Date.now() >= deadline) {
+        setAuthMessage("The login outcome is unknown. Check the receipt later without resending.");
+        return;
+      }
+      const receipt = response?.data && "receipt" in response.data ? response.data.receipt : null;
+      setAuthMessage(receipt?.requestId === pending.requestId && receipt.kind === "login" && receipt.outcome === "session_created"
+        ? "A session was created, but this device is signed out. Check auth receipt to confirm a matching cookie, or explicitly revoke the old login."
+        : receipt?.requestId === pending.requestId && receipt.kind === "login" && receipt.outcome === "closed_before_acceptance"
+          ? "The login request was closed before acceptance. Verify the revocation receipt before another attempt."
+          : "The login outcome is unknown. Check the receipt later without resending.");
+    } catch {
+      if (generation === operationGeneration.current) setAuthMessage("The login outcome is unknown. Check the receipt later without resending.");
+    }
+  }
+
   async function connect() {
     if (!password || authPending.current || busy) return;
     await runAuth(async (generation) => {
       if (!await supportsAuthRecovery(generation)) return;
+      const credential = password;
       const pending: PendingAuth = { kind: "login", requestId: randomUUID() };
       if (!await saveAuth(pending, null, generation)) return;
+      const deadline = Date.now() + 13_000;
       clearRecoveryView();
       setConnection("disconnected");
-      const response = await createApiClient(apiOrigin).api.auth.login.post({ password, requestId: pending.requestId });
+      let response: { status: number; error: unknown; data: unknown } | null = null;
+      try {
+        response = await beforeLoginDeadline(createApiClient(apiOrigin, { timeoutMs: 6_000 }).api.auth.login.post({ password: credential, requestId: pending.requestId }), deadline);
+      } catch {
+        response = null;
+      }
       if (generation !== operationGeneration.current) return;
-      if (isCredentialRejection(response)) {
+      if (response && isCredentialRejection(response)) {
         if (await finishAuth(pending, generation)) setAuthMessage("Sign in failed. Check the host password. No session was created.");
         return;
       }
-      if (!await confirmLogin(pending, generation) && generation === operationGeneration.current) {
-        setAuthMessage("The login outcome is unknown. Check the receipt or explicitly revoke the old login before another attempt.");
+      if (response && !response.error && response.data) {
+        if (!await confirmLogin(pending, generation) && generation === operationGeneration.current) {
+          setAuthMessage("The login outcome is unknown. Check the receipt or explicitly revoke the old login before another attempt.");
+        }
+        return;
       }
+      await consultUncertainLogin(pending, credential, generation, deadline);
     });
   }
 
@@ -248,8 +289,10 @@ export default function App() {
           setConnection("signed_out");
           setAuthMessage(pending.kind === "logout" ? "Sign-out confirmed. You may start a new login." : "Old login revocation confirmed. You may start a distinct new login.");
         }
-      } else if (pending.kind === "login" && receipt?.requestId === pending.requestId && receipt.kind === "login") {
-        setAuthMessage("The login receipt is confirmed, but a matching cookie is not confirmed on this device. Explicitly revoke the old login before a new attempt.");
+      } else if (pending.kind === "login" && receipt?.requestId === pending.requestId && receipt.kind === "login" && receipt.outcome === "closed_before_acceptance") {
+        setAuthMessage("The login request was closed before acceptance. Verify the revocation receipt before another attempt.");
+      } else if (pending.kind === "login" && receipt?.requestId === pending.requestId && receipt.kind === "login" && receipt.outcome === "session_created") {
+        setAuthMessage("A session was created, but a matching cookie is not confirmed on this device. Explicitly revoke the old login before a new attempt.");
       } else {
         setAuthMessage(response.status === 404
           ? "No auth receipt is confirmed yet. The outcome is unknown; an old login can be explicitly revoked and fenced."

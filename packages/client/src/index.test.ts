@@ -2,12 +2,14 @@ import { Database } from "bun:sqlite";
 import { expect, it } from "bun:test";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { getMobileHealth } from "../../../apps/mobile/src/features/health/api";
 import { getWebHealth } from "../../../apps/web/src/features/health/api";
 import { createApi } from "../../../apps/api/src/app";
 import { ApiClientError, createApiClient, isUnknownOutcomeError } from "./index";
 
-const databasePath = () => `/tmp/rc013-client-${crypto.randomUUID()}.sqlite`;
+const databasePath = () => join(tmpdir(), `rc013-client-${crypto.randomUUID()}.sqlite`);
 
 function expectUnknownOutcome(error: unknown) {
   expect(isUnknownOutcomeError(error)).toBe(true);

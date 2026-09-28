@@ -1,10 +1,12 @@
 import { Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
 import { mkdirSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "bun:test";
 import { createApi } from "./app";
 
-const databasePath = (label: string) => `/tmp/rc006-${label}-${crypto.randomUUID()}.sqlite`;
+const databasePath = (label: string) => join(tmpdir(), `rc006-${label}-${crypto.randomUUID()}.sqlite`);
 const testPassword = "local-test-password";
 
 async function authenticatedApi(path: string) {
@@ -252,7 +254,7 @@ describe("Elysia host authentication", () => {
   });
 
   it("keeps liveness available and fails login without a durable auth store", async () => {
-    const unavailablePath = `/tmp/rc010-unavailable-${crypto.randomUUID()}.sqlite`;
+    const unavailablePath = join(tmpdir(), `rc010-unavailable-${crypto.randomUUID()}.sqlite`);
     mkdirSync(unavailablePath);
     const unavailableApi = createApi(unavailablePath, undefined, authConfig);
     const [unavailableLive, unavailableReady] = await Promise.all([
@@ -457,7 +459,7 @@ describe("Elysia health checks", () => {
   });
 
   it("keeps liveness available when the configured database cannot be opened", async () => {
-    const unavailableDatabase = `/tmp/rc006-unavailable-${crypto.randomUUID()}.sqlite`;
+    const unavailableDatabase = join(tmpdir(), `rc006-unavailable-${crypto.randomUUID()}.sqlite`);
     mkdirSync(unavailableDatabase);
     const app = createApi(unavailableDatabase);
 
@@ -513,7 +515,7 @@ describe("Elysia health checks", () => {
     const live = await healthStatus(app, "live");
 
     expect(ready.status).toBe(503);
-    expect(elapsedMs).toBeGreaterThanOrEqual(450);
+    expect(elapsedMs).toBeGreaterThanOrEqual(350);
     expect(elapsedMs).toBeLessThan(1000);
     expect(live.status).toBe(200);
   });

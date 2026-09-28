@@ -78,6 +78,8 @@ it("native auth faults lose transport evidence, not real committed effects; fenc
     expect((await post("/api/auth/login", { password, requestId: delayedId })).status).toBe(503);
     expect((await post(`/api/auth/receipts/${delayedId}/lookup`, { password })).status).toBe(404);
     expect((await post(`/api/auth/login/${delayedId}/revoke`, { password, requestId: crypto.randomUUID() })).status).toBe(200);
+    expect(await (await post(`/api/auth/receipts/${delayedId}/lookup`, { password })).json())
+      .toMatchObject({ receipt: { requestId: delayedId, kind: "login", outcome: "closed_before_acceptance" } });
     expect((await post("/api/auth/login", { password, requestId: delayedId })).status).toBe(409);
     expect(count()).toBe(1);
     expect((await post("/__test__/auth-fault", { fault: "logout-body" }, cookie)).status).toBe(200);

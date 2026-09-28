@@ -1,10 +1,17 @@
 # Pivot policy
 
+## Pivot record — bounded native login receipt observation — 2026-09-28
+
+- **Outcome still required:** An uncertain keyed iOS login must remain unknown until the actual cookie is matched or the user explicitly reconciles/revokes the old operation; no login POST may be replayed.
+- **Safe slice:** Added one bounded, read-only receipt lookup after an uncertain login response. It displays a historical `session_created` result but does not authenticate the app, clear the pending request ID, or revoke the session. This avoids the late AsyncStorage deletion that invalidated the prior automatic-completion attempt.
+- **Proof:** Two Release XCUITests passed against the real Elysia/SQLite API, covering a committed response with its cookie/body lost, a stalled receipt response, app restart, explicit lookup/revocation, and a synthetic 401 after commit. SQLite readback had unique operation IDs, `quick_check=ok`, and zero remaining sessions. The canonical `RC_NATIVE_TEST_RECOVERY=1` runner passed 6 selected Release XCUITests and its SQLite readback: 14 keyed logins, 8 logouts, 5 targeted revocations, one delayed-login fence, three action records, and zero sessions. Its task-owned simulator and API listener were removed.
+- **Limits/next:** This is one read-only observation, not automatic login recovery or acceptance of RC-018. Android, storage/account-switch faults, ID-less operations, other mutations, click/gateway deadlines, and multi-read backoff remain open. Continue with another eligible RC-018 consumer and keep RC-020's pre-readiness corruption defect open. RC-002's unknown provider operation is not repeated.
+
 ## Pivot record — native automatic login observation — 2026-09-27
 
 - **Outcome still required:** A lost keyed-login response on iOS should be reconciled within a bounded wait without replaying the login or losing the durable request ID. Existing explicit lookup/revoke remains safe and tested; it is not automatic deadline acceptance.
 - **Attempt retracted:** A proposed native automatic session/receipt read used a 13-second deadline. Independent review `01a0e5cf-edb6-75d3-b0a3-8c99b53671e6` found that an asynchronous AsyncStorage removal could finish *after* the deadline, erasing the pending ID while leaving the UI signed out, and a definitive rejection could similarly clear it late. Deadline checks around the asynchronous removal were insufficient to make storage and UI state atomic, so the uncommitted implementation was removed. The restored baseline passed five installed iOS tests and SQLite readback; it does not prove automatic login observation.
-- **Next route:** Preserve manual matching-cookie/receipt/fence recovery. Design a safe durable completion transition with bounded waiting before adding automation; never fabricate an accepted deadline or retry an uncertain login. Continue independent RC-020 Linux storage proof and RC-018 gateway/other-consumer work while this high-risk transition stays open. RC-002's unknown provider operation is not repeated.
+- **Next route:** Preserve manual matching-cookie/receipt/fence recovery. Design a safe durable completion transition with bounded waiting before adding automation; never fabricate an accepted deadline or retry an uncertain login. The isolated Linux/amd64 tmpfs ENOSPC proof now passes under Mac Docker emulation; production Linux-host and immediate-corruption proofs remain open. Continue independent RC-018 gateway/other-consumer work while this high-risk transition stays open. RC-002's unknown provider operation is not repeated.
 
 
 ## Pivot record — RC-020 runtime corruption — 2026-09-27

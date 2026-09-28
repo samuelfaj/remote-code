@@ -8,6 +8,8 @@ export function createNativeRecoveryTestApi(databasePath: string, password: stri
   let lockCookie: string | undefined;
   let authFault: string | null = null;
   let loginPosts = 0;
+  let loginReceiptReads = 0;
+  let stallLoginReceipt = false;
   let revokePosts = 0;
   let logoutPosts = 0;
   let loginRequestId: string | null = null;
@@ -27,6 +29,15 @@ export function createNativeRecoveryTestApi(databasePath: string, password: stri
         if (path === "/api/auth/login") { loginPosts++; loginRequestId = body.requestId; }
         if (path.endsWith("/revoke")) { revokePosts++; revokeRequestId = body.requestId; }
         if (path === "/api/auth/logout") { logoutPosts++; logoutRequestId = body.requestId; }
+      }
+      if (request.method === "POST" && loginRequestId && path === `/api/auth/receipts/${loginRequestId}/lookup`) {
+        loginReceiptReads++;
+        if (stallLoginReceipt) {
+          stallLoginReceipt = false;
+          return new Response(new ReadableStream({ start(controller) {
+            controller.enqueue(new TextEncoder().encode('{"receipt":'));
+          } }), { status: 200, headers: { "content-type": "application/json" } });
+        }
       }
       if (authFault === "login-before" && request.method === "POST" && path === "/api/auth/login") {
         authFault = null;
@@ -105,23 +116,25 @@ export function createNativeRecoveryTestApi(databasePath: string, password: stri
         set.status = 401;
         return { error: "unauthorized" };
       }
-      if (body.fault === "login-cookie") {
+      if (body.fault === "login-cookie" || body.fault === "login-cookie-stall") {
         loginPosts = 0;
+        loginReceiptReads = 0;
         revokePosts = 0;
         logoutPosts = 0;
         loginRequestId = null;
         revokeRequestId = null;
         logoutRequestId = null;
       }
-      authFault = body.fault;
+      authFault = body.fault === "login-cookie-stall" ? "login-cookie" : body.fault;
+      stallLoginReceipt = body.fault === "login-cookie-stall";
       return { armed: true };
-    }, { body: t.Object({ fault: t.Union([t.Literal("login-cookie"), t.Literal("login-body"), t.Literal("login-before"), t.Literal("login-401"), t.Literal("revoke-body"), t.Literal("revoke-401"), t.Literal("logout-body")]) }) })
+    }, { body: t.Object({ fault: t.Union([t.Literal("login-cookie"), t.Literal("login-cookie-stall"), t.Literal("login-body"), t.Literal("login-before"), t.Literal("login-401"), t.Literal("revoke-body"), t.Literal("revoke-401"), t.Literal("logout-body")]) }) })
     .get("/__test__/auth-diagnostics", ({ request, set }) => {
       if (!isAuthenticated(databasePath, request)) {
         set.status = 401;
         return { error: "unauthorized" };
       }
-      return { loginPosts, revokePosts, logoutPosts, loginRequestId, revokeRequestId, logoutRequestId };
+      return { loginPosts, loginReceiptReads, revokePosts, logoutPosts, loginRequestId, revokeRequestId, logoutRequestId };
     })
     .post("/__test__/lose-action-response", ({ request, body, set }) => {
       if (!isAuthenticated(databasePath, request)) {

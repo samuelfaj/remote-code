@@ -1,6 +1,13 @@
 # Changelog
 
+## 2026-09-28
+
+- **RC-018 native login recovery (partial):** After an uncertain keyed login response, the installed iOS app now makes one bounded, read-only receipt check. It remains signed out and keeps the pending ID unless the actual cookie matches; it does not repeat or automatically revoke a login. The focused Release-simulator XCUITests and the canonical native recovery runner passed against Elysia/SQLite; the runner selected 6 tests with zero failures and verified 14 login, 8 logout, 5 revocation receipts, one delayed-login fence, three action rows and zero remaining sessions. The app never authenticates from a receipt without a matching cookie or retries the login. Android, other mutations, full gateway/click deadlines, retry budgets, and full RC-018 acceptance remain open.
+- **RC-020 Linux filesystem-full proof (partial):** A read-only-source runner on the local Linux/amd64 image reached real `ENOSPC` in a 48 MiB tmpfs under Mac Docker emulation. Readiness and one keyed write returned 503; after freeing space and restarting the API, the prior receipt and mapping remained intact, the attempted receipt was absent, and a distinct write succeeded. This is not native Linux-host evidence and does not resolve the immediate-corruption-before-readiness case; RC-020 remains open.
+
 ## 2026-09-27
+
+- **RC-020 Linux tmpfs proof (partial):** A checked-in offline runner used an already-local Linux/amd64 image under Docker emulation on the Mac host, with Bun as entrypoint instead of Distill and a 48 MiB tmpfs holding the real SQLite database. It reached actual `ENOSPC`, saw readiness and the single keyed POST return 503, then recovered the original action/receipt after freeing space and restarting the API. The attempted receipt was absent; a distinct write succeeded. The task-owned container was removed. This is emulated Linux filesystem proof, not a production Linux-host or RC-002 Distill lifecycle result. Runtime corruption before the first readiness probe still permits false acceptance, so RC-020 is not accepted.
 
 - **Native login recovery boundary:** An uncommitted attempt to automatically reconcile uncertain iOS logins was retracted after review found that asynchronous device-storage cleanup could erase the pending login ID after the deadline while the UI stayed signed out. Five installed iOS baseline journeys passed after retraction. Manual receipt lookup and explicit old-login revocation remain available; automatic native login observation is still open.
 

@@ -188,7 +188,7 @@ if event[1].removeprefix("native-event-") != submitted[1].removeprefix("native-s
 if sys.argv[2] == "1":
     from collections import Counter
     kinds = Counter(row[1] for row in auth_rows)
-    if kinds != {"login": 12, "logout": 7, "revoke_login": 3}:
+    if kinds != {"login": 14, "logout": 8, "revoke_login": 5}:
         raise SystemExit(f"Unexpected keyed native auth effects: {dict(kinds)!r}")
     fenced = [row for row in auth_rows if row[3] == "closed_before_acceptance"]
     if len(fenced) != 1:
