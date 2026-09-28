@@ -396,6 +396,8 @@ export default function App() {
     setError("");
     setRecoveryMessage("");
     let sent = false;
+    let deadline = 0;
+    let sentRequestId: string | null = null;
     try {
       const client = createApiClient(apiOrigin);
       const version = await client.api.version.get();
@@ -424,10 +426,17 @@ export default function App() {
         return;
       }
       sent = true;
-      const response = await client.api.actions.post({ action: action.trim(), requestId: prepared.requestId });
+      sentRequestId = prepared.requestId;
+      deadline = Date.now() + 10_000;
+      let postTimer: ReturnType<typeof setTimeout> | undefined;
+      const response = await Promise.race([
+        client.api.actions.post({ action: action.trim(), requestId: prepared.requestId }),
+        new Promise<null>((resolve) => { postTimer = setTimeout(() => resolve(null), 6_000); }),
+      ]);
+      if (postTimer) clearTimeout(postTimer);
       if (!isCurrent()) return;
-      const receipt = actionReceiptFromResponse(response);
-      if (receipt || isDefinitiveActionRejection(response)) {
+      const receipt = response && actionReceiptFromResponse(response);
+      if (receipt || (response && isDefinitiveActionRejection(response))) {
         const cleared = await forgetPending(key, prepared.requestId);
         if (!isCurrent()) return;
         if (cleared) setPendingRequestId(null);
@@ -438,16 +447,17 @@ export default function App() {
           setEvents(next);
           setRecoveryMessage(cleared ? "" : `Confirmed receipt ${receipt.id}. Device storage could not clear the pending identity; check again.`);
         } else {
-          setError(errorMessage(response.error));
+          setError(errorMessage(response!.error));
           if (!cleared) setRecoveryMessage("The host rejected the action, but device storage could not clear its identity. Sending remains disabled.");
         }
       } else {
-        setRecoveryMessage("The outcome is unknown. Check the action receipt before sending another action.");
+        await consultActionReceipt(key, prepared.requestId, deadline, isCurrent);
       }
     } catch {
       if (isCurrent()) {
         if (!sent) setStorageReady(false);
-        setRecoveryMessage(sent
+        if (sent && sentRequestId) await consultActionReceipt(key, sentRequestId, deadline, isCurrent);
+        else setRecoveryMessage(sent
           ? "The outcome is unknown. Check the action receipt before sending another action."
           : "The action could not be prepared safely. No action was sent. Sign out and sign in again to check the host and device storage.");
       }
@@ -470,9 +480,29 @@ export default function App() {
     setBusy(true);
     setRecoveryMessage("");
     try {
-      const response = await createApiClient(apiOrigin).api.actions.receipts({ requestId }).get();
+      await consultActionReceipt(key, requestId, Date.now() + 10_000, isCurrent);
+    } finally {
+      if (generation === operationGeneration.current) {
+        actionLock.current = false;
+        setBusy(false);
+      }
+    }
+  }
+
+  async function consultActionReceipt(key: string, requestId: string, deadline: number, isCurrent: () => boolean) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0 || !isCurrent()) {
+      if (isCurrent()) setRecoveryMessage("The outcome is unknown. Check the action receipt later without resending.");
+      return;
+    }
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const response = await Promise.race([
+        createApiClient(apiOrigin).api.actions.receipts({ requestId }).get(),
+        new Promise<null>((resolve) => { timer = setTimeout(() => resolve(null), remaining); }),
+      ]);
       if (!isCurrent()) return;
-      const receipt = actionReceiptFromResponse(response);
+      const receipt = response && actionReceiptFromResponse(response);
       if (receipt) {
         const cleared = await forgetPending(key, requestId);
         if (!isCurrent()) return;
@@ -481,10 +511,10 @@ export default function App() {
         eventState.current = next;
         setEvents(next);
         setRecoveryMessage(`Confirmed receipt ${receipt.id}.${cleared ? "" : " Device storage could not clear the pending identity; check again."}`);
-      } else if (response.status === 401) {
+      } else if (response?.status === 401) {
         operationGeneration.current += 1;
+        socket.current?.close();
         socket.current = null;
-        activeSocket?.close();
         if (syncTimeout.current) clearTimeout(syncTimeout.current);
         eventState.current = emptyActionEventState();
         setEvents(eventState.current);
@@ -495,17 +525,14 @@ export default function App() {
         setConnection("signed_out");
         setError("The host session expired or was revoked. Sign in again.");
       } else {
-        setRecoveryMessage(response.status === 404
+        setRecoveryMessage(response?.status === 404
           ? "No receipt is confirmed yet. The outcome is still unknown; check again later without resending."
           : "The host could not check the receipt. The outcome is still unknown.");
       }
     } catch {
       if (isCurrent()) setRecoveryMessage("The host could not check the receipt. The outcome is still unknown.");
     } finally {
-      if (generation === operationGeneration.current) {
-        actionLock.current = false;
-        setBusy(false);
-      }
+      if (timer) clearTimeout(timer);
     }
   }
 

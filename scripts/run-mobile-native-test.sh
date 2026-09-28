@@ -18,10 +18,17 @@ DERIVED_DATA_PATH="${RC_NATIVE_TEST_DERIVED_DATA:-$WORK_DIR/DerivedData}"
 API_ENTRY="apps/api/src/index.ts"
 TEST_SELECTION="RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testInstalledAppUsesAuthenticatedSnapshotEventsAndReceipts"
 SKIP_TEST_ARG=""
+EXTRA_SKIP_ARGS=()
 if [[ "${RC_NATIVE_TEST_RECOVERY:-0}" == "1" ]]; then
   API_ENTRY="apps/api/test-support/native-recovery.ts"
   TEST_SELECTION="RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests"
   SKIP_TEST_ARG="-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testReadinessShowsRealSQLiteLockAndRecoversWithoutBlockingLogin"
+  EXTRA_SKIP_ARGS=("-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testAutomaticActionReceiptAfterLostBody" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testAutomaticActionReceiptStallEndsUnknownWithoutReplay")
+fi
+if [[ "${RC_NATIVE_TEST_AUTO_ACTION:-0}" == "1" ]]; then
+  API_ENTRY="apps/api/test-support/native-recovery.ts"
+  TEST_SELECTION="RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testAutomaticActionReceiptAfterLostBody"
+  SKIP_TEST_ARG="-only-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testAutomaticActionReceiptStallEndsUnknownWithoutReplay"
 fi
 if [[ "${RC_NATIVE_TEST_HEALTH:-0}" == "1" ]]; then
   API_ENTRY="apps/api/test-support/native-recovery.ts"
@@ -117,13 +124,14 @@ if ! EXPO_PUBLIC_API_ORIGIN="$API_ORIGIN" \
     RC_NATIVE_TEST_API_ORIGIN="$API_ORIGIN" \
     -only-testing:"$TEST_SELECTION" \
     ${SKIP_TEST_ARG:+"$SKIP_TEST_ARG"} \
+    "${EXTRA_SKIP_ARGS[@]}" \
     -resultBundlePath "$WORK_DIR/NativeTests.xcresult" \
     test > "$WORK_DIR/xcodebuild-test.log" 2>&1; then
   tail -100 "$WORK_DIR/xcodebuild-test.log" >&2
   exit 1
 fi
 
-python3 - "$DATABASE_PATH" "${RC_NATIVE_TEST_RECOVERY:-0}" "${RC_NATIVE_TEST_HEALTH:-0}" <<'PY'
+python3 - "$DATABASE_PATH" "${RC_NATIVE_TEST_RECOVERY:-0}" "${RC_NATIVE_TEST_HEALTH:-0}" "${RC_NATIVE_TEST_AUTO_ACTION:-0}" <<'PY'
 import json
 import sqlite3
 import sys
@@ -135,6 +143,18 @@ try:
     auth_rows = connection.execute("SELECT request_id, kind, target_request_id, outcome FROM auth_requests ORDER BY created_at").fetchall()
 finally:
     connection.close()
+if sys.argv[4] == "1":
+    if len(rows) != 2 or any(not row[1].startswith("native-auto-") for row in rows):
+        raise SystemExit(f"Expected two distinct automatic native actions: {rows!r}")
+    connection = sqlite3.connect(sys.argv[1])
+    try:
+        mappings = connection.execute("SELECT request_id, action_id FROM action_requests").fetchall()
+    finally:
+        connection.close()
+    if len(mappings) != 2 or len({m[0] for m in mappings}) != 2:
+        raise SystemExit(f"Expected exactly two action receipts: {mappings!r}")
+    print(json.dumps({"automaticActions": rows, "mappings": mappings}))
+    sys.exit(0)
 if sys.argv[3] == "1":
     connection = sqlite3.connect(sys.argv[1])
     try:

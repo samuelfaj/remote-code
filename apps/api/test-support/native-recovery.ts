@@ -16,6 +16,8 @@ export function createNativeRecoveryTestApi(databasePath: string, password: stri
   let armed = false;
   let lostResponse = false;
   let failedRead = false;
+  let receiptReads = 0;
+  let receiptFault: "fail" | "stall" | null = "fail";
   let actionPosts = 0;
   let requestId: string | null = null;
   return new Elysia()
@@ -32,10 +34,16 @@ export function createNativeRecoveryTestApi(databasePath: string, password: stri
         return { error: "injected_before_login" };
       }
       if (armed && request.method === "POST" && path === "/api/actions") actionPosts++;
-      if (lostResponse && !failedRead && request.method === "GET" && path.startsWith("/api/actions/receipts/")) {
-        failedRead = true;
-        set.status = 503;
-        return { error: "injected_receipt_read_unavailable" };
+      if (lostResponse && request.method === "GET" && path.startsWith("/api/actions/receipts/")) {
+        receiptReads++;
+        if (!failedRead && receiptFault) {
+          failedRead = true;
+          if (receiptFault === "stall") return new Response(new ReadableStream({ start(controller) {
+            controller.enqueue(new TextEncoder().encode('{"id":'));
+          } }), { status: 200, headers: { "content-type": "application/json" } });
+          set.status = 503;
+          return { error: "injected_receipt_read_unavailable" };
+        }
       }
     })
     .onAfterHandle({ as: "global" }, ({ request, body, set }) => {
@@ -109,7 +117,7 @@ export function createNativeRecoveryTestApi(databasePath: string, password: stri
       }
       return { loginPosts, revokePosts, logoutPosts, loginRequestId, revokeRequestId, logoutRequestId };
     })
-    .post("/__test__/lose-action-response", ({ request, set }) => {
+    .post("/__test__/lose-action-response", ({ request, body, set }) => {
       if (!isAuthenticated(databasePath, request)) {
         set.status = 401;
         return { error: "unauthorized" };
@@ -117,16 +125,18 @@ export function createNativeRecoveryTestApi(databasePath: string, password: stri
       armed = true;
       lostResponse = false;
       failedRead = false;
+      receiptReads = 0;
+      receiptFault = body?.receiptFault === "none" ? null : body?.receiptFault ?? "fail";
       actionPosts = 0;
       requestId = null;
       return { armed: true };
-    })
+    }, { body: t.Optional(t.Object({ receiptFault: t.Union([t.Literal("fail"), t.Literal("stall"), t.Literal("none")]) })) })
     .get("/__test__/response-loss", ({ request, set }) => {
       if (!isAuthenticated(databasePath, request)) {
         set.status = 401;
         return { error: "unauthorized" };
       }
-      return { lostResponse, failedRead, actionPosts, requestId };
+      return { lostResponse, failedRead, receiptReads, actionPosts, requestId };
     });
 }
 

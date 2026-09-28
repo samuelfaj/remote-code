@@ -160,12 +160,11 @@ final class RemoteCodeMobileProofUITests: XCTestCase {
         app.staticTexts["Host connection"].firstMatch.tap()
         app.buttons["Submit action"].tap()
         let recovery = app.staticTexts.matching(identifier: "action-recovery-status").firstMatch
-        XCTAssertTrue(recovery.waitForLabelContaining("outcome is unknown", timeout: 20), "Lost response must preserve an unknown action, not claim failure or replay")
+        XCTAssertTrue(recovery.waitForLabelContaining("could not check", timeout: 20), "The automatic failed receipt read must preserve an unknown action without replay")
         XCTAssertFalse(app.buttons["Submit action"].isEnabled)
         let check = app.buttons["Check action receipt"]
         XCTAssertTrue(check.waitForExistence(timeout: 5))
-        check.tap()
-        XCTAssertTrue(recovery.waitForLabelContaining("could not check", timeout: 15), "A failed receipt observation must keep the action pending")
+        XCTAssertTrue(recovery.label.contains("unknown"), "A failed automatic receipt observation must keep the action pending")
         XCTAssertFalse(app.buttons["Submit action"].isEnabled)
         XCTAssertGreaterThan(app.scrollViews.firstMatch.frame.minY, app.frame.minY, "Scrollable recovery content must begin below the system status area")
         let pendingScreenshot = XCTAttachment(screenshot: app.screenshot())
@@ -217,6 +216,64 @@ final class RemoteCodeMobileProofUITests: XCTestCase {
         app.buttons["Sign out"].tap()
         XCTAssertTrue(app.staticTexts.matching(identifier: "connection-status").firstMatch.waitForLabel("signed out", timeout: 10))
         XCTAssertFalse(recovery.exists, "Sign-out must clear private recovery state from the view")
+    }
+
+    @MainActor
+    func testAutomaticActionReceiptAfterLostBody() async throws {
+        try await verifyAutomaticActionReceipt(stall: false)
+    }
+
+    @MainActor
+    func testAutomaticActionReceiptStallEndsUnknownWithoutReplay() async throws {
+        try await verifyAutomaticActionReceipt(stall: true)
+    }
+
+    @MainActor
+    private func verifyAutomaticActionReceipt(stall: Bool) async throws {
+        let app = XCUIApplication(bundleIdentifier: "com.remotecode.mobileproof")
+        let observer = URLSession(configuration: .ephemeral)
+        app.launch()
+        signIn(app)
+        try await observer.signIn(at: api, password: password)
+        var arm = URLRequest(url: URL(string: "/__test__/lose-action-response", relativeTo: api)!)
+        arm.httpMethod = "POST"
+        arm.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        arm.httpBody = try JSONSerialization.data(withJSONObject: ["receiptFault": stall ? "stall" : "none"])
+        let (_, armed) = try await observer.data(for: arm)
+        XCTAssertEqual((armed as? HTTPURLResponse)?.statusCode, 200)
+        let action = "native-auto-\(UUID().uuidString)"
+        let input = app.textFields["Action"]
+        input.tap()
+        input.typeText(action)
+        app.staticTexts["Host connection"].firstMatch.tap()
+        app.buttons["Submit action"].tap()
+        let status = app.staticTexts.matching(identifier: "action-recovery-status").firstMatch
+        if stall {
+            XCTAssertTrue(status.waitForLabelContaining("unknown", timeout: 24))
+            XCTAssertFalse(app.buttons["Submit action"].isEnabled)
+            XCTAssertTrue(app.buttons["Check action receipt"].exists)
+        } else {
+            XCTAssertTrue(status.waitForLabelContaining("Confirmed receipt", timeout: 20))
+            XCTAssertFalse(app.buttons["Check action receipt"].exists)
+        }
+        let history = try await observer.actions(at: api)
+        let receipt = try XCTUnwrap(history.first(where: { $0.action == action }))
+        XCTAssertEqual(history.filter { $0.action == action }.count, 1)
+        if !stall { XCTAssertTrue(status.label.contains(receipt.id)) }
+        let (data, _) = try await observer.data(from: URL(string: "/__test__/response-loss", relativeTo: api)!)
+        let diagnostics = try JSONDecoder().decode(NativeFailureDiagnostics.self, from: data)
+        XCTAssertEqual(diagnostics.actionPosts, 1)
+        XCTAssertEqual(diagnostics.receiptReads, 1, "Uncertain POST automatically makes exactly one read-only lookup")
+        XCTAssertNotNil(UUID(uuidString: diagnostics.requestId))
+        if stall {
+            app.buttons["Check action receipt"].tap()
+            XCTAssertTrue(status.waitForLabelContaining("Confirmed receipt", timeout: 15))
+            let (laterData, _) = try await observer.data(from: URL(string: "/__test__/response-loss", relativeTo: api)!)
+            let later = try JSONDecoder().decode(NativeFailureDiagnostics.self, from: laterData)
+            XCTAssertEqual(later.receiptReads, 2)
+        }
+        app.buttons["Sign out"].tap()
+        XCTAssertTrue(app.staticTexts.matching(identifier: "connection-status").firstMatch.waitForLabel("signed out", timeout: 15))
     }
 
     @MainActor
@@ -423,6 +480,7 @@ final class RemoteCodeMobileProofUITests: XCTestCase {
 private struct NativeFailureDiagnostics: Decodable {
     let lostResponse: Bool
     let failedRead: Bool
+    let receiptReads: Int
     let actionPosts: Int
     let requestId: String
 }
