@@ -2,6 +2,8 @@
 
 ## 2026-09-28
 
+- **RC-020 session-GET gate correction (partial):** Follow-up review `01a0e89a` found `GET /api/auth/session` also deletes an expired session row via `readSession` while the gate returned early for all GETs; reproduced 401 with the row deleted (1→0) on a corrupted database. Cookie-carrying session checks now probe storage (verified 503 with the row unchanged, 1→1); anonymous session checks stay probe-free. Committed regression added to the probe-scope test. Storage suite 7/63, full suite 97/650, typecheck, doc links, `git diff --check` green. Publication/CI pending. RC-020 remains In Progress.
+
 - **RC-020 review correction published:** Commit `31225c0554f9239ac9c053ffd0eedd4bbc6b4060` pushed to `checkpoint/rc002-linux-runtime-evidence` and read back from origin. Independent review found cookie-carrying receipt lookups could delete an expired session row without probing storage; the gate now probes them, with an expired-session 503/no-delete check and updated probe-count assertions. Storage suite 7/58, full suite 97/645, typecheck, doc links, `git diff --check` green. RC-020 remains In Progress; no release claimed.
 - **X check:** Account `@samfajreldines` confirmed; latest own post was 23h old so the hour rule allowed posting, but the RC-020 gate-scope fix is a partial local correction, not a verified user-visible milestone, so no post was submitted. Tab released (`released:true`), `hasTab:false`, physical removal unverified.
 

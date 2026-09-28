@@ -208,6 +208,48 @@ it("does not start integrity probes for anonymous, unmatched, or read-only reque
     }));
     expect(cookieLookup.status).toBe(404);
     expect(readinessCalls).toBe(3);
+
+    // GET /api/auth/session deletes an expired session row, so a cookie-carrying
+    // session check probes storage while staying read-only without a cookie.
+    // The probe runs before the route: a failing probe returns 503 with the
+    // expired row intact; a passing probe then lets the route clean it up.
+    const { Database: SessionDatabase } = await import("bun:sqlite");
+    const expiredSessionCalls = async (path: string, cookie: string) => {
+      const gated = createApi(path, async () => false, { password: "test-storage-password" });
+      const response = await gated.handle(new Request("http://localhost/api/auth/session", {
+        headers: { cookie },
+      }));
+      const outcome = await response.json();
+      const state = new SessionDatabase(path, { readonly: true, create: false });
+      try {
+        return {
+          status: response.status,
+          outcome,
+          sessions: state.query("SELECT COUNT(*) AS count FROM sessions").get(),
+        };
+      } finally {
+        state.close();
+      }
+    };
+    const sessionDb = new SessionDatabase(path);
+    try {
+      sessionDb.exec("UPDATE sessions SET expires_at = 1");
+    } finally {
+      sessionDb.close();
+    }
+    expect(await expiredSessionCalls(path, cookie!)).toEqual({
+      status: 503,
+      outcome: { error: "storage_unavailable" },
+      sessions: { count: 1 },
+    });
+    const cookieSession = await app.handle(new Request("http://localhost/api/auth/session", {
+      headers: { cookie: cookie! },
+    }));
+    expect(cookieSession.status).toBe(401);
+    expect(readinessCalls).toBe(4);
+    const anonymousSession = await app.handle(new Request("http://localhost/api/auth/session"));
+    expect(anonymousSession.status).toBe(401);
+    expect(readinessCalls).toBe(4);
   } finally {
     removeDatabase(path);
   }

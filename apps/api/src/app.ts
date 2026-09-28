@@ -53,18 +53,24 @@ export function createApi(
   };
   return new Elysia()
     .onBeforeHandle({ as: "global" }, async ({ request, set }) => {
-      if (!["POST", "PUT", "PATCH", "DELETE"].includes(request.method)) return;
       const path = new URL(request.url).pathname;
       const receiptLookup = request.method === "POST" && /^\/api\/auth\/receipts\/[^/]+\/lookup$/.test(path);
       // Password-only receipt lookup is read-only; a cookie-carrying lookup
       // may delete an expired session row, so it still probes storage below.
       if (receiptLookup && !sessionToken(request)) return;
-      const publicCredentialMutation = path === "/api/auth/login" || /^\/api\/auth\/login\/[^/]+\/revoke$/.test(path);
-      if (!publicCredentialMutation && !sessionToken(request)) return;
-      await observeReadiness();
-      if (!storageUnavailable) return;
-      set.status = 503;
-      return { error: "storage_unavailable" as const };
+      // GET /api/auth/session deletes an expired session row via readSession,
+      // so a cookie-carrying session check probes storage; other GETs are reads.
+      const sessionCheck = request.method === "GET" && path === "/api/auth/session";
+      if (sessionCheck && !sessionToken(request)) return;
+      if (sessionCheck || request.method !== "GET") {
+        const publicCredentialMutation = path === "/api/auth/login" || /^\/api\/auth\/login\/[^/]+\/revoke$/.test(path);
+        if (!publicCredentialMutation && !sessionToken(request)) return;
+        await observeReadiness();
+        if (!storageUnavailable) return;
+        set.status = 503;
+        return { error: "storage_unavailable" as const };
+      }
+      return;
     })
     .use(compatibilityFeature())
     .use(healthFeature(observeReadiness))
