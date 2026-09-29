@@ -1,5 +1,13 @@
 # Pivot policy
 
+## Pivot record — RC-020 2.623046875GiB local fail-closed point — partial — 2026-09-28
+
+- **Decision:** Measure the midpoint between the 2.62109375-GiB passing point and the 2.625-GiB fail-closed point. No product source or RC-020 criterion changed; RC-020 remains In Progress.
+- **Observed:** A nominal 2,816,475,136-byte payload produced a 2,820,272,128-byte SQLite file. Five direct `PRAGMA quick_check` calls were `ok` at 567.03–724.61 ms; these direct timings are not Worker timings. The in-process readiness route returned 503 `not_ready` in 409.24 ms. Five sequential and eight concurrent keyed action POSTs all returned 503 `storage_unavailable`; SQLite readback found zero action rows and mappings for all 13 rejected IDs. Final direct `quick_check` was `ok`.
+- **Limits/review:** macOS 26.6.2 arm64, Bun 1.3.13, Node 24.3.0, source commit `f77f18cf754d5cc5090b85d3485632e09bbeb65a`. Reviewer `01a0eafb-576f-7fd0-a91e-6b793039eaa5` confirmed the payload, task path and corrected independent-response validation before the run. Probe exited 0 and its temporary directory was removed. Free-space readings were 833 GiB before and 829 GiB after; no invariance claim. This is local in-process evidence, not a reliable maximum, native Linux proof, or RC-020 acceptance.
+- **Next:** Stop decimal size bisection for now; it is local capacity data, not the missing RC-020 failure/restart proof. Continue with RC-018's existing mutation-consumer recovery path; its Start and direct prerequisites remain satisfied. Keep RC-020 In Progress, with native Linux behavior unverified. The 2.6220703125-GiB point remains an optional local measurement, not an acceptance gate.
+- **X:** No post; account/last-post cadence was not checked because this is local capacity evidence, not a deployed user-facing milestone.
+
 ## Pivot record — RC-020 2.62109375GiB local readiness point — partial — 2026-09-28
 
 - **Decision:** Continue the midpoint search between the 2.609375-GiB accepted point and 2.625-GiB fail-closed point, now validating readiness and each write independently. No product source or RC-020 criterion changed.
@@ -164,7 +172,7 @@ Recover the authoritative login receipt, not the original bearer cookie. Preserv
 
 ## Next action
 
-RC-018 remains in progress with bounded browser receipt checks for keyed login and targeted revocation; logout remains manual because a revoked cookie may no longer authorize its receipt lookup without a passphrase. RC-020's current local bracket from 2.62109375 GiB passing to 2.625 GiB failing is recorded in `plan/checkpoint-evidence.md#rc-020-2p62109375gib-quick_check-readiness-assessment--partial--2026-09-28`. The 2.6171875-GiB run remains recorded as mixed: its initial health response was 503, two writes were rejected, and eleven later writes were confirmed by SQLite; the run stopped on an overstrict probe assertion, not an unreceipted product effect, and was not repeated. Per-response validation now records readiness/action variation independently. The next sample is 2.623046875 GiB with exact receipt readback. Production Linux behavior and full RC-020 acceptance remain open. RC-012 and RC-014 remain partial; RC-011 remains `REVISE`. RC-002's prior provider operation remains unknown and untouched. RC-004 is complete as a design contract; preserve actual task dependencies and do not claim full-backlog completion.
+RC-020's current local readiness observations are recorded in `plan/checkpoint-evidence.md#rc-020-2p623046875gib-quick_check-fail-closed-assessment--partial--2026-09-28`: 2.62109375 GiB passed all writes, 2.623046875 GiB failed closed, and 2.6171875 GiB produced mixed but fully reconciled per-request outcomes after an overstrict probe assertion. Stop decimal bisection here; more Mac-only measurements do not satisfy the ticket's remaining storage-failure, restart, and native Linux evidence. RC-020 remains In Progress. Next, continue RC-018's existing mutation-consumer recovery work; its direct prerequisites RC-004, RC-006, RC-008, RC-013, and RC-016 are complete, and its reviewed written failure contract is available. RC-018 remains partial: target one existing mutation consumer at a time, preserve receipts/no-replay behavior, and verify its actual API and client path. RC-012 and RC-014 remain partial; RC-011 remains `REVISE`. RC-002's prior provider operation remains unknown and untouched. RC-004 is complete as a design contract; preserve actual task dependencies and do not claim full-backlog completion.
 
 
 ## Purpose
