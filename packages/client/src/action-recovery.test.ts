@@ -12,7 +12,14 @@ it("normalizes a confirmed receipt from either raw JSON or Eden's date revival",
 it("never confirms a failed response or malformed receipt even when it contains an ID", () => {
   expect(actionReceiptFromResponse({ status: 503, error: null, data: receipt })).toBeNull();
   expect(actionReceiptFromResponse({ status: 200, error: { value: "unknown" }, data: receipt })).toBeNull();
-  for (const data of [null, { id: "only-an-id" }, { ...receipt, id: "" }, { ...receipt, createdAt: new Date(NaN) }]) {
+  for (const data of [
+    null,
+    { id: "only-an-id" },
+    { ...receipt, id: "" },
+    { ...receipt, createdAt: new Date(NaN) },
+    { ...receipt, createdAt: "not-a-date" },
+    { ...receipt, createdAt: "September 29, 2026" },
+  ]) {
     expect(actionReceiptFromResponse({ status: 200, error: null, data })).toBeNull();
   }
 });

@@ -19,7 +19,8 @@ export function createNativeRecoveryTestApi(databasePath: string, password: stri
   let lostResponse = false;
   let failedRead = false;
   let receiptReads = 0;
-  let receiptFault: "fail" | "stall" | null = "fail";
+  let receiptReadAtMs: number[] = [];
+  let receiptFault: "fail" | "stall" | "malformed" | null = "fail";
   let actionPosts = 0;
   let requestId: string | null = null;
   return new Elysia()
@@ -47,11 +48,25 @@ export function createNativeRecoveryTestApi(databasePath: string, password: stri
       if (armed && request.method === "POST" && path === "/api/actions") actionPosts++;
       if (lostResponse && request.method === "GET" && path.startsWith("/api/actions/receipts/")) {
         receiptReads++;
+        receiptReadAtMs.push(Math.trunc(performance.now()));
         if (!failedRead && receiptFault) {
           failedRead = true;
           if (receiptFault === "stall") return new Response(new ReadableStream({ start(controller) {
             controller.enqueue(new TextEncoder().encode('{"id":'));
           } }), { status: 200, headers: { "content-type": "application/json" } });
+          if (receiptFault === "malformed") {
+            const database = new Database(databasePath);
+            let receipt: { id: string; action: string; createdAt: string } | null | undefined;
+            try {
+              receipt = database.query<{ id: string; action: string; createdAt: string }, [string]>(`
+                SELECT actions.id, actions.action, actions.created_at AS createdAt
+                FROM action_requests JOIN actions ON actions.id = action_requests.action_id
+                WHERE action_requests.request_id = ?
+              `).get(path.slice("/api/actions/receipts/".length).toLowerCase());
+            } finally { database.close(); }
+            if (!receipt) throw new Error("Expected the committed action receipt for malformed-response injection");
+            return { ...receipt, createdAt: "not-a-date" };
+          }
           set.status = 503;
           return { error: "injected_receipt_read_unavailable" };
         }
@@ -145,17 +160,18 @@ export function createNativeRecoveryTestApi(databasePath: string, password: stri
       lostResponse = false;
       failedRead = false;
       receiptReads = 0;
+      receiptReadAtMs = [];
       receiptFault = body?.receiptFault === "none" ? null : body?.receiptFault ?? "fail";
       actionPosts = 0;
       requestId = null;
       return { armed: true };
-    }, { body: t.Optional(t.Object({ receiptFault: t.Union([t.Literal("fail"), t.Literal("stall"), t.Literal("none")]) })) })
+    }, { body: t.Optional(t.Object({ receiptFault: t.Union([t.Literal("fail"), t.Literal("stall"), t.Literal("malformed"), t.Literal("none")]) })) })
     .get("/__test__/response-loss", ({ request, set }) => {
       if (!isAuthenticated(databasePath, request)) {
         set.status = 401;
         return { error: "unauthorized" };
       }
-      return { lostResponse, failedRead, receiptReads, actionPosts, requestId };
+      return { lostResponse, failedRead, receiptReads, receiptReadAtMs, actionPosts, requestId };
     });
 }
 

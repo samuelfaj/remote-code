@@ -33,7 +33,16 @@ it("injects native response loss only after the real action commits and preserve
     expect(recovered.error).toBeNull();
     expect(recovered.data).toEqual(history.data.actions[0]!);
     const diagnostics = await fetch(`${origin}/__test__/response-loss`, { headers: { cookie } });
-    expect(await diagnostics.json()).toEqual({ lostResponse: true, failedRead: true, receiptReads: 2, actionPosts: 1, requestId });
+    const values = await diagnostics.json() as {
+      lostResponse: boolean;
+      failedRead: boolean;
+      receiptReads: number;
+      receiptReadAtMs: number[];
+      actionPosts: number;
+      requestId: string;
+    };
+    expect(values).toMatchObject({ lostResponse: true, failedRead: true, receiptReads: 2, actionPosts: 1, requestId });
+    expect(values.receiptReadAtMs).toHaveLength(2);
   } finally {
     await server.stop(true);
     rmSync(directory, { recursive: true, force: true });

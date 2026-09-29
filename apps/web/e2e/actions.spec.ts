@@ -705,6 +705,60 @@ test("a delayed receipt becomes visible on the second automatic read without res
   expect((await confirmedIds(page)).filter((receipt) => receipt.action === action)).toHaveLength(1);
 });
 
+test("a malformed successful action receipt stays unknown until canonical recovery on desktop and mobile", async ({ page }) => {
+  await signIn(page);
+  let posts = 0;
+  const requestIds: string[] = [];
+  const lookups = new Map<string, number>();
+  await page.route("**/api/actions", async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    posts++;
+    requestIds.push(route.request().postDataJSON().requestId);
+    expect((await route.fetch()).status()).toBe(201);
+    await route.abort("failed");
+  });
+  await page.route("**/api/actions/receipts/*", async (route) => {
+    const requestId = new URL(route.request().url()).pathname.split("/").at(-1)!;
+    const attempt = (lookups.get(requestId) ?? 0) + 1;
+    lookups.set(requestId, attempt);
+    if (attempt <= 2) {
+      const response = await route.fetch();
+      expect(response.status()).toBe(200);
+      const canonical = await response.json();
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ ...canonical, createdAt: "not-a-date" }),
+      });
+    } else {
+      await route.continue();
+    }
+  });
+
+  for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(viewport);
+    const action = `malformed receipt ${crypto.randomUUID()}`;
+    await page.getByLabel("Action description").fill(action);
+    await page.getByRole("button", { name: "Write backend receipt" }).click();
+    await expect(page.getByTestId("action-recovery-status")).toContainText("outcome is unknown");
+    const requestId = requestIds.at(-1)!;
+    expect(requestIds.filter((candidate) => candidate === requestId)).toHaveLength(1);
+    await expect(page.getByRole("button", { name: "Check action receipt" })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Write backend receipt" })).toBeDisabled();
+    expect(await page.evaluate(() => sessionStorage.getItem("remotecode.pending-action:local"))).toBe(requestId);
+    expect(lookups.get(requestId)).toBe(2);
+
+    await page.getByRole("button", { name: "Check action receipt" }).click();
+    await expect(page.getByTestId("action-recovery-status")).toContainText("Confirmed receipt");
+    await expect(page.getByTestId("latest-receipt")).toContainText(action);
+    await expect(page.getByRole("button", { name: "Write backend receipt" })).toBeEnabled();
+    expect(await page.evaluate(() => sessionStorage.getItem("remotecode.pending-action:local"))).toBeNull();
+    expect(lookups.get(requestId)).toBe(3);
+    expect((await confirmedIds(page)).filter((receipt) => receipt.action === action)).toHaveLength(1);
+  }
+  expect(posts).toBe(2);
+});
+
 test("a stalled automatic receipt lookup ends waiting without resending an uncertain action", async ({ page }) => {
   let posts = 0;
   await signIn(page);

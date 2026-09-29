@@ -152,6 +152,8 @@ final class RemoteCodeMobileProofUITests: XCTestCase {
         try await apiSession.signIn(at: api, password: password)
         var arm = URLRequest(url: URL(string: "/__test__/lose-action-response", relativeTo: api)!)
         arm.httpMethod = "POST"
+        arm.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        arm.httpBody = try JSONSerialization.data(withJSONObject: ["receiptFault": "stall"])
         let (_, armedResponse) = try await apiSession.data(for: arm)
         XCTAssertEqual((armedResponse as? HTTPURLResponse)?.statusCode, 200)
 
@@ -162,7 +164,7 @@ final class RemoteCodeMobileProofUITests: XCTestCase {
         app.staticTexts["Host connection"].firstMatch.tap()
         app.buttons["Submit action"].tap()
         let recovery = app.staticTexts.matching(identifier: "action-recovery-status").firstMatch
-        XCTAssertTrue(recovery.waitForLabelContaining("could not check", timeout: 20), "The automatic failed receipt read must preserve an unknown action without replay")
+        XCTAssertTrue(recovery.waitForLabelContaining("unknown", timeout: 20), "The stalled automatic receipt read must preserve an unknown action without replay")
         XCTAssertFalse(app.buttons["Submit action"].isEnabled)
         let check = app.buttons["Check action receipt"]
         XCTAssertTrue(check.waitForExistence(timeout: 5))
@@ -222,16 +224,21 @@ final class RemoteCodeMobileProofUITests: XCTestCase {
 
     @MainActor
     func testAutomaticActionReceiptAfterLostBody() async throws {
-        try await verifyAutomaticActionReceipt(stall: false)
+        try await verifyAutomaticActionReceipt(receiptFault: "fail")
     }
 
     @MainActor
     func testAutomaticActionReceiptStallEndsUnknownWithoutReplay() async throws {
-        try await verifyAutomaticActionReceipt(stall: true)
+        try await verifyAutomaticActionReceipt(receiptFault: "stall")
     }
 
     @MainActor
-    private func verifyAutomaticActionReceipt(stall: Bool) async throws {
+    func testAutomaticActionMalformedTimestampStaysUnknownWithoutReplay() async throws {
+        try await verifyAutomaticActionReceipt(receiptFault: "malformed")
+    }
+
+    @MainActor
+    private func verifyAutomaticActionReceipt(receiptFault: String) async throws {
         let app = XCUIApplication(bundleIdentifier: "com.remotecode.mobileproof")
         let observer = URLSession(configuration: .ephemeral)
         app.launch()
@@ -240,7 +247,7 @@ final class RemoteCodeMobileProofUITests: XCTestCase {
         var arm = URLRequest(url: URL(string: "/__test__/lose-action-response", relativeTo: api)!)
         arm.httpMethod = "POST"
         arm.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        arm.httpBody = try JSONSerialization.data(withJSONObject: ["receiptFault": stall ? "stall" : "none"])
+        arm.httpBody = try JSONSerialization.data(withJSONObject: ["receiptFault": receiptFault])
         let (_, armed) = try await observer.data(for: arm)
         XCTAssertEqual((armed as? HTTPURLResponse)?.statusCode, 200)
         let action = "native-auto-\(UUID().uuidString)"
@@ -248,31 +255,45 @@ final class RemoteCodeMobileProofUITests: XCTestCase {
         input.tap()
         input.typeText(action)
         app.staticTexts["Host connection"].firstMatch.tap()
+        let waitStartedAt = ProcessInfo.processInfo.systemUptime
         app.buttons["Submit action"].tap()
         let status = app.staticTexts.matching(identifier: "action-recovery-status").firstMatch
-        if stall {
+        if receiptFault != "fail" {
             XCTAssertTrue(status.waitForLabelContaining("unknown", timeout: 24))
+            XCTAssertLessThan(ProcessInfo.processInfo.systemUptime - waitStartedAt, 12, "Allow at most two seconds of UI scheduling beyond the ten-second request deadline")
             XCTAssertFalse(app.buttons["Submit action"].isEnabled)
             XCTAssertTrue(app.buttons["Check action receipt"].exists)
         } else {
             XCTAssertTrue(status.waitForLabelContaining("Confirmed receipt", timeout: 20))
+            XCTAssertLessThan(ProcessInfo.processInfo.systemUptime - waitStartedAt, 12, "Allow at most two seconds of UI scheduling beyond the ten-second request deadline")
             XCTAssertFalse(app.buttons["Check action receipt"].exists)
         }
         let history = try await observer.actions(at: api)
         let receipt = try XCTUnwrap(history.first(where: { $0.action == action }))
         XCTAssertEqual(history.filter { $0.action == action }.count, 1)
-        if !stall { XCTAssertTrue(status.label.contains(receipt.id)) }
+        if receiptFault == "fail" { XCTAssertTrue(status.label.contains(receipt.id)) }
         let (data, _) = try await observer.data(from: URL(string: "/__test__/response-loss", relativeTo: api)!)
         let diagnostics = try JSONDecoder().decode(NativeFailureDiagnostics.self, from: data)
-        XCTAssertEqual(diagnostics.actionPosts, 1)
-        XCTAssertEqual(diagnostics.receiptReads, 1, "Uncertain POST automatically makes exactly one read-only lookup")
+        XCTAssertTrue(diagnostics.lostResponse)
+        XCTAssertTrue(diagnostics.failedRead)
+        XCTAssertEqual(diagnostics.actionPosts, 1, "Uncertain POST must never be replayed")
         XCTAssertNotNil(UUID(uuidString: diagnostics.requestId))
-        if stall {
+        if receiptFault != "fail" {
+            XCTAssertEqual(diagnostics.receiptReads, 1, "An unresolved automatic read must not clear the pending action")
             app.buttons["Check action receipt"].tap()
             XCTAssertTrue(status.waitForLabelContaining("Confirmed receipt", timeout: 15))
             let (laterData, _) = try await observer.data(from: URL(string: "/__test__/response-loss", relativeTo: api)!)
             let later = try JSONDecoder().decode(NativeFailureDiagnostics.self, from: laterData)
             XCTAssertEqual(later.receiptReads, 2)
+        } else {
+            XCTAssertEqual(diagnostics.receiptReads, 2, "A transient 503 permits one delayed read-only retry")
+            XCTAssertEqual(diagnostics.receiptReadAtMs.count, 2)
+            XCTAssertGreaterThanOrEqual(diagnostics.receiptReadAtMs[1] - diagnostics.receiptReadAtMs[0], 900, "The second receipt lookup must be delayed")
+            let (receiptData, receiptResponse) = try await observer.data(from: URL(string: "/api/actions/receipts/\(diagnostics.requestId)", relativeTo: api)!)
+            XCTAssertEqual((receiptResponse as? HTTPURLResponse)?.statusCode, 200)
+            let mappedReceipt = try JSONDecoder().decode(ActionReceipt.self, from: receiptData)
+            XCTAssertEqual(mappedReceipt.id, receipt.id)
+            XCTAssertEqual(mappedReceipt.action, action)
         }
         app.buttons["Sign out"].tap()
         XCTAssertTrue(app.staticTexts.matching(identifier: "connection-status").firstMatch.waitForLabel("signed out", timeout: 15))
@@ -527,6 +548,7 @@ private struct NativeFailureDiagnostics: Decodable {
     let lostResponse: Bool
     let failedRead: Bool
     let receiptReads: Int
+    let receiptReadAtMs: [Int]
     let actionPosts: Int
     let requestId: String
 }

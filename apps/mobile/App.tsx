@@ -533,49 +533,66 @@ export default function App() {
   }
 
   async function consultActionReceipt(key: string, requestId: string, deadline: number, isCurrent: () => boolean) {
-    const remaining = deadline - Date.now();
-    if (remaining <= 0 || !isCurrent()) {
-      if (isCurrent()) setRecoveryMessage("The outcome is unknown. Check the action receipt later without resending.");
-      return;
-    }
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    try {
-      const response = await Promise.race([
-        createApiClient(apiOrigin).api.actions.receipts({ requestId }).get(),
-        new Promise<null>((resolve) => { timer = setTimeout(() => resolve(null), remaining); }),
-      ]);
-      if (!isCurrent()) return;
-      const receipt = response && actionReceiptFromResponse(response);
-      if (receipt) {
-        const cleared = await forgetPending(key, requestId);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0 || !isCurrent()) {
+        if (isCurrent()) setRecoveryMessage("The outcome is unknown. Check the action receipt later without resending.");
+        return;
+      }
+      if (attempt > 0) {
+        const delay = 1_000 + Math.floor(Math.random() * 501);
+        await new Promise<void>((resolve) => { setTimeout(resolve, Math.min(delay, remaining)); });
         if (!isCurrent()) return;
-        if (cleared) setPendingRequestId(null);
-        const next = { ...eventState.current, actions: [receipt, ...eventState.current.actions.filter((item) => item.id !== receipt.id)] };
-        eventState.current = next;
-        setEvents(next);
-        setRecoveryMessage(`Confirmed receipt ${receipt.id}.${cleared ? "" : " Device storage could not clear the pending identity; check again."}`);
-      } else if (response?.status === 401) {
-        operationGeneration.current += 1;
-        socket.current?.close();
-        socket.current = null;
-        if (syncTimeout.current) clearTimeout(syncTimeout.current);
-        eventState.current = emptyActionEventState();
-        setEvents(eventState.current);
-        clearRecoveryView();
-        setPassword("");
-        setAction("");
-        setBusy(false);
-        setConnection("signed_out");
-        setError("The host session expired or was revoked. Sign in again.");
-      } else {
+      }
+      const requestRemaining = deadline - Date.now();
+      if (requestRemaining <= 0) {
+        if (isCurrent()) setRecoveryMessage("The outcome is unknown. Check the action receipt later without resending.");
+        return;
+      }
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        const response = await Promise.race([
+          createApiClient(apiOrigin, { timeoutMs: requestRemaining }).api.actions.receipts({ requestId }).get(),
+          new Promise<null>((resolve) => { timer = setTimeout(() => resolve(null), requestRemaining); }),
+        ]);
+        if (!isCurrent()) return;
+        const receipt = response && actionReceiptFromResponse(response);
+        if (receipt) {
+          const cleared = await forgetPending(key, requestId);
+          if (!isCurrent()) return;
+          if (cleared) setPendingRequestId(null);
+          const next = { ...eventState.current, actions: [receipt, ...eventState.current.actions.filter((item) => item.id !== receipt.id)] };
+          eventState.current = next;
+          setEvents(next);
+          setRecoveryMessage(`Confirmed receipt ${receipt.id}.${cleared ? "" : " Device storage could not clear the pending identity; check again."}`);
+          return;
+        }
+        if (response?.status === 401) {
+          operationGeneration.current += 1;
+          socket.current?.close();
+          socket.current = null;
+          if (syncTimeout.current) clearTimeout(syncTimeout.current);
+          eventState.current = emptyActionEventState();
+          setEvents(eventState.current);
+          clearRecoveryView();
+          setPassword("");
+          setAction("");
+          setBusy(false);
+          setConnection("signed_out");
+          setError("The host session expired or was revoked. Sign in again.");
+          return;
+        }
+        if (attempt === 0 && (response?.status === 404 || response?.status === 503)) continue;
         setRecoveryMessage(response?.status === 404
           ? "No receipt is confirmed yet. The outcome is still unknown; check again later without resending."
           : "The host could not check the receipt. The outcome is still unknown.");
+        return;
+      } catch {
+        if (isCurrent()) setRecoveryMessage("The host could not check the receipt. The outcome is still unknown.");
+        return;
+      } finally {
+        if (timer) clearTimeout(timer);
       }
-    } catch {
-      if (isCurrent()) setRecoveryMessage("The host could not check the receipt. The outcome is still unknown.");
-    } finally {
-      if (timer) clearTimeout(timer);
     }
   }
 

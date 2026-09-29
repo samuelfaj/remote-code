@@ -13,6 +13,8 @@ export function actionReceiptFromResponse(response: ActionResponse): ActionRecei
   if (timestamp instanceof Date && !Number.isFinite(timestamp.getTime())) return null;
   const createdAt = timestamp instanceof Date ? timestamp.toISOString() : timestamp;
   if (typeof createdAt !== "string" || !createdAt) return null;
+  const parsedTimestamp = new Date(createdAt);
+  if (!Number.isFinite(parsedTimestamp.getTime()) || parsedTimestamp.toISOString() !== createdAt) return null;
   return { id: value.id, action: value.action, createdAt };
 }
 

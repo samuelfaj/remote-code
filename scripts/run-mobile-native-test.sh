@@ -23,12 +23,13 @@ if [[ "${RC_NATIVE_TEST_RECOVERY:-0}" == "1" ]]; then
   API_ENTRY="apps/api/test-support/native-recovery.ts"
   TEST_SELECTION="RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests"
   SKIP_TEST_ARG="-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testReadinessShowsRealSQLiteLockAndRecoversWithoutBlockingLogin"
-  EXTRA_SKIP_ARGS=("-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testAutomaticActionReceiptAfterLostBody" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testAutomaticActionReceiptStallEndsUnknownWithoutReplay")
+  EXTRA_SKIP_ARGS=("-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testAutomaticActionReceiptAfterLostBody" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testAutomaticActionReceiptStallEndsUnknownWithoutReplay" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testAutomaticActionMalformedTimestampStaysUnknownWithoutReplay")
 fi
 if [[ "${RC_NATIVE_TEST_AUTO_ACTION:-0}" == "1" ]]; then
   API_ENTRY="apps/api/test-support/native-recovery.ts"
   TEST_SELECTION="RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testAutomaticActionReceiptAfterLostBody"
   SKIP_TEST_ARG="-only-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testAutomaticActionReceiptStallEndsUnknownWithoutReplay"
+  EXTRA_SKIP_ARGS=("-only-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testAutomaticActionMalformedTimestampStaysUnknownWithoutReplay")
 fi
 if [[ "${RC_NATIVE_TEST_HEALTH:-0}" == "1" ]]; then
   API_ENTRY="apps/api/test-support/native-recovery.ts"
@@ -85,14 +86,21 @@ if [[ "$ready" != true ]]; then
   exit 1
 fi
 
-(
-  cd "$ROOT_DIR/apps/mobile"
-  bunx expo prebuild --platform ios --no-install
-) > "$WORK_DIR/expo-prebuild.log" 2>&1 || { cat "$WORK_DIR/expo-prebuild.log" >&2; exit 1; }
-(
-  cd "$ROOT_DIR/apps/mobile/ios"
-  pod install
-) > "$WORK_DIR/pod-install.log" 2>&1 || { tail -100 "$WORK_DIR/pod-install.log" >&2; exit 1; }
+if [[ "${RC_NATIVE_TEST_REUSE_IOS_PROJECT:-0}" == "1" ]]; then
+  if [[ ! -d "$ROOT_DIR/apps/mobile/ios/RemoteCodeMobileProof.xcworkspace" ]]; then
+    echo "RC_NATIVE_TEST_REUSE_IOS_PROJECT=1 requires an existing generated iOS workspace." >&2
+    exit 2
+  fi
+else
+  (
+    cd "$ROOT_DIR/apps/mobile"
+    bunx expo prebuild --platform ios --no-install
+  ) > "$WORK_DIR/expo-prebuild.log" 2>&1 || { cat "$WORK_DIR/expo-prebuild.log" >&2; exit 1; }
+  (
+    cd "$ROOT_DIR/apps/mobile/ios"
+    pod install
+  ) > "$WORK_DIR/pod-install.log" 2>&1 || { tail -100 "$WORK_DIR/pod-install.log" >&2; exit 1; }
+fi
 
 python3 - "$ROOT_DIR/apps/mobile/ios/RemoteCodeMobileProof.xcodeproj/xcshareddata/xcschemes/RemoteCodeMobileProof.xcscheme" <<'PY'
 import sys
@@ -144,15 +152,15 @@ try:
 finally:
     connection.close()
 if sys.argv[4] == "1":
-    if len(rows) != 2 or any(not row[1].startswith("native-auto-") for row in rows):
-        raise SystemExit(f"Expected two distinct automatic native actions: {rows!r}")
+    if len(rows) != 3 or any(not row[1].startswith("native-auto-") for row in rows):
+        raise SystemExit(f"Expected three distinct automatic native actions: {rows!r}")
     connection = sqlite3.connect(sys.argv[1])
     try:
         mappings = connection.execute("SELECT request_id, action_id FROM action_requests").fetchall()
     finally:
         connection.close()
-    if len(mappings) != 2 or len({m[0] for m in mappings}) != 2:
-        raise SystemExit(f"Expected exactly two action receipts: {mappings!r}")
+    if len(mappings) != 3 or len({m[0] for m in mappings}) != 3:
+        raise SystemExit(f"Expected exactly three action receipts: {mappings!r}")
     print(json.dumps({"automaticActions": rows, "mappings": mappings}))
     sys.exit(0)
 if sys.argv[3] == "1":
