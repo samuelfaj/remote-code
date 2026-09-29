@@ -1,3 +1,4 @@
+import { Database } from "bun:sqlite";
 import { expect, it } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -83,11 +84,9 @@ it("returns the canonical action receipt when the real handler accepts after a d
       receiptReads: number;
       requestId: string;
     };
-    let diagnostics = await (await fetch(`${origin}/__test__/response-loss`, { headers: { cookie } })).json() as ActionPostDelayDiagnostics;
-    for (let attempt = 0; diagnostics.actionPosts !== 1 && attempt < 100; attempt++) {
-      await Bun.sleep(20);
-      diagnostics = await (await fetch(`${origin}/__test__/response-loss`, { headers: { cookie } })).json() as ActionPostDelayDiagnostics;
-    }
+    const started = await fetch(`${origin}/__test__/wait-action-post`, { headers: { cookie } });
+    expect(started.status).toBe(200);
+    let diagnostics = await started.json() as ActionPostDelayDiagnostics;
     expect(diagnostics).toMatchObject({ actionPosts: 1, actionPostDelayCompleted: false, receiptReads: 0 });
     const historyBeforeAcceptance = await client.api.actions.get();
     if (!historyBeforeAcceptance.data || !("actions" in historyBeforeAcceptance.data) || !Array.isArray(historyBeforeAcceptance.data.actions)) throw new Error("Missing real action history");
@@ -109,7 +108,7 @@ it("returns the canonical action receipt when the real handler accepts after a d
     if (!history.data || !("actions" in history.data) || !Array.isArray(history.data.actions)) throw new Error("Missing real action history");
     expect(history.data.actions).toEqual([canonical.data]);
 
-    diagnostics = await (await fetch(`${origin}/__test__/response-loss`, { headers: { cookie } })).json() as typeof diagnostics;
+    diagnostics = await (await fetch(`${origin}/__test__/response-loss`, { headers: { cookie } })).json() as ActionPostDelayDiagnostics;
     expect(diagnostics).toMatchObject({
       lostResponse: false,
       actionPostDelayCompleted: true,
@@ -119,6 +118,90 @@ it("returns the canonical action receipt when the real handler accepts after a d
   } finally {
     if (releasePending) {
       await fetch(`${origin}/__test__/release-action-post`, { method: "POST", headers: { cookie } }).catch(() => null);
+    }
+    await server.stop(true);
+    rmSync(directory, { recursive: true, force: true });
+  }
+}, 8_000);
+
+it("holds a real keyed login before acceptance until its caller deadline is observed", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "rc018-native-login-deadline-"));
+  const databasePath = join(directory, "host.sqlite");
+  const password = crypto.randomUUID();
+  const app = createNativeRecoveryTestApi(databasePath, password);
+  const adminLogin = await app.handle(new Request("https://localhost/api/auth/login", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ password }),
+  }));
+  const cookie = adminLogin.headers.get("set-cookie")?.split(";")[0];
+  if (!cookie) throw new Error("Missing authenticated native test session");
+  const server = app.listen(0);
+  const port = server.server?.port;
+  if (!port) throw new Error("Native fixture did not listen");
+  const origin = `http://127.0.0.1:${port}`;
+  let loginPost: Promise<Response> | null = null;
+  let releasePending = false;
+  try {
+    const armed = await fetch(`${origin}/__test__/auth-fault`, {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ fault: "login-before", loginDeadline: true }),
+    });
+    expect(armed.status).toBe(200);
+
+    const requestId = crypto.randomUUID();
+    loginPost = fetch(`${origin}/api/auth/login`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ password, requestId }),
+    });
+    releasePending = true;
+    type LoginPostDiagnostics = {
+      loginPosts: number;
+      loginPostDelayCompleted: boolean;
+      loginReceiptReads: number;
+      loginReceiptExists: boolean;
+      loginRequestId: string | null;
+    };
+    const started = await fetch(`${origin}/__test__/wait-login-post`, { headers: { cookie } });
+    expect(started.status).toBe(200);
+    expect(await started.json()).toEqual({ loginPosts: 1, loginRequestId: requestId, loginPostDelayCompleted: false });
+    const diagnostics = await (await fetch(`${origin}/__test__/auth-diagnostics`, { headers: { cookie } })).json() as LoginPostDiagnostics;
+    expect(diagnostics).toMatchObject({ loginReceiptReads: 0, loginReceiptExists: false });
+
+    const beforeRelease = new Database(databasePath, { readonly: true, create: false });
+    let authRowsBefore = -1;
+    let sessionsBefore = -1;
+    try {
+      authRowsBefore = beforeRelease.query<{ count: number }, [string]>("SELECT COUNT(*) AS count FROM auth_requests WHERE request_id = ?").get(requestId)!.count;
+      sessionsBefore = beforeRelease.query<{ count: number }, []>("SELECT COUNT(*) AS count FROM sessions").get()!.count;
+    } finally { beforeRelease.close(); }
+    expect(authRowsBefore).toBe(0);
+    expect(sessionsBefore).toBe(1);
+
+    const released = await fetch(`${origin}/__test__/release-login-post`, { method: "POST", headers: { cookie } });
+    expect(released.status).toBe(200);
+    expect(await released.json()).toEqual({ released: true });
+    releasePending = false;
+
+    const rejected = await loginPost;
+    expect(rejected.status).toBe(503);
+    expect(await rejected.json()).toEqual({ error: "injected_before_login" });
+    const afterReleaseDiagnostics = await (await fetch(`${origin}/__test__/auth-diagnostics`, { headers: { cookie } })).json() as LoginPostDiagnostics;
+    expect(afterReleaseDiagnostics).toMatchObject({ loginPosts: 1, loginPostDelayCompleted: true, loginReceiptExists: false });
+
+    const database = new Database(databasePath, { readonly: true, create: false });
+    try {
+      expect(database.query<{ count: number }, [string]>("SELECT COUNT(*) AS count FROM auth_requests WHERE request_id = ?").get(requestId)!.count).toBe(0);
+      expect(database.query<{ count: number }, []>("SELECT COUNT(*) AS count FROM sessions").get()!.count).toBe(1);
+      expect(database.query<{ quick_check: string }, []>("PRAGMA quick_check").get()!.quick_check).toBe("ok");
+    } finally { database.close(); }
+
+    const loggedOut = await fetch(`${origin}/api/auth/logout`, { method: "POST", headers: { cookie, "content-type": "application/json" }, body: "{}" });
+    expect(loggedOut.status).toBe(204);
+  } finally {
+    if (releasePending) {
+      await fetch(`${origin}/__test__/release-login-post`, { method: "POST", headers: { cookie } }).catch(() => null);
+      await loginPost?.catch(() => null);
     }
     await server.stop(true);
     rmSync(directory, { recursive: true, force: true });

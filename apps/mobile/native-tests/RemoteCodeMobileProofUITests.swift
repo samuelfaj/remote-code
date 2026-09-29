@@ -492,6 +492,91 @@ final class RemoteCodeMobileProofUITests: XCTestCase {
     }
 
     @MainActor
+    func testNativeLoginDeadlineStartsAtTapAndNeverReplays() async throws {
+        let app = XCUIApplication(bundleIdentifier: "com.remotecode.mobileproof")
+        let observer = URLSession(configuration: .ephemeral)
+        app.launch()
+        let apiLabel = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Host: ")).firstMatch
+        XCTAssertTrue(apiLabel.waitForExistence(timeout: 10), "The installed app must identify its configured test API")
+        let api = try XCTUnwrap(URL(string: String(apiLabel.label.dropFirst("Host: ".count))))
+        XCTAssertEqual(api.host, "127.0.0.1", "The native failure test must use its local API")
+        XCTAssertNotNil(api.port)
+        XCTAssertFalse(app.buttons["Check auth receipt"].exists, "A per-run API origin must not restore an earlier login identity")
+        try await observer.signIn(at: api, password: password)
+        try await armAuthFault("login-before", using: observer, loginDeadline: true, at: api)
+        enterPassword(app)
+        let tappedAt = ProcessInfo.processInfo.systemUptime
+        app.buttons["Sign in to host"].tap()
+
+        let recovery = app.staticTexts.matching(identifier: "auth-recovery-status").firstMatch
+        let tapDeadline = tappedAt + 13
+        var unknownAtDeadline = false
+        while ProcessInfo.processInfo.systemUptime < tapDeadline + 0.75 {
+            if recovery.exists && recovery.label.contains("unknown") {
+                unknownAtDeadline = true
+                break
+            }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        XCTAssertLessThan(ProcessInfo.processInfo.systemUptime - tappedAt, 14)
+
+        let diagnosticsURL = URL(string: "/__test__/auth-diagnostics", relativeTo: api)!
+        func diagnostics() async throws -> [String: Any] {
+            let (data, response) = try await observer.data(from: diagnosticsURL)
+            XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
+            return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        }
+        let beforeRelease = try await diagnostics()
+        let originalRequestId = try XCTUnwrap(beforeRelease["loginRequestId"] as? String)
+        XCTAssertNotNil(UUID(uuidString: originalRequestId))
+        XCTAssertEqual(beforeRelease["loginPosts"] as? Int, 1, "The real keyed login must have reached the server before the tap deadline")
+        XCTAssertEqual(beforeRelease["loginPostDelayCompleted"] as? Bool, false)
+        let automaticReceiptReads = try XCTUnwrap(beforeRelease["loginReceiptReads"] as? Int)
+        XCTAssertLessThanOrEqual(automaticReceiptReads, 1, "The sign-in may inspect its receipt at most once")
+        XCTAssertEqual(beforeRelease["loginReceiptExists"] as? Bool, false, "The login handler has not accepted this request")
+        XCTAssertTrue(unknownAtDeadline, "The login must be unknown by the tap deadline while its real POST is pending; posts=\(beforeRelease["loginPosts"] ?? "missing"), accepted=\(beforeRelease["loginPostDelayCompleted"] ?? "missing"), receipts=\(beforeRelease["loginReceiptReads"] ?? "missing"), receiptExists=\(beforeRelease["loginReceiptExists"] ?? "missing")")
+        XCTAssertFalse(app.buttons["Sign in to host"].isEnabled)
+        XCTAssertTrue(app.buttons["Check auth receipt"].exists)
+
+        let releaseAt = tappedAt + 14.5
+        while ProcessInfo.processInfo.systemUptime < releaseAt {
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        var release = URLRequest(url: URL(string: "/__test__/release-login-post", relativeTo: api)!)
+        release.httpMethod = "POST"
+        let (_, releaseResponse) = try await observer.data(for: release)
+        XCTAssertEqual((releaseResponse as? HTTPURLResponse)?.statusCode, 200)
+
+        var afterRelease = try await diagnostics()
+        let completionDeadline = Date().addingTimeInterval(5)
+        while (afterRelease["loginPostDelayCompleted"] as? Bool) != true && Date() < completionDeadline {
+            try await Task.sleep(nanoseconds: 100_000_000)
+            afterRelease = try await diagnostics()
+        }
+        XCTAssertEqual(afterRelease["loginPostDelayCompleted"] as? Bool, true)
+        XCTAssertEqual(afterRelease["loginPosts"] as? Int, 1, "The uncertain login must never be replayed")
+        XCTAssertEqual(afterRelease["loginReceiptReads"] as? Int, automaticReceiptReads, "The expired operation must not start another automatic receipt lookup")
+        XCTAssertTrue(recovery.label.contains("unknown"), "Late pre-acceptance rejection must not change the expired result")
+
+        app.buttons["Check auth receipt"].tap()
+        XCTAssertTrue(recovery.waitForLabelContaining("No auth receipt", timeout: 15))
+        XCTAssertFalse(app.buttons["Sign in to host"].isEnabled)
+        app.buttons["Revoke old login"].tap()
+        XCTAssertTrue(recovery.waitForLabelContaining("revocation confirmed", timeout: 15))
+        app.buttons["Sign in to host"].tap()
+        XCTAssertTrue(app.staticTexts.matching(identifier: "connection-status").firstMatch.waitForLabel("connected", timeout: 15))
+        let finalDiagnostics = try await diagnostics()
+        XCTAssertEqual(finalDiagnostics["loginPosts"] as? Int, 2, "One timed-out login and one new login after explicit recovery are expected")
+        XCTAssertEqual(finalDiagnostics["loginReceiptReads"] as? Int, automaticReceiptReads + 1, "Only the explicit manual receipt check may run after the deadline")
+        XCTAssertEqual(finalDiagnostics["revokePosts"] as? Int, 1)
+        XCTAssertEqual(finalDiagnostics["logoutPosts"] as? Int, 0)
+        let newLoginRequestId = try XCTUnwrap(finalDiagnostics["loginRequestId"] as? String)
+        XCTAssertNotEqual(newLoginRequestId, originalRequestId)
+        app.buttons["Sign out"].tap()
+        XCTAssertTrue(app.staticTexts.matching(identifier: "connection-status").firstMatch.waitForLabel("signed out", timeout: 15))
+    }
+
+    @MainActor
     func testAuthBeforeAcceptanceRequiresFenceBeforeNewLogin() async throws {
         let observer = URLSession(configuration: .ephemeral)
         try await observer.signIn(at: api, password: password)
@@ -715,11 +800,13 @@ final class RemoteCodeMobileProofUITests: XCTestCase {
         app.staticTexts["Host connection"].firstMatch.tap()
     }
 
-    private func armAuthFault(_ fault: String, using session: URLSession) async throws {
-        var request = URLRequest(url: URL(string: "/__test__/auth-fault", relativeTo: api)!)
+    private func armAuthFault(_ fault: String, using session: URLSession, loginDeadline: Bool = false, at baseURL: URL? = nil) async throws {
+        var request = URLRequest(url: URL(string: "/__test__/auth-fault", relativeTo: baseURL ?? api)!)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONSerialization.data(withJSONObject: ["fault": fault])
+        var body: [String: Any] = ["fault": fault]
+        if loginDeadline { body["loginDeadline"] = true }
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
         let (_, response) = try await session.data(for: request)
         XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
     }

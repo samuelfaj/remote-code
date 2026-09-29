@@ -161,8 +161,8 @@ export default function App() {
     else if (cleared === false) setRecoveryMessage(`Confirmed receipt ${receipt.id}. Device storage could not clear the pending identity; check again.`);
   }
 
-  async function saveAuth(pending: PendingAuth, previous: PendingAuth | null, generation: number) {
-    await withPendingStorage(async () => {
+  async function saveAuth(pending: PendingAuth, previous: PendingAuth | null, generation: number, deadline?: number) {
+    const writing = withPendingStorage(async () => {
       if (generation !== operationGeneration.current) throw new Error("Stale auth operation");
       const expected = previous ? JSON.stringify(previous) : null;
       if (await AsyncStorage.getItem(authStorageKey) !== expected) throw new Error("Auth storage changed");
@@ -173,6 +173,40 @@ export default function App() {
       if (generation === operationGeneration.current) setAuthReady(false);
       throw cause;
     });
+    try {
+      if (deadline === undefined) await writing;
+      else {
+        const saved = await beforeDeadline(writing, deadline);
+        if (saved === null || Date.now() >= deadline) {
+          if (generation === operationGeneration.current) {
+            setAuthReady(false);
+            setAuthMessage("The sign-in deadline expired while saving this device identity. No login request was sent. Restart before trying again.");
+          }
+          void writing.then(async () => {
+            const cleared = await forgetPending(authStorageKey, JSON.stringify(pending));
+            if (generation !== operationGeneration.current) return;
+            if (cleared) {
+              authPending.current = null;
+              setPendingAuth(null);
+              setAuthReady(true);
+              setAuthMessage("No login request was sent before the deadline. Device storage is clear; you can try again.");
+            } else {
+              setAuthReady(false);
+              setAuthMessage("The login identity could not be cleared after the deadline. Restart before trying again.");
+            }
+          }).catch(() => {
+            if (generation === operationGeneration.current) {
+              setAuthReady(false);
+              setAuthMessage("Device storage could not clear the unsent login identity. Restart before trying again.");
+            }
+          });
+          return false;
+        }
+      }
+    } catch (cause) {
+      if (generation === operationGeneration.current) setAuthReady(false);
+      throw cause;
+    }
     if (generation !== operationGeneration.current) return false;
     authPending.current = pending;
     setPendingAuth(pending);
@@ -209,19 +243,45 @@ export default function App() {
     }
   }
 
-  async function supportsAuthRecovery(generation: number) {
-    const response = await createApiClient(apiOrigin).api.version.get();
+  async function supportsAuthRecovery(generation: number, deadline?: number) {
+    const remaining = deadline === undefined ? undefined : deadline - Date.now();
+    if (remaining !== undefined && remaining <= 0) {
+      if (generation === operationGeneration.current) setAuthMessage("The sign-in deadline expired before the host could be checked. No login request was sent. Try again when the host is reachable.");
+      return false;
+    }
+    const request = remaining === undefined
+      ? createApiClient(apiOrigin).api.version.get()
+      : createApiClient(apiOrigin, { timeoutMs: remaining }).api.version.get();
+    const response = deadline === undefined ? await request : await beforeDeadline(request, deadline);
     if (generation !== operationGeneration.current) return false;
-    if (response.error || !response.data?.capabilities.includes("auth-request-recovery-v1")) {
+    if (deadline !== undefined && (!response || Date.now() >= deadline)) {
+      setAuthMessage("The sign-in deadline expired before the host could be checked. No login request was sent. Try again when the host is reachable.");
+      return false;
+    }
+    if (!response || response.error || !response.data?.capabilities.includes("auth-request-recovery-v1")) {
       setAuthMessage("Update the host to support auth receipt recovery. No auth request was sent.");
       return false;
     }
     return true;
   }
 
-  async function confirmLogin(pending: PendingAuth, generation: number) {
-    const { data: session, error: sessionError } = await createApiClient(apiOrigin).api.auth.session.get();
+  async function confirmLogin(pending: PendingAuth, generation: number, deadline?: number) {
+    const remaining = deadline === undefined ? undefined : deadline - Date.now();
+    if (remaining !== undefined && remaining <= 0) {
+      if (generation === operationGeneration.current) setAuthMessage("The login outcome is unknown. Check the receipt later without resending.");
+      return false;
+    }
+    const request = remaining === undefined
+      ? createApiClient(apiOrigin).api.auth.session.get()
+      : createApiClient(apiOrigin, { timeoutMs: remaining }).api.auth.session.get();
+    const result = deadline === undefined ? await request : await beforeDeadline(request, deadline);
     if (generation !== operationGeneration.current) return false;
+    if (deadline !== undefined && (!result || Date.now() >= deadline)) {
+      setAuthMessage("The login outcome is unknown. Check the receipt later without resending.");
+      return false;
+    }
+    if (!result) return false;
+    const { data: session, error: sessionError } = result;
     if (pending.kind !== "login" || sessionError || !session || !("userId" in session)
       || typeof session.userId !== "string" || !("loginRequestId" in session) || session.loginRequestId !== pending.requestId) return false;
     if (!await finishAuth(pending, generation)) return true;
@@ -267,8 +327,17 @@ export default function App() {
   }
 
   async function consultUncertainLogin(pending: PendingAuth, credential: string, generation: number, deadline: number) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) {
+      if (generation === operationGeneration.current) setAuthMessage("The login outcome is unknown. Check the receipt later without resending.");
+      return;
+    }
     try {
-      const response = await beforeDeadline(createApiClient(apiOrigin, { timeoutMs: 3_500 }).api.auth.receipts({ requestId: pending.requestId }).lookup.post({ password: credential }), deadline);
+      const response = await beforeDeadline(
+        createApiClient(apiOrigin, { timeoutMs: Math.min(3_500, remaining) })
+          .api.auth.receipts({ requestId: pending.requestId }).lookup.post({ password: credential }),
+        deadline,
+      );
       if (generation !== operationGeneration.current) return;
       if (Date.now() >= deadline) {
         setAuthMessage("The login outcome is unknown. Check the receipt later without resending.");
@@ -287,27 +356,57 @@ export default function App() {
 
   async function connect() {
     if (!password || authPending.current || busy) return;
+    const deadline = Date.now() + 13_000;
     await runAuth(async (generation) => {
-      if (!await supportsAuthRecovery(generation)) return;
+      if (!await supportsAuthRecovery(generation, deadline)) return;
       const credential = password;
       const pending: PendingAuth = { kind: "login", requestId: randomUUID() };
-      if (!await saveAuth(pending, null, generation)) return;
-      const deadline = Date.now() + 13_000;
+      let identitySaved = false;
+      try {
+        identitySaved = await saveAuth(pending, null, generation, deadline);
+      } catch {
+        if (generation === operationGeneration.current) {
+          setAuthMessage("Sign-in could not be sent because device storage could not save its request identity. Restart before trying again.");
+        }
+        return;
+      }
+      if (!identitySaved) return;
+      const postRemaining = deadline - Date.now();
+      if (postRemaining <= 0) {
+        setAuthMessage("The sign-in deadline expired before login was sent. Clearing the saved identity.");
+        void forgetPending(authStorageKey, JSON.stringify(pending)).then((cleared) => {
+          if (generation !== operationGeneration.current) return;
+          if (cleared) {
+            authPending.current = null;
+            setPendingAuth(null);
+            setAuthMessage("The sign-in deadline expired before login was sent. No login request was sent; you can try again.");
+          } else setAuthMessage("The sign-in deadline expired before login was sent, but device storage could not clear the identity. Restart before trying again.");
+        });
+        return;
+      }
       clearRecoveryView();
       setConnection("disconnected");
       let response: { status: number; error: unknown; data: unknown } | null = null;
       try {
-        response = await beforeDeadline(createApiClient(apiOrigin, { timeoutMs: 6_000 }).api.auth.login.post({ password: credential, requestId: pending.requestId }), deadline);
+        response = await beforeDeadline(
+          createApiClient(apiOrigin, { timeoutMs: Math.min(6_000, postRemaining) })
+            .api.auth.login.post({ password: credential, requestId: pending.requestId }),
+          deadline,
+        );
       } catch {
         response = null;
       }
       if (generation !== operationGeneration.current) return;
+      if (Date.now() >= deadline) {
+        await consultUncertainLogin(pending, credential, generation, deadline);
+        return;
+      }
       if (response && isCredentialRejection(response)) {
         if (await finishAuth(pending, generation)) setAuthMessage("Sign in failed. Check the host password. No session was created.");
         return;
       }
       if (response && !response.error && response.data) {
-        if (!await confirmLogin(pending, generation) && generation === operationGeneration.current) {
+        if (!await confirmLogin(pending, generation, deadline) && generation === operationGeneration.current) {
           setAuthMessage("The login outcome is unknown. Check the receipt or explicitly revoke the old login before another attempt.");
         }
         return;
