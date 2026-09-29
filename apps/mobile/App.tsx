@@ -144,6 +144,23 @@ export default function App() {
     }).catch(() => false);
   }
 
+  async function showConfirmedActionReceipt(
+    receipt: NonNullable<ReturnType<typeof actionReceiptFromResponse>>,
+    key: string,
+    requestId: string,
+    deadline: number,
+    isCurrent: () => boolean,
+  ) {
+    const next = { ...eventState.current, actions: [receipt, ...eventState.current.actions.filter((item) => item.id !== receipt.id)] };
+    eventState.current = next;
+    setEvents(next);
+    setRecoveryMessage(`Confirmed receipt ${receipt.id}.`);
+    const cleared = await clearActionIdentityBeforeDeadline(key, requestId, deadline, isCurrent, () => setRecoveryMessage(""));
+    if (!isCurrent()) return;
+    if (cleared === true) setPendingRequestId(null);
+    else if (cleared === false) setRecoveryMessage(`Confirmed receipt ${receipt.id}. Device storage could not clear the pending identity; check again.`);
+  }
+
   async function saveAuth(pending: PendingAuth, previous: PendingAuth | null, generation: number) {
     await withPendingStorage(async () => {
       if (generation !== operationGeneration.current) throw new Error("Stale auth operation");
@@ -214,7 +231,7 @@ export default function App() {
     return true;
   }
 
-  async function beforeLoginDeadline<T>(work: Promise<T>, deadline: number): Promise<T | null> {
+  async function beforeDeadline<T>(work: Promise<T>, deadline: number): Promise<T | null> {
     const remaining = deadline - Date.now();
     if (remaining <= 0) return null;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -225,9 +242,33 @@ export default function App() {
     }
   }
 
+  async function clearActionIdentityBeforeDeadline(
+    key: string,
+    requestId: string,
+    deadline: number,
+    isCurrent: () => boolean,
+    onLateClear: () => void,
+  ): Promise<boolean | null> {
+    let completed: boolean | undefined;
+    const clearing = forgetPending(key, requestId).then((result) => {
+      completed = result;
+      return result;
+    });
+    const cleared = await beforeDeadline(clearing, deadline);
+    if (cleared !== null) return cleared;
+    if (completed !== undefined) return completed;
+    void clearing.then((lateClear) => {
+      if (lateClear && isCurrent()) {
+        setPendingRequestId(null);
+        onLateClear();
+      }
+    });
+    return null;
+  }
+
   async function consultUncertainLogin(pending: PendingAuth, credential: string, generation: number, deadline: number) {
     try {
-      const response = await beforeLoginDeadline(createApiClient(apiOrigin, { timeoutMs: 3_500 }).api.auth.receipts({ requestId: pending.requestId }).lookup.post({ password: credential }), deadline);
+      const response = await beforeDeadline(createApiClient(apiOrigin, { timeoutMs: 3_500 }).api.auth.receipts({ requestId: pending.requestId }).lookup.post({ password: credential }), deadline);
       if (generation !== operationGeneration.current) return;
       if (Date.now() >= deadline) {
         setAuthMessage("The login outcome is unknown. Check the receipt later without resending.");
@@ -256,7 +297,7 @@ export default function App() {
       setConnection("disconnected");
       let response: { status: number; error: unknown; data: unknown } | null = null;
       try {
-        response = await beforeLoginDeadline(createApiClient(apiOrigin, { timeoutMs: 6_000 }).api.auth.login.post({ password: credential, requestId: pending.requestId }), deadline);
+        response = await beforeDeadline(createApiClient(apiOrigin, { timeoutMs: 6_000 }).api.auth.login.post({ password: credential, requestId: pending.requestId }), deadline);
       } catch {
         response = null;
       }
@@ -430,6 +471,7 @@ export default function App() {
   async function submitAction() {
     if (connection !== "connected" || eventState.current.needsSnapshot || !action.trim() || busy
       || actionLock.current || pendingRequestId || !pendingKey || !storageReady) return;
+    const deadline = Date.now() + 10_000;
     const generation = operationGeneration.current;
     const activeSocket = socket.current;
     const isCurrent = () => generation === operationGeneration.current && socket.current === activeSocket;
@@ -439,17 +481,42 @@ export default function App() {
     setError("");
     setRecoveryMessage("");
     let sent = false;
-    let deadline = 0;
     let sentRequestId: string | null = null;
+    const discardUnsentIdentity = (requestId: string) => {
+      setPendingRequestId(requestId);
+      setStorageReady(false);
+      void forgetPending(key, requestId).then((cleared) => {
+        if (!isCurrent()) return;
+        setPendingRequestId(cleared ? null : requestId);
+        setStorageReady(true);
+        setRecoveryMessage(cleared
+          ? "No action was sent because the deadline expired before submission. You can try again."
+          : "No action was sent, but device storage could not clear its identity. Check the receipt before retrying.");
+      });
+    };
     try {
-      const client = createApiClient(apiOrigin);
-      const version = await client.api.version.get();
+      const preflightRemaining = deadline - Date.now();
+      if (preflightRemaining <= 0) {
+        setRecoveryMessage("No action was sent because the ten-second deadline expired before the host could be checked.");
+        return;
+      }
+      const version = await beforeDeadline(
+        createApiClient(apiOrigin, { timeoutMs: preflightRemaining }).api.version.get(), deadline,
+      );
       if (!isCurrent()) return;
-      if (version.error || !version.data?.capabilities.includes("action-request-recovery-v1")) {
+      if (!version || Date.now() >= deadline) {
+        setRecoveryMessage("No action was sent because host capability could not be checked before the action deadline.");
+        return;
+      }
+      if (version.error) {
+        setRecoveryMessage("The host could not confirm action receipt support. No action was sent.");
+        return;
+      }
+      if (!version.data?.capabilities.includes("action-request-recovery-v1")) {
         setRecoveryMessage("Update the host to support action receipt recovery. No action was sent.");
         return;
       }
-      const prepared = await withPendingStorage(async () => {
+      const prepare = withPendingStorage(async () => {
         const existing = validatePendingId(await AsyncStorage.getItem(key));
         if (existing) return { requestId: existing, send: false };
         if (!isCurrent()) return null;
@@ -462,37 +529,55 @@ export default function App() {
         }
         return { requestId, send: true };
       });
-      if (!isCurrent() || !prepared) return;
+      const prepared = await beforeDeadline(prepare, deadline);
+      if (!isCurrent()) return;
+      if (!prepared) {
+        setStorageReady(false);
+        setRecoveryMessage("No action was sent because device storage did not save its identity before the deadline.");
+        void prepare.then((late) => {
+          if (!late || !isCurrent()) return;
+          if (late.send) discardUnsentIdentity(late.requestId);
+          else {
+            setPendingRequestId(late.requestId);
+            setStorageReady(true);
+            setRecoveryMessage("An earlier outcome is unknown. Check its receipt before sending another action.");
+          }
+        }).catch(() => {});
+        return;
+      }
       setPendingRequestId(prepared.requestId);
       if (!prepared.send) {
         setRecoveryMessage("An earlier outcome is unknown. Check its receipt before sending another action.");
         return;
       }
+      const postRemaining = deadline - Date.now();
+      if (postRemaining <= 0) {
+        discardUnsentIdentity(prepared.requestId);
+        return;
+      }
       sent = true;
       sentRequestId = prepared.requestId;
-      deadline = Date.now() + 10_000;
-      let postTimer: ReturnType<typeof setTimeout> | undefined;
-      const response = await Promise.race([
-        client.api.actions.post({ action: action.trim(), requestId: prepared.requestId }),
-        new Promise<null>((resolve) => { postTimer = setTimeout(() => resolve(null), 6_000); }),
-      ]);
-      if (postTimer) clearTimeout(postTimer);
+      const response = await beforeDeadline(
+        createApiClient(apiOrigin, { timeoutMs: Math.min(6_000, postRemaining) })
+          .api.actions.post({ action: action.trim(), requestId: prepared.requestId }),
+        deadline,
+      );
       if (!isCurrent()) return;
+      if (Date.now() >= deadline) {
+        await consultActionReceipt(key, prepared.requestId, deadline, isCurrent);
+        return;
+      }
       const receipt = response && actionReceiptFromResponse(response);
-      if (receipt || (response && isDefinitiveActionRejection(response))) {
-        const cleared = await forgetPending(key, prepared.requestId);
+      if (receipt) {
+        setAction("");
+        await showConfirmedActionReceipt(receipt, key, prepared.requestId, deadline, isCurrent);
+      } else if (response && isDefinitiveActionRejection(response)) {
+        setError(errorMessage(response.error));
+        const cleared = await clearActionIdentityBeforeDeadline(key, prepared.requestId, deadline, isCurrent, () => setRecoveryMessage(""));
         if (!isCurrent()) return;
-        if (cleared) setPendingRequestId(null);
-        if (receipt) {
-          setAction("");
-          const next = { ...eventState.current, actions: [receipt, ...eventState.current.actions.filter((item) => item.id !== receipt.id)] };
-          eventState.current = next;
-          setEvents(next);
-          setRecoveryMessage(cleared ? "" : `Confirmed receipt ${receipt.id}. Device storage could not clear the pending identity; check again.`);
-        } else {
-          setError(errorMessage(response!.error));
-          if (!cleared) setRecoveryMessage("The host rejected the action, but device storage could not clear its identity. Sending remains disabled.");
-        }
+        if (cleared === true) setPendingRequestId(null);
+        else if (cleared === false) setRecoveryMessage("The host rejected the action, but device storage could not clear its identity. Sending remains disabled.");
+        else setRecoveryMessage("The host rejected the action. Device storage cleanup is still pending; sending remains disabled.");
       } else {
         await consultActionReceipt(key, prepared.requestId, deadline, isCurrent);
       }
@@ -549,22 +634,19 @@ export default function App() {
         if (isCurrent()) setRecoveryMessage("The outcome is unknown. Check the action receipt later without resending.");
         return;
       }
-      let timer: ReturnType<typeof setTimeout> | undefined;
       try {
-        const response = await Promise.race([
+        const response = await beforeDeadline(
           createApiClient(apiOrigin, { timeoutMs: requestRemaining }).api.actions.receipts({ requestId }).get(),
-          new Promise<null>((resolve) => { timer = setTimeout(() => resolve(null), requestRemaining); }),
-        ]);
+          deadline,
+        );
         if (!isCurrent()) return;
+        if (Date.now() >= deadline && response?.status !== 401) {
+          setRecoveryMessage("The outcome is unknown. Check the action receipt later without resending.");
+          return;
+        }
         const receipt = response && actionReceiptFromResponse(response);
         if (receipt) {
-          const cleared = await forgetPending(key, requestId);
-          if (!isCurrent()) return;
-          if (cleared) setPendingRequestId(null);
-          const next = { ...eventState.current, actions: [receipt, ...eventState.current.actions.filter((item) => item.id !== receipt.id)] };
-          eventState.current = next;
-          setEvents(next);
-          setRecoveryMessage(`Confirmed receipt ${receipt.id}.${cleared ? "" : " Device storage could not clear the pending identity; check again."}`);
+          await showConfirmedActionReceipt(receipt, key, requestId, deadline, isCurrent);
           return;
         }
         if (response?.status === 401) {
@@ -590,8 +672,6 @@ export default function App() {
       } catch {
         if (isCurrent()) setRecoveryMessage("The host could not check the receipt. The outcome is still unknown.");
         return;
-      } finally {
-        if (timer) clearTimeout(timer);
       }
     }
   }

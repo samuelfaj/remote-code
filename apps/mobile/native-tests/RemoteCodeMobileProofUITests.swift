@@ -200,8 +200,8 @@ final class RemoteCodeMobileProofUITests: XCTestCase {
         let receipt = try XCTUnwrap(matching.first)
         XCTAssertTrue(recovery.label.contains(receipt.id), "Recovery must show the canonical backend receipt")
         XCTAssertTrue(app.staticTexts["Receipt \(receipt.id)"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["Check action receipt"].waitForNonExistence(timeout: 5))
         XCTAssertTrue(app.buttons["Submit action"].isEnabled)
-        XCTAssertFalse(app.buttons["Check action receipt"].exists)
         let (diagnosticData, diagnosticResponse) = try await apiSession.data(from: URL(string: "/__test__/response-loss", relativeTo: api)!)
         XCTAssertEqual((diagnosticResponse as? HTTPURLResponse)?.statusCode, 200)
         let diagnostics = try JSONDecoder().decode(NativeFailureDiagnostics.self, from: diagnosticData)
@@ -220,6 +220,76 @@ final class RemoteCodeMobileProofUITests: XCTestCase {
         app.buttons["Sign out"].tap()
         XCTAssertTrue(app.staticTexts.matching(identifier: "connection-status").firstMatch.waitForLabel("signed out", timeout: 10))
         XCTAssertFalse(recovery.exists, "Sign-out must clear private recovery state from the view")
+    }
+
+    @MainActor
+    func testActionDeadlineStartsAtTapAndIgnoresLateReceiptWithoutReplay() async throws {
+        let app = XCUIApplication(bundleIdentifier: "com.remotecode.mobileproof")
+        let observer = URLSession(configuration: .ephemeral)
+        app.launch()
+        signIn(app)
+        try await observer.signIn(at: api, password: password)
+
+        var arm = URLRequest(url: URL(string: "/__test__/lose-action-response", relativeTo: api)!)
+        arm.httpMethod = "POST"
+        arm.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        arm.httpBody = try JSONSerialization.data(withJSONObject: ["actionDeadline": true])
+        let (_, armedResponse) = try await observer.data(for: arm)
+        XCTAssertEqual((armedResponse as? HTTPURLResponse)?.statusCode, 200)
+
+        let action = "native-deadline-\(UUID().uuidString)"
+        let input = app.textFields["Action"]
+        input.tap()
+        input.typeText(action)
+        app.keyboards.buttons["Return"].tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+        app.staticTexts["Host connection"].firstMatch.tap()
+        let submit = app.buttons["Submit action"]
+        XCTAssertTrue(submit.isEnabled && submit.isHittable)
+        let tappedAt = ProcessInfo.processInfo.systemUptime
+        submit.tap()
+
+        let recovery = app.staticTexts.matching(identifier: "action-recovery-status").firstMatch
+        guard recovery.waitForLabelContaining("unknown", timeout: 12) else {
+            XCTFail("The receipt that arrived after the tap deadline must not confirm the action")
+            return
+        }
+        XCTAssertLessThan(ProcessInfo.processInfo.systemUptime - tappedAt, 12)
+        XCTAssertFalse(submit.isEnabled, "The pending action must remain blocked until its receipt is checked")
+        XCTAssertTrue(app.buttons["Check action receipt"].exists)
+
+        var diagnostics = try await observer.responseLossDiagnostics(at: api)
+        XCTAssertTrue(diagnostics.lostResponse)
+        XCTAssertEqual(diagnostics.actionPosts, 1, "An uncertain action must never be replayed")
+        XCTAssertEqual(diagnostics.receiptReads, 1, "Only the bounded receipt read may run automatically")
+        XCTAssertFalse(diagnostics.receiptDelayCompleted, "The server-side receipt response must still be held beyond the UI deadline")
+        XCTAssertNotNil(UUID(uuidString: diagnostics.requestId))
+
+        let receiptReleaseDeadline = Date().addingTimeInterval(5)
+        while !diagnostics.receiptDelayCompleted && Date() < receiptReleaseDeadline {
+            try await Task.sleep(nanoseconds: 100_000_000)
+            diagnostics = try await observer.responseLossDiagnostics(at: api)
+        }
+        XCTAssertTrue(diagnostics.receiptDelayCompleted, "The committed receipt response must eventually arrive after the deadline")
+        XCTAssertTrue(recovery.label.contains("unknown"), "A late canonical receipt must not clear the pending state")
+        XCTAssertFalse(submit.isEnabled)
+
+        app.buttons["Check action receipt"].tap()
+        XCTAssertTrue(recovery.waitForLabelContaining("Confirmed receipt", timeout: 10))
+        let history = try await observer.actions(at: api)
+        let matching = history.filter { $0.action == action }
+        XCTAssertEqual(matching.count, 1)
+        let receipt = try XCTUnwrap(matching.first)
+        XCTAssertTrue(recovery.label.contains(receipt.id))
+        let confirmed = try await observer.responseLossDiagnostics(at: api)
+        XCTAssertEqual(confirmed.actionPosts, 1)
+        XCTAssertEqual(confirmed.receiptReads, 2)
+
+        let (receiptData, receiptResponse) = try await observer.data(from: URL(string: "/api/actions/receipts/\(confirmed.requestId)", relativeTo: api)!)
+        XCTAssertEqual((receiptResponse as? HTTPURLResponse)?.statusCode, 200)
+        XCTAssertEqual(try JSONDecoder().decode(ActionReceipt.self, from: receiptData).id, receipt.id)
+        app.buttons["Sign out"].tap()
+        XCTAssertTrue(app.staticTexts.matching(identifier: "connection-status").firstMatch.waitForLabel("signed out", timeout: 10))
     }
 
     @MainActor
@@ -266,7 +336,7 @@ final class RemoteCodeMobileProofUITests: XCTestCase {
         } else {
             XCTAssertTrue(status.waitForLabelContaining("Confirmed receipt", timeout: 20))
             XCTAssertLessThan(ProcessInfo.processInfo.systemUptime - waitStartedAt, 12, "Allow at most two seconds of UI scheduling beyond the ten-second request deadline")
-            XCTAssertFalse(app.buttons["Check action receipt"].exists)
+            XCTAssertTrue(app.buttons["Check action receipt"].waitForNonExistence(timeout: 5))
         }
         let history = try await observer.actions(at: api)
         let receipt = try XCTUnwrap(history.first(where: { $0.action == action }))
@@ -549,6 +619,7 @@ private struct NativeFailureDiagnostics: Decodable {
     let failedRead: Bool
     let receiptReads: Int
     let receiptReadAtMs: [Int]
+    let receiptDelayCompleted: Bool
     let actionPosts: Int
     let requestId: String
 }
@@ -568,6 +639,12 @@ private extension XCUIElement {
 }
 
 private extension URLSession {
+    func responseLossDiagnostics(at baseURL: URL) async throws -> NativeFailureDiagnostics {
+        let (data, response) = try await data(from: URL(string: "/__test__/response-loss", relativeTo: baseURL)!)
+        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
+        return try JSONDecoder().decode(NativeFailureDiagnostics.self, from: data)
+    }
+
     func lookupAuthReceipt(at baseURL: URL, requestId: String, password: String) async throws -> AuthReceiptLookup {
         var request = URLRequest(url: URL(string: "/api/auth/receipts/\(requestId)/lookup", relativeTo: baseURL)!)
         request.httpMethod = "POST"

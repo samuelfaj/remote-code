@@ -36,6 +36,12 @@ if [[ "${RC_NATIVE_TEST_HEALTH:-0}" == "1" ]]; then
   TEST_SELECTION="RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testReadinessShowsRealSQLiteLockAndRecoversWithoutBlockingLogin"
   SKIP_TEST_ARG=""
 fi
+if [[ "${RC_NATIVE_TEST_DEADLINE:-0}" == "1" ]]; then
+  API_ENTRY="apps/api/test-support/native-recovery.ts"
+  TEST_SELECTION="RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testActionDeadlineStartsAtTapAndIgnoresLateReceiptWithoutReplay"
+  SKIP_TEST_ARG=""
+  EXTRA_SKIP_ARGS=()
+fi
 
 if [[ -z "$DEVICE_ID" ]]; then
   DEVICE_ID="$(xcrun simctl list devices booted --json | python3 -c 'import json,sys; d=json.load(sys.stdin)["devices"]; print(next((x["udid"] for k,v in d.items() if "iOS" in k for x in v if x["state"] == "Booted"), ""))')"
@@ -139,7 +145,7 @@ if ! EXPO_PUBLIC_API_ORIGIN="$API_ORIGIN" \
   exit 1
 fi
 
-python3 - "$DATABASE_PATH" "${RC_NATIVE_TEST_RECOVERY:-0}" "${RC_NATIVE_TEST_HEALTH:-0}" "${RC_NATIVE_TEST_AUTO_ACTION:-0}" <<'PY'
+python3 - "$DATABASE_PATH" "${RC_NATIVE_TEST_RECOVERY:-0}" "${RC_NATIVE_TEST_HEALTH:-0}" "${RC_NATIVE_TEST_AUTO_ACTION:-0}" "${RC_NATIVE_TEST_DEADLINE:-0}" <<'PY'
 import json
 import sqlite3
 import sys
@@ -151,6 +157,19 @@ try:
     auth_rows = connection.execute("SELECT request_id, kind, target_request_id, outcome FROM auth_requests ORDER BY created_at").fetchall()
 finally:
     connection.close()
+if sys.argv[5] == "1":
+    if len(rows) != 1 or not rows[0][1].startswith("native-deadline-") or session_count != 0:
+        raise SystemExit(f"Expected one recovered native deadline action and no remaining sessions: actions={rows!r}, sessions={session_count}")
+    connection = sqlite3.connect(sys.argv[1])
+    try:
+        mappings = connection.execute("SELECT request_id, action_id FROM action_requests WHERE action_id = ?", (rows[0][0],)).fetchall()
+        integrity = connection.execute("PRAGMA quick_check").fetchone()
+    finally:
+        connection.close()
+    if len(mappings) != 1 or mappings[0][1] != rows[0][0] or integrity != ("ok",):
+        raise SystemExit(f"Expected one matching durable deadline receipt and healthy SQLite: mappings={mappings!r}, integrity={integrity!r}")
+    print(json.dumps({"deadlineAction": rows[0], "mapping": mappings[0], "quick_check": integrity[0]}))
+    sys.exit(0)
 if sys.argv[4] == "1":
     if len(rows) != 3 or any(not row[1].startswith("native-auto-") for row in rows):
         raise SystemExit(f"Expected three distinct automatic native actions: {rows!r}")

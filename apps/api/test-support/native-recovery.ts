@@ -21,11 +21,15 @@ export function createNativeRecoveryTestApi(databasePath: string, password: stri
   let receiptReads = 0;
   let receiptReadAtMs: number[] = [];
   let receiptFault: "fail" | "stall" | "malformed" | null = "fail";
+  let actionDeadlineScenario = false;
+  let lateReceiptCompleted = false;
   let actionPosts = 0;
   let requestId: string | null = null;
   return new Elysia()
-    .onBeforeHandle({ as: "global" }, ({ request, body, set }) => {
+    .onBeforeHandle({ as: "global" }, async ({ request, body, set }) => {
       const path = new URL(request.url).pathname;
+      // The six-second preflight plus the delayed receipt below crosses the tap-relative budget.
+      if (actionDeadlineScenario && request.method === "GET" && path === "/api/version") await Bun.sleep(6_000);
       if (request.method === "POST" && typeof body === "object" && body !== null && "requestId" in body && typeof body.requestId === "string") {
         if (path === "/api/auth/login") { loginPosts++; loginRequestId = body.requestId; }
         if (path.endsWith("/revoke")) { revokePosts++; revokeRequestId = body.requestId; }
@@ -49,6 +53,10 @@ export function createNativeRecoveryTestApi(databasePath: string, password: stri
       if (lostResponse && request.method === "GET" && path.startsWith("/api/actions/receipts/")) {
         receiptReads++;
         receiptReadAtMs.push(Math.trunc(performance.now()));
+        if (actionDeadlineScenario && !lateReceiptCompleted) {
+          // Keep the canonical read on the far side of the UI deadline.
+          await Bun.sleep(5_000);
+        }
         if (!failedRead && receiptFault) {
           failedRead = true;
           if (receiptFault === "stall") return new Response(new ReadableStream({ start(controller) {
@@ -74,6 +82,9 @@ export function createNativeRecoveryTestApi(databasePath: string, password: stri
     })
     .onAfterHandle({ as: "global" }, ({ request, body, set }) => {
       const path = new URL(request.url).pathname;
+      if (actionDeadlineScenario && lostResponse && request.method === "GET" && path.startsWith("/api/actions/receipts/")) {
+        lateReceiptCompleted = true;
+      }
       const matchesAuth = request.method === "POST" && (
         (path === "/api/auth/login" && (authFault === "login-cookie" || authFault === "login-body" || authFault === "login-401"))
         || (path.endsWith("/revoke") && (authFault === "revoke-body" || authFault === "revoke-401"))
@@ -95,6 +106,8 @@ export function createNativeRecoveryTestApi(databasePath: string, password: stri
       if (!armed || lostResponse || request.method !== "POST" || new URL(request.url).pathname !== "/api/actions" || set.status !== 201) return;
       lostResponse = true;
       if (typeof body === "object" && body !== null && "requestId" in body && typeof body.requestId === "string") requestId = body.requestId;
+      // The action has committed; only its response body is malformed.
+      if (actionDeadlineScenario) return new Response('{"id":', { status: 201, headers: { "content-type": "application/json" } });
       return new Response(new ReadableStream({
         start(controller) { controller.enqueue(new TextEncoder().encode('{"id":')); },
       }), { status: 201, headers: { "content-type": "application/json" } });
@@ -161,17 +174,22 @@ export function createNativeRecoveryTestApi(databasePath: string, password: stri
       failedRead = false;
       receiptReads = 0;
       receiptReadAtMs = [];
-      receiptFault = body?.receiptFault === "none" ? null : body?.receiptFault ?? "fail";
+      actionDeadlineScenario = body?.actionDeadline === true;
+      lateReceiptCompleted = false;
+      receiptFault = actionDeadlineScenario ? null : body?.receiptFault === "none" ? null : body?.receiptFault ?? "fail";
       actionPosts = 0;
       requestId = null;
       return { armed: true };
-    }, { body: t.Optional(t.Object({ receiptFault: t.Union([t.Literal("fail"), t.Literal("stall"), t.Literal("malformed"), t.Literal("none")]) })) })
+    }, { body: t.Optional(t.Object({
+      receiptFault: t.Optional(t.Union([t.Literal("fail"), t.Literal("stall"), t.Literal("malformed"), t.Literal("none")])),
+      actionDeadline: t.Optional(t.Literal(true)),
+    })) })
     .get("/__test__/response-loss", ({ request, set }) => {
       if (!isAuthenticated(databasePath, request)) {
         set.status = 401;
         return { error: "unauthorized" };
       }
-      return { lostResponse, failedRead, receiptReads, receiptReadAtMs, actionPosts, requestId };
+      return { lostResponse, failedRead, receiptReads, receiptReadAtMs, receiptDelayCompleted: lateReceiptCompleted, actionPosts, requestId };
     });
 }
 
