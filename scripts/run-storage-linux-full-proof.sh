@@ -3,6 +3,11 @@ set -euo pipefail
 
 ROOT="${RC_STORAGE_LINUX_WORK_DIR:?Set RC_STORAGE_LINUX_WORK_DIR to a caller-owned absolute directory}"
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+PROOF_STATUS="$(git -C "$REPO" status --porcelain=v1 --untracked-files=all -- \
+  apps/api/src apps/api/test-support/storage-linux-full-proof.ts \
+  apps/api/test-support/storage-linux-api.ts scripts/run-storage-linux-full-proof.sh)" \
+  || { echo 'Cannot verify proof source revision' >&2; exit 2; }
+[[ -z "$PROOF_STATUS" ]] || { echo 'Proof source is dirty; run from a committed clean source revision' >&2; exit 2; }
 [[ "$ROOT" == /* && -d "$ROOT" && ! -L "$ROOT" ]] || { echo 'Proof directory must be an existing absolute non-symlink directory' >&2; exit 2; }
 OWNER="$(stat -f '%u' "$ROOT" 2>/dev/null || stat -c '%u' "$ROOT")"
 [[ "$OWNER" == "$(id -u)" ]] || { echo 'Proof directory owner differs from caller' >&2; exit 2; }
@@ -55,5 +60,6 @@ docker run --rm --cidfile "$CIDFILE" --name "$NAME" --label "$LABEL" \
   --tmpfs /var/lib/remotecode:rw,size=48m,mode=0700 \
   --mount "type=bind,src=$REPO/apps/api/src,dst=/workspace/apps/api/src,readonly" \
   --mount "type=bind,src=$REPO/apps/api/test-support/storage-linux-full-proof.ts,dst=/workspace/apps/api/test-support/storage-linux-full-proof.ts,readonly" \
+  --mount "type=bind,src=$REPO/apps/api/test-support/storage-linux-api.ts,dst=/workspace/apps/api/test-support/storage-linux-api.ts,readonly" \
   --env DATABASE_PATH=/var/lib/remotecode/remotecode.sqlite \
   "$IMAGE_ID" /workspace/apps/api/test-support/storage-linux-full-proof.ts
