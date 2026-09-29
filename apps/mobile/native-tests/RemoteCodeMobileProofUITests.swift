@@ -577,6 +577,82 @@ final class RemoteCodeMobileProofUITests: XCTestCase {
     }
 
     @MainActor
+    func testNativeLoginPreflightDeadlineSendsNoRequestAndAllowsManualRetry() async throws {
+        let app = XCUIApplication(bundleIdentifier: "com.remotecode.mobileproof")
+        let observer = URLSession(configuration: .ephemeral)
+        app.launch()
+        let apiLabel = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Host: ")).firstMatch
+        XCTAssertTrue(apiLabel.waitForExistence(timeout: 10), "The installed app must identify its configured test API")
+        let api = try XCTUnwrap(URL(string: String(apiLabel.label.dropFirst("Host: ".count))))
+        XCTAssertEqual(api.host, "127.0.0.1", "The native preflight failure test must use its local API")
+        XCTAssertFalse(app.buttons["Check auth receipt"].exists, "A per-run API origin must not restore an earlier login identity")
+        try await observer.signIn(at: api, password: password)
+        try await armAuthFault("login-before", using: observer, loginPreflightDeadline: true, at: api)
+        enterPassword(app)
+
+        let tappedAt = ProcessInfo.processInfo.systemUptime
+        let signIn = app.buttons["Sign in to host"]
+        signIn.tap()
+        let (startedData, startedResponse) = try await observer.data(from: URL(string: "/__test__/wait-login-version", relativeTo: api)!)
+        XCTAssertEqual((startedResponse as? HTTPURLResponse)?.statusCode, 200)
+        let started = try XCTUnwrap(JSONSerialization.jsonObject(with: startedData) as? [String: Any])
+        XCTAssertEqual(started["loginVersionRequests"] as? Int, 1)
+
+        let oldPerRequestTimeoutAt = tappedAt + 11
+        while ProcessInfo.processInfo.systemUptime < oldPerRequestTimeoutAt {
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        XCTAssertLessThan(ProcessInfo.processInfo.systemUptime - tappedAt, 12)
+        XCTAssertFalse(signIn.isEnabled, "The tap-relative 13-second budget must remain active after the old per-request timeout")
+        let recovery = app.staticTexts.matching(identifier: "auth-recovery-status").firstMatch
+        XCTAssertFalse(recovery.exists, "The host capability request has not reached the total deadline yet")
+
+        XCTAssertTrue(recovery.waitForLabelContaining("The sign-in deadline expired before the host could be checked", timeout: 4))
+        XCTAssertLessThan(ProcessInfo.processInfo.systemUptime - tappedAt, 14.5)
+        XCTAssertTrue(recovery.label.contains("No login request was sent"))
+        XCTAssertTrue(signIn.isEnabled, "Capability expiry is a known no-effect result and permits a user-initiated retry")
+        XCTAssertFalse(app.buttons["Check auth receipt"].exists, "No keyed login identity was saved before capability negotiation")
+
+        let diagnosticsURL = URL(string: "/__test__/auth-diagnostics", relativeTo: api)!
+        func diagnostics() async throws -> [String: Any] {
+            let (data, response) = try await observer.data(from: diagnosticsURL)
+            XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
+            return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        }
+        var beforeRelease = try await diagnostics()
+        XCTAssertEqual(beforeRelease["loginVersionRequests"] as? Int, 1)
+        XCTAssertEqual(beforeRelease["loginPosts"] as? Int, 0)
+        XCTAssertNil(beforeRelease["loginRequestId"] as? String)
+        XCTAssertEqual(beforeRelease["loginReceiptReads"] as? Int, 0)
+        XCTAssertEqual(beforeRelease["loginReceiptExists"] as? Bool, false)
+
+        var release = URLRequest(url: URL(string: "/__test__/release-login-version", relativeTo: api)!)
+        release.httpMethod = "POST"
+        let (_, releaseResponse) = try await observer.data(for: release)
+        XCTAssertEqual((releaseResponse as? HTTPURLResponse)?.statusCode, 200)
+        let (finishedData, finishedResponse) = try await observer.data(from: URL(string: "/__test__/wait-login-version-finished", relativeTo: api)!)
+        XCTAssertEqual((finishedResponse as? HTTPURLResponse)?.statusCode, 200)
+        let finished = try XCTUnwrap(JSONSerialization.jsonObject(with: finishedData) as? [String: Any])
+        XCTAssertEqual(finished["loginVersionRequests"] as? Int, 1)
+        XCTAssertEqual(finished["loginVersionRequestFinished"] as? Bool, true)
+        beforeRelease = try await diagnostics()
+        XCTAssertEqual(beforeRelease["loginPosts"] as? Int, 0, "A late capability response must not start the expired login")
+        XCTAssertNil(beforeRelease["loginRequestId"] as? String)
+        XCTAssertTrue(recovery.label.contains("No login request was sent"))
+
+        signIn.tap()
+        XCTAssertTrue(app.staticTexts.matching(identifier: "connection-status").firstMatch.waitForLabel("connected", timeout: 15), "A fresh user-initiated attempt may succeed after capability negotiation recovers")
+        let afterRetry = try await diagnostics()
+        XCTAssertEqual(afterRetry["loginVersionRequests"] as? Int, 2)
+        XCTAssertEqual(afterRetry["loginPosts"] as? Int, 1, "Only the explicit retry may send a login")
+        let freshRequestId = try XCTUnwrap(afterRetry["loginRequestId"] as? String)
+        XCTAssertNotNil(UUID(uuidString: freshRequestId))
+        XCTAssertEqual(afterRetry["loginReceiptExists"] as? Bool, true)
+        app.buttons["Sign out"].tap()
+        XCTAssertTrue(app.staticTexts.matching(identifier: "connection-status").firstMatch.waitForLabel("signed out", timeout: 15))
+    }
+
+    @MainActor
     func testAuthBeforeAcceptanceRequiresFenceBeforeNewLogin() async throws {
         let observer = URLSession(configuration: .ephemeral)
         try await observer.signIn(at: api, password: password)
@@ -800,12 +876,13 @@ final class RemoteCodeMobileProofUITests: XCTestCase {
         app.staticTexts["Host connection"].firstMatch.tap()
     }
 
-    private func armAuthFault(_ fault: String, using session: URLSession, loginDeadline: Bool = false, at baseURL: URL? = nil) async throws {
+    private func armAuthFault(_ fault: String, using session: URLSession, loginDeadline: Bool = false, loginPreflightDeadline: Bool = false, at baseURL: URL? = nil) async throws {
         var request = URLRequest(url: URL(string: "/__test__/auth-fault", relativeTo: baseURL ?? api)!)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         var body: [String: Any] = ["fault": fault]
         if loginDeadline { body["loginDeadline"] = true }
+        if loginPreflightDeadline { body["loginPreflightDeadline"] = true }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         let (_, response) = try await session.data(for: request)
         XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)

@@ -39,9 +39,26 @@ export function createNativeRecoveryTestApi(databasePath: string, password: stri
   let markActionPostAccepted: (() => void) | null = null;
   let loginPostStarted: Promise<void> | null = null;
   let markLoginPostStarted: (() => void) | null = null;
+  let loginPreflightDeadlineScenario = false;
+  let loginVersionRequests = 0;
+  let loginVersionGate: Promise<void> | null = null;
+  let releaseLoginVersionGate: (() => void) | null = null;
+  let loginVersionStarted: Promise<void> | null = null;
+  let markLoginVersionStarted: (() => void) | null = null;
+  let loginVersionFinished: Promise<void> | null = null;
+  let markLoginVersionFinished: (() => void) | null = null;
+  let loginVersionRequestFinished = false;
   return new Elysia()
     .onBeforeHandle({ as: "global" }, async ({ request, body, set }) => {
       const path = new URL(request.url).pathname;
+      if (request.method === "GET" && path === "/api/version") {
+        loginVersionRequests++;
+        if (loginPreflightDeadlineScenario) {
+          if (!loginVersionGate) throw new Error("Missing delayed login capability gate");
+          markLoginVersionStarted?.();
+          await loginVersionGate;
+        }
+      }
       if (request.method === "GET" && path === "/api/version" && (actionDeadlineScenario || (actionDeadlinePostDelayScenario && !actionPostDelayCompleted))) {
         // The six-second preflight leaves little of the tap-relative budget for the POST.
         await Bun.sleep(6_000);
@@ -119,6 +136,10 @@ export function createNativeRecoveryTestApi(databasePath: string, password: stri
     })
     .onAfterHandle({ as: "global" }, ({ request, body, set }) => {
       const path = new URL(request.url).pathname;
+      if (request.method === "GET" && path === "/api/version" && loginVersionFinished && !loginVersionRequestFinished) {
+        loginVersionRequestFinished = true;
+        markLoginVersionFinished?.();
+      }
       if (actionDeadlineScenario && lostResponse && request.method === "GET" && path.startsWith("/api/actions/receipts/")) {
         lateReceiptCompleted = true;
       }
@@ -187,11 +208,11 @@ export function createNativeRecoveryTestApi(databasePath: string, password: stri
         set.status = 401;
         return { error: "unauthorized" };
       }
-      if (body.loginDeadline && body.fault !== "login-before") {
+      if ((body.loginDeadline || body.loginPreflightDeadline) && body.fault !== "login-before") {
         set.status = 422;
         return { error: "login_deadline_requires_preacceptance_fault" };
       }
-      if (body.fault === "login-cookie" || body.fault === "login-cookie-stall" || body.loginDeadline) {
+      if (body.fault === "login-cookie" || body.fault === "login-cookie-stall" || body.loginDeadline || body.loginPreflightDeadline) {
         loginPosts = 0;
         loginReceiptReads = 0;
         revokePosts = 0;
@@ -201,6 +222,20 @@ export function createNativeRecoveryTestApi(databasePath: string, password: stri
         logoutRequestId = null;
       }
       authDeadlineScenario = body.loginDeadline === true;
+      loginPreflightDeadlineScenario = body.loginPreflightDeadline === true;
+      loginVersionRequests = 0;
+      loginVersionRequestFinished = false;
+      loginVersionGate = null;
+      releaseLoginVersionGate = null;
+      loginVersionStarted = null;
+      markLoginVersionStarted = null;
+      loginVersionFinished = null;
+      markLoginVersionFinished = null;
+      if (loginPreflightDeadlineScenario) {
+        loginVersionGate = new Promise<void>((resolve) => { releaseLoginVersionGate = resolve; });
+        loginVersionStarted = new Promise<void>((resolve) => { markLoginVersionStarted = resolve; });
+        loginVersionFinished = new Promise<void>((resolve) => { markLoginVersionFinished = resolve; });
+      }
       loginPostDelayCompleted = false;
       loginPostDelayGate = null;
       releaseLoginPostDelay = null;
@@ -210,12 +245,13 @@ export function createNativeRecoveryTestApi(databasePath: string, password: stri
         loginPostDelayGate = new Promise<void>((resolve) => { releaseLoginPostDelay = resolve; });
         loginPostStarted = new Promise<void>((resolve) => { markLoginPostStarted = resolve; });
       }
-      authFault = body.fault === "login-cookie-stall" ? "login-cookie" : body.fault;
+      authFault = loginPreflightDeadlineScenario ? null : body.fault === "login-cookie-stall" ? "login-cookie" : body.fault;
       stallLoginReceipt = body.fault === "login-cookie-stall";
       return { armed: true };
     }, { body: t.Object({
       fault: t.Union([t.Literal("login-cookie"), t.Literal("login-cookie-stall"), t.Literal("login-body"), t.Literal("login-before"), t.Literal("login-401"), t.Literal("revoke-body"), t.Literal("revoke-401"), t.Literal("logout-body")]),
       loginDeadline: t.Optional(t.Literal(true)),
+      loginPreflightDeadline: t.Optional(t.Literal(true)),
     }) })
     .get("/__test__/auth-diagnostics", ({ request, set }) => {
       if (!isAuthenticated(databasePath, request)) {
@@ -231,7 +267,7 @@ export function createNativeRecoveryTestApi(databasePath: string, password: stri
           `).get("local", loginRequestId));
         } finally { database.close(); }
       }
-      return { loginPosts, loginReceiptReads, revokePosts, logoutPosts, loginRequestId, revokeRequestId, logoutRequestId, loginPostDelayCompleted, loginReceiptExists };
+      return { loginPosts, loginReceiptReads, revokePosts, logoutPosts, loginRequestId, revokeRequestId, logoutRequestId, loginPostDelayCompleted, loginReceiptExists, loginVersionRequests, loginVersionRequestFinished };
     })
     .get("/__test__/wait-login-post", async ({ request, set }) => {
       if (!isAuthenticated(databasePath, request)) {
@@ -260,6 +296,47 @@ export function createNativeRecoveryTestApi(databasePath: string, password: stri
       authDeadlineScenario = false;
       release();
       return { released: true };
+    })
+    .get("/__test__/wait-login-version", async ({ request, set }) => {
+      if (!isAuthenticated(databasePath, request)) {
+        set.status = 401;
+        return { error: "unauthorized" };
+      }
+      const started = loginVersionStarted;
+      if (!loginPreflightDeadlineScenario || !started) {
+        set.status = 409;
+        return { waiting: false };
+      }
+      await started;
+      return { loginVersionRequests };
+    })
+    .post("/__test__/release-login-version", ({ request, set }) => {
+      if (!isAuthenticated(databasePath, request)) {
+        set.status = 401;
+        return { error: "unauthorized" };
+      }
+      if (!loginPreflightDeadlineScenario || loginVersionRequests !== 1 || !releaseLoginVersionGate) {
+        set.status = 409;
+        return { released: false };
+      }
+      const release = releaseLoginVersionGate;
+      releaseLoginVersionGate = null;
+      loginPreflightDeadlineScenario = false;
+      release();
+      return { released: true };
+    })
+    .get("/__test__/wait-login-version-finished", async ({ request, set }) => {
+      if (!isAuthenticated(databasePath, request)) {
+        set.status = 401;
+        return { error: "unauthorized" };
+      }
+      const finished = loginVersionFinished;
+      if (!finished || loginVersionRequests < 1) {
+        set.status = 409;
+        return { waiting: false };
+      }
+      await finished;
+      return { loginVersionRequests, loginVersionRequestFinished };
     })
     .post("/__test__/lose-action-response", ({ request, body, set }) => {
       if (!isAuthenticated(databasePath, request)) {

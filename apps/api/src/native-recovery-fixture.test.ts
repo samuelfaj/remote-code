@@ -207,3 +207,86 @@ it("holds a real keyed login before acceptance until its caller deadline is obse
     rmSync(directory, { recursive: true, force: true });
   }
 }, 8_000);
+
+it("holds capability negotiation before any keyed login mutation until explicitly released", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "rc018-native-preflight-deadline-"));
+  const databasePath = join(directory, "host.sqlite");
+  const password = crypto.randomUUID();
+  const app = createNativeRecoveryTestApi(databasePath, password);
+  const adminLogin = await app.handle(new Request("https://localhost/api/auth/login", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ password }),
+  }));
+  const cookie = adminLogin.headers.get("set-cookie")?.split(";")[0];
+  if (!cookie) throw new Error("Missing authenticated native test session");
+  const server = app.listen(0);
+  const port = server.server?.port;
+  if (!port) throw new Error("Native fixture did not listen");
+  const origin = `http://127.0.0.1:${port}`;
+  let versionRequest: Promise<Response> | null = null;
+  let releasePending = false;
+  try {
+    const armed = await fetch(`${origin}/__test__/auth-fault`, {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ fault: "login-before", loginPreflightDeadline: true }),
+    });
+    expect(armed.status).toBe(200);
+
+    versionRequest = fetch(`${origin}/api/version`);
+    releasePending = true;
+    const started = await fetch(`${origin}/__test__/wait-login-version`, { headers: { cookie } });
+    expect(started.status).toBe(200);
+    expect(await started.json()).toEqual({ loginVersionRequests: 1 });
+    const diagnosticsBeforeRelease = await (await fetch(`${origin}/__test__/auth-diagnostics`, { headers: { cookie } })).json() as {
+      loginPosts: number;
+      loginReceiptReads: number;
+      loginRequestId: string | null;
+      loginReceiptExists: boolean;
+      loginVersionRequests: number;
+    };
+    expect(diagnosticsBeforeRelease).toMatchObject({
+      loginPosts: 0,
+      loginReceiptReads: 0,
+      loginRequestId: null,
+      loginReceiptExists: false,
+      loginVersionRequests: 1,
+    });
+
+    const beforeRelease = new Database(databasePath, { readonly: true, create: false });
+    try {
+      expect(beforeRelease.query<{ count: number }, []>("SELECT COUNT(*) AS count FROM auth_requests WHERE kind = 'login'").get()!.count).toBe(0);
+      expect(beforeRelease.query<{ count: number }, []>("SELECT COUNT(*) AS count FROM sessions").get()!.count).toBe(1);
+      expect(beforeRelease.query<{ quick_check: string }, []>("PRAGMA quick_check").get()!.quick_check).toBe("ok");
+    } finally { beforeRelease.close(); }
+
+    const released = await fetch(`${origin}/__test__/release-login-version`, { method: "POST", headers: { cookie } });
+    expect(released.status).toBe(200);
+    expect(await released.json()).toEqual({ released: true });
+    releasePending = false;
+
+    const capabilityResponse = await versionRequest;
+    expect(capabilityResponse.status).toBe(200);
+    const finished = await fetch(`${origin}/__test__/wait-login-version-finished`, { headers: { cookie } });
+    expect(finished.status).toBe(200);
+    expect(await finished.json()).toEqual({ loginVersionRequests: 1, loginVersionRequestFinished: true });
+    const diagnosticsAfterRelease = await (await fetch(`${origin}/__test__/auth-diagnostics`, { headers: { cookie } })).json() as typeof diagnosticsBeforeRelease;
+    expect(diagnosticsAfterRelease).toMatchObject({ loginPosts: 0, loginReceiptReads: 0, loginRequestId: null, loginReceiptExists: false });
+
+    const database = new Database(databasePath, { readonly: true, create: false });
+    try {
+      expect(database.query<{ count: number }, []>("SELECT COUNT(*) AS count FROM auth_requests WHERE kind = 'login'").get()!.count).toBe(0);
+      expect(database.query<{ count: number }, []>("SELECT COUNT(*) AS count FROM sessions").get()!.count).toBe(1);
+      expect(database.query<{ quick_check: string }, []>("PRAGMA quick_check").get()!.quick_check).toBe("ok");
+    } finally { database.close(); }
+
+    const loggedOut = await fetch(`${origin}/api/auth/logout`, { method: "POST", headers: { cookie, "content-type": "application/json" }, body: "{}" });
+    expect(loggedOut.status).toBe(204);
+  } finally {
+    if (releasePending) {
+      await fetch(`${origin}/__test__/release-login-version`, { method: "POST", headers: { cookie } }).catch(() => null);
+      await versionRequest?.catch(() => null);
+    }
+    await server.stop(true);
+    rmSync(directory, { recursive: true, force: true });
+  }
+}, 8_000);
