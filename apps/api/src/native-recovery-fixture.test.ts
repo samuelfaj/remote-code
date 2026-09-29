@@ -48,3 +48,79 @@ it("injects native response loss only after the real action commits and preserve
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+it("returns the canonical action receipt when the real handler accepts after a delay", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "rc018-native-post-delay-"));
+  const password = "native-post-delay-password";
+  const app = createNativeRecoveryTestApi(join(directory, "host.sqlite"), password);
+  const login = await app.handle(new Request("https://localhost/api/auth/login", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ password }),
+  }));
+  const cookie = login.headers.get("set-cookie")?.split(";")[0];
+  if (!cookie) throw new Error("Missing authenticated native test session");
+  const server = app.listen(0);
+  const port = server.server?.port;
+  if (!port) throw new Error("Native fixture did not listen");
+  const origin = `http://127.0.0.1:${port}`;
+  const client = createApiClient(origin, { timeoutMs: 8_000, headers: { cookie } });
+  let releasePending = false;
+  try {
+    const armed = await fetch(`${origin}/__test__/lose-action-response`, {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ actionDeadlinePostDelay: true }),
+    });
+    expect(armed.status).toBe(200);
+    releasePending = true;
+
+    const requestId = crypto.randomUUID();
+    const action = "native delayed acceptance response proof";
+    const submission = client.api.actions.post({ requestId, action });
+    type ActionPostDelayDiagnostics = {
+      actionPosts: number;
+      actionPostDelayCompleted: boolean;
+      lostResponse: boolean;
+      receiptReads: number;
+      requestId: string;
+    };
+    let diagnostics = await (await fetch(`${origin}/__test__/response-loss`, { headers: { cookie } })).json() as ActionPostDelayDiagnostics;
+    for (let attempt = 0; diagnostics.actionPosts !== 1 && attempt < 100; attempt++) {
+      await Bun.sleep(20);
+      diagnostics = await (await fetch(`${origin}/__test__/response-loss`, { headers: { cookie } })).json() as ActionPostDelayDiagnostics;
+    }
+    expect(diagnostics).toMatchObject({ actionPosts: 1, actionPostDelayCompleted: false, receiptReads: 0 });
+    const historyBeforeAcceptance = await client.api.actions.get();
+    if (!historyBeforeAcceptance.data || !("actions" in historyBeforeAcceptance.data) || !Array.isArray(historyBeforeAcceptance.data.actions)) throw new Error("Missing real action history");
+    expect(historyBeforeAcceptance.data.actions).toEqual([]);
+
+    const released = await fetch(`${origin}/__test__/release-action-post`, { method: "POST", headers: { cookie } });
+    expect(released.status).toBe(200);
+    expect(await released.json()).toEqual({ released: true });
+    releasePending = false;
+
+    const submitted = await submission;
+    if (submitted.error || !submitted.data || !("id" in submitted.data)) throw new Error("Missing canonical POST receipt");
+    expect(submitted.data.action).toBe(action);
+
+    const canonical = await client.api.actions.receipts({ requestId }).get();
+    if (canonical.error || !canonical.data || !("id" in canonical.data)) throw new Error("Missing canonical receipt lookup");
+    expect(canonical.data).toEqual(submitted.data);
+    const history = await client.api.actions.get();
+    if (!history.data || !("actions" in history.data) || !Array.isArray(history.data.actions)) throw new Error("Missing real action history");
+    expect(history.data.actions).toEqual([canonical.data]);
+
+    diagnostics = await (await fetch(`${origin}/__test__/response-loss`, { headers: { cookie } })).json() as typeof diagnostics;
+    expect(diagnostics).toMatchObject({
+      lostResponse: false,
+      actionPostDelayCompleted: true,
+      actionPosts: 1,
+      requestId,
+    });
+  } finally {
+    if (releasePending) {
+      await fetch(`${origin}/__test__/release-action-post`, { method: "POST", headers: { cookie } }).catch(() => null);
+    }
+    await server.stop(true);
+    rmSync(directory, { recursive: true, force: true });
+  }
+}, 8_000);

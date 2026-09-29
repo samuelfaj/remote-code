@@ -22,14 +22,20 @@ export function createNativeRecoveryTestApi(databasePath: string, password: stri
   let receiptReadAtMs: number[] = [];
   let receiptFault: "fail" | "stall" | "malformed" | null = "fail";
   let actionDeadlineScenario = false;
+  let actionDeadlinePostDelayScenario = false;
   let lateReceiptCompleted = false;
+  let actionPostDelayCompleted = false;
+  let actionPostDelayGate: Promise<void> | null = null;
+  let releaseActionPostDelay: (() => void) | null = null;
   let actionPosts = 0;
   let requestId: string | null = null;
   return new Elysia()
     .onBeforeHandle({ as: "global" }, async ({ request, body, set }) => {
       const path = new URL(request.url).pathname;
-      // The six-second preflight plus the delayed receipt below crosses the tap-relative budget.
-      if (actionDeadlineScenario && request.method === "GET" && path === "/api/version") await Bun.sleep(6_000);
+      if (request.method === "GET" && path === "/api/version" && (actionDeadlineScenario || (actionDeadlinePostDelayScenario && !actionPostDelayCompleted))) {
+        // The six-second preflight leaves little of the tap-relative budget for the POST.
+        await Bun.sleep(6_000);
+      }
       if (request.method === "POST" && typeof body === "object" && body !== null && "requestId" in body && typeof body.requestId === "string") {
         if (path === "/api/auth/login") { loginPosts++; loginRequestId = body.requestId; }
         if (path.endsWith("/revoke")) { revokePosts++; revokeRequestId = body.requestId; }
@@ -49,8 +55,15 @@ export function createNativeRecoveryTestApi(databasePath: string, password: stri
         set.status = 503;
         return { error: "injected_before_login" };
       }
-      if (armed && request.method === "POST" && path === "/api/actions") actionPosts++;
-      if (lostResponse && request.method === "GET" && path.startsWith("/api/actions/receipts/")) {
+      if (armed && request.method === "POST" && path === "/api/actions") {
+        actionPosts++;
+        if (actionDeadlinePostDelayScenario) {
+          if (typeof body === "object" && body !== null && "requestId" in body && typeof body.requestId === "string") requestId = body.requestId;
+          if (!actionPostDelayGate) throw new Error("Missing delayed action gate");
+          await actionPostDelayGate;
+        }
+      }
+      if ((lostResponse || (actionDeadlinePostDelayScenario && actionPosts > 0)) && request.method === "GET" && path.startsWith("/api/actions/receipts/")) {
         receiptReads++;
         receiptReadAtMs.push(Math.trunc(performance.now()));
         if (actionDeadlineScenario && !lateReceiptCompleted) {
@@ -103,7 +116,11 @@ export function createNativeRecoveryTestApi(databasePath: string, password: stri
           start(controller) { controller.enqueue(new TextEncoder().encode('{"receipt":')); },
         }), { status: 200, headers: { "content-type": "application/json" } });
       }
-      if (!armed || lostResponse || request.method !== "POST" || new URL(request.url).pathname !== "/api/actions" || set.status !== 201) return;
+      if (actionDeadlinePostDelayScenario && armed && !lostResponse && request.method === "POST" && path === "/api/actions" && set.status === 201) {
+        actionPostDelayCompleted = true;
+        return;
+      }
+      if (!armed || lostResponse || request.method !== "POST" || path !== "/api/actions" || set.status !== 201) return;
       lostResponse = true;
       if (typeof body === "object" && body !== null && "requestId" in body && typeof body.requestId === "string") requestId = body.requestId;
       // The action has committed; only its response body is malformed.
@@ -175,21 +192,43 @@ export function createNativeRecoveryTestApi(databasePath: string, password: stri
       receiptReads = 0;
       receiptReadAtMs = [];
       actionDeadlineScenario = body?.actionDeadline === true;
+      actionDeadlinePostDelayScenario = body?.actionDeadlinePostDelay === true;
       lateReceiptCompleted = false;
-      receiptFault = actionDeadlineScenario ? null : body?.receiptFault === "none" ? null : body?.receiptFault ?? "fail";
+      actionPostDelayCompleted = false;
+      actionPostDelayGate = null;
+      releaseActionPostDelay = null;
+      if (actionDeadlinePostDelayScenario) {
+        actionPostDelayGate = new Promise<void>((resolve) => { releaseActionPostDelay = resolve; });
+      }
+      receiptFault = actionDeadlineScenario || actionDeadlinePostDelayScenario ? null : body?.receiptFault === "none" ? null : body?.receiptFault ?? "fail";
       actionPosts = 0;
       requestId = null;
       return { armed: true };
     }, { body: t.Optional(t.Object({
       receiptFault: t.Optional(t.Union([t.Literal("fail"), t.Literal("stall"), t.Literal("malformed"), t.Literal("none")])),
       actionDeadline: t.Optional(t.Literal(true)),
+      actionDeadlinePostDelay: t.Optional(t.Literal(true)),
     })) })
+    .post("/__test__/release-action-post", ({ request, set }) => {
+      if (!isAuthenticated(databasePath, request)) {
+        set.status = 401;
+        return { error: "unauthorized" };
+      }
+      if (!actionDeadlinePostDelayScenario || !armed || actionPosts < 1 || actionPostDelayCompleted || !releaseActionPostDelay) {
+        set.status = 409;
+        return { released: false };
+      }
+      const release = releaseActionPostDelay;
+      releaseActionPostDelay = null;
+      release();
+      return { released: true };
+    })
     .get("/__test__/response-loss", ({ request, set }) => {
       if (!isAuthenticated(databasePath, request)) {
         set.status = 401;
         return { error: "unauthorized" };
       }
-      return { lostResponse, failedRead, receiptReads, receiptReadAtMs, receiptDelayCompleted: lateReceiptCompleted, actionPosts, requestId };
+      return { lostResponse, failedRead, receiptReads, receiptReadAtMs, receiptDelayCompleted: lateReceiptCompleted, actionPostDelayCompleted, actionPosts, requestId: requestId ?? "" };
     });
 }
 

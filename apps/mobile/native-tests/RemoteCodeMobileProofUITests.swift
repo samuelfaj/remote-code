@@ -293,6 +293,128 @@ final class RemoteCodeMobileProofUITests: XCTestCase {
     }
 
     @MainActor
+    func testActionPostAcceptedAfterTapDeadlineStaysUnknownUntilManualReceipt() async throws {
+        let app = XCUIApplication(bundleIdentifier: "com.remotecode.mobileproof")
+        let observer = URLSession(configuration: .ephemeral)
+        app.launch()
+        let apiLabel = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Host: ")).firstMatch
+        XCTAssertTrue(apiLabel.waitForExistence(timeout: 10), "The installed app must identify its configured test API")
+        let api = try XCTUnwrap(URL(string: String(apiLabel.label.dropFirst("Host: ".count))))
+        XCTAssertEqual(api.host, "127.0.0.1", "The native failure test must use its local API")
+        XCTAssertNotNil(api.port)
+        signIn(app)
+        XCTAssertFalse(app.buttons["Check action receipt"].exists, "A per-run API origin must not restore a previous action identity")
+        try await observer.signIn(at: api, password: password)
+
+        var arm = URLRequest(url: URL(string: "/__test__/lose-action-response", relativeTo: api)!)
+        arm.httpMethod = "POST"
+        arm.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        arm.httpBody = try JSONSerialization.data(withJSONObject: ["actionDeadlinePostDelay": true])
+        let (_, armedResponse) = try await observer.data(for: arm)
+        XCTAssertEqual((armedResponse as? HTTPURLResponse)?.statusCode, 200)
+
+        let action = "native-postdeadline-\(UUID().uuidString)"
+        let input = app.textFields["Action"]
+        input.tap()
+        input.typeText(action)
+        app.keyboards.buttons["Return"].tap()
+        app.scrollViews.firstMatch.swipeUp()
+        XCTAssertEqual(input.value as? String, action)
+        let submit = app.buttons["Submit action"]
+        let keyboardVisible = app.keyboards.firstMatch.exists
+        let connectionStatus = app.staticTexts.matching(identifier: "connection-status").firstMatch.label
+        let priorReceiptCheck = app.buttons["Check action receipt"].exists
+        XCTAssertFalse(priorReceiptCheck, "A per-run API origin must not restore an earlier test action")
+        guard submit.isEnabled && submit.isHittable else {
+            XCTFail("Submit must remain available after entering the action; keyboard=\(keyboardVisible), connection=\(connectionStatus), priorReceiptCheck=\(priorReceiptCheck)")
+            let signOut = app.buttons["Sign out"]
+            if signOut.exists {
+                signOut.tap()
+                XCTAssertTrue(app.staticTexts.matching(identifier: "connection-status").firstMatch.waitForLabel("signed out", timeout: 10))
+            }
+            return
+        }
+        let tappedAt = ProcessInfo.processInfo.systemUptime
+        submit.tap()
+
+        let recovery = app.staticTexts.matching(identifier: "action-recovery-status").firstMatch
+        let tapDeadline = tappedAt + 10
+        var unknownAtDeadline = false
+        while ProcessInfo.processInfo.systemUptime < tapDeadline + 0.75 {
+            if recovery.exists && recovery.label.contains("unknown") {
+                unknownAtDeadline = true
+                break
+            }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        XCTAssertLessThan(ProcessInfo.processInfo.systemUptime - tappedAt, 11)
+
+        let diagnostics = try await observer.responseLossDiagnostics(at: api)
+        XCTAssertEqual(diagnostics.actionPosts, 1, "The real action POST must be pending before judging the tap deadline")
+        XCTAssertFalse(diagnostics.actionPostDelayCompleted, "The API must still be before action acceptance at the client deadline")
+        XCTAssertEqual(diagnostics.receiptReads, 0, "No automatic receipt request may extend the tap-relative deadline")
+        XCTAssertNotNil(UUID(uuidString: diagnostics.requestId))
+        let historyBeforeAcceptance = try await observer.actions(at: api)
+        XCTAssertFalse(historyBeforeAcceptance.contains(where: { $0.action == action }))
+        XCTAssertTrue(unknownAtDeadline, "The action must be unknown by the tap deadline while its real POST is pending; posts=\(diagnostics.actionPosts), accepted=\(diagnostics.actionPostDelayCompleted), receipts=\(diagnostics.receiptReads), matchingActions=\(historyBeforeAcceptance.filter { $0.action == action }.count)")
+        XCTAssertFalse(submit.isEnabled, "An action awaiting reconciliation must remain pending")
+        XCTAssertTrue(app.buttons["Check action receipt"].exists)
+        let releaseAt = tappedAt + 11.5
+        while ProcessInfo.processInfo.systemUptime < releaseAt {
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        XCTAssertLessThan(ProcessInfo.processInfo.systemUptime - tappedAt, 12)
+
+        var release = URLRequest(url: URL(string: "/__test__/release-action-post", relativeTo: api)!)
+        release.httpMethod = "POST"
+        let (_, releaseResponse) = try await observer.data(for: release)
+        XCTAssertEqual((releaseResponse as? HTTPURLResponse)?.statusCode, 200)
+
+        var completedDiagnostics = try await observer.responseLossDiagnostics(at: api)
+        let postReleaseDeadline = Date().addingTimeInterval(5)
+        while !completedDiagnostics.actionPostDelayCompleted && Date() < postReleaseDeadline {
+            try await Task.sleep(nanoseconds: 100_000_000)
+            completedDiagnostics = try await observer.responseLossDiagnostics(at: api)
+        }
+        XCTAssertTrue(completedDiagnostics.actionPostDelayCompleted, "The real API must accept the delayed action after the client deadline")
+        try await Task.sleep(nanoseconds: 1_000_000_000)
+        let acceptedDiagnostics = try await observer.responseLossDiagnostics(at: api)
+        XCTAssertFalse(acceptedDiagnostics.lostResponse)
+        XCTAssertEqual(acceptedDiagnostics.actionPosts, 1, "The action POST must never be replayed")
+        XCTAssertEqual(acceptedDiagnostics.receiptReads, 0)
+        XCTAssertTrue(recovery.label.contains("unknown"), "A server-side success after the deadline must not clear the pending state")
+        XCTAssertFalse(submit.isEnabled)
+
+        let history = try await observer.actions(at: api)
+        let matching = history.filter { $0.action == action }
+        XCTAssertEqual(matching.count, 1)
+        let receipt = try XCTUnwrap(matching.first)
+        let receiptCheck = app.buttons["Check action receipt"]
+        guard receiptCheck.exists else {
+            XCTFail("A late action result must remain unknown until a manual receipt check")
+            let signOut = app.buttons["Sign out"]
+            if signOut.exists {
+                signOut.tap()
+                XCTAssertTrue(app.staticTexts.matching(identifier: "connection-status").firstMatch.waitForLabel("signed out", timeout: 10))
+            }
+            return
+        }
+        receiptCheck.tap()
+        XCTAssertTrue(recovery.waitForLabelContaining("Confirmed receipt", timeout: 10))
+        XCTAssertTrue(recovery.label.contains(receipt.id))
+        let confirmed = try await observer.responseLossDiagnostics(at: api)
+        XCTAssertEqual(confirmed.actionPosts, 1)
+        XCTAssertEqual(confirmed.receiptReads, 1)
+        XCTAssertEqual(confirmed.requestId, diagnostics.requestId)
+
+        let (receiptData, receiptResponse) = try await observer.data(from: URL(string: "/api/actions/receipts/\(confirmed.requestId)", relativeTo: api)!)
+        XCTAssertEqual((receiptResponse as? HTTPURLResponse)?.statusCode, 200)
+        XCTAssertEqual(try JSONDecoder().decode(ActionReceipt.self, from: receiptData).id, receipt.id)
+        app.buttons["Sign out"].tap()
+        XCTAssertTrue(app.staticTexts.matching(identifier: "connection-status").firstMatch.waitForLabel("signed out", timeout: 10))
+    }
+
+    @MainActor
     func testAutomaticActionReceiptAfterLostBody() async throws {
         try await verifyAutomaticActionReceipt(receiptFault: "fail")
     }
@@ -620,6 +742,7 @@ private struct NativeFailureDiagnostics: Decodable {
     let receiptReads: Int
     let receiptReadAtMs: [Int]
     let receiptDelayCompleted: Bool
+    let actionPostDelayCompleted: Bool
     let actionPosts: Int
     let requestId: String
 }

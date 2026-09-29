@@ -8,7 +8,7 @@ case "$WORK_DIR" in
   *) echo "RC_NATIVE_TEST_WORK_DIR must be an absolute path" >&2; exit 2 ;;
 esac
 mkdir -p "$WORK_DIR"
-API_PORT=39211
+API_PORT="${RC_NATIVE_TEST_API_PORT:-39211}"
 API_ORIGIN="http://127.0.0.1:$API_PORT"
 API_PASSWORD="remote-code-native-test-passphrase"
 DATABASE_PATH="$WORK_DIR/remotecode-native.sqlite"
@@ -23,7 +23,7 @@ if [[ "${RC_NATIVE_TEST_RECOVERY:-0}" == "1" ]]; then
   API_ENTRY="apps/api/test-support/native-recovery.ts"
   TEST_SELECTION="RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests"
   SKIP_TEST_ARG="-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testReadinessShowsRealSQLiteLockAndRecoversWithoutBlockingLogin"
-  EXTRA_SKIP_ARGS=("-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testAutomaticActionReceiptAfterLostBody" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testAutomaticActionReceiptStallEndsUnknownWithoutReplay" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testAutomaticActionMalformedTimestampStaysUnknownWithoutReplay")
+  EXTRA_SKIP_ARGS=("-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testAutomaticActionReceiptAfterLostBody" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testAutomaticActionReceiptStallEndsUnknownWithoutReplay" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testAutomaticActionMalformedTimestampStaysUnknownWithoutReplay" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testActionDeadlineStartsAtTapAndIgnoresLateReceiptWithoutReplay" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testActionPostAcceptedAfterTapDeadlineStaysUnknownUntilManualReceipt")
 fi
 if [[ "${RC_NATIVE_TEST_AUTO_ACTION:-0}" == "1" ]]; then
   API_ENTRY="apps/api/test-support/native-recovery.ts"
@@ -39,6 +39,12 @@ fi
 if [[ "${RC_NATIVE_TEST_DEADLINE:-0}" == "1" ]]; then
   API_ENTRY="apps/api/test-support/native-recovery.ts"
   TEST_SELECTION="RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testActionDeadlineStartsAtTapAndIgnoresLateReceiptWithoutReplay"
+  SKIP_TEST_ARG=""
+  EXTRA_SKIP_ARGS=()
+fi
+if [[ "${RC_NATIVE_TEST_POST_DELAY:-0}" == "1" ]]; then
+  API_ENTRY="apps/api/test-support/native-recovery.ts"
+  TEST_SELECTION="RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testActionPostAcceptedAfterTapDeadlineStaysUnknownUntilManualReceipt"
   SKIP_TEST_ARG=""
   EXTRA_SKIP_ARGS=()
 fi
@@ -145,7 +151,7 @@ if ! EXPO_PUBLIC_API_ORIGIN="$API_ORIGIN" \
   exit 1
 fi
 
-python3 - "$DATABASE_PATH" "${RC_NATIVE_TEST_RECOVERY:-0}" "${RC_NATIVE_TEST_HEALTH:-0}" "${RC_NATIVE_TEST_AUTO_ACTION:-0}" "${RC_NATIVE_TEST_DEADLINE:-0}" <<'PY'
+python3 - "$DATABASE_PATH" "${RC_NATIVE_TEST_RECOVERY:-0}" "${RC_NATIVE_TEST_HEALTH:-0}" "${RC_NATIVE_TEST_AUTO_ACTION:-0}" "${RC_NATIVE_TEST_DEADLINE:-0}" "${RC_NATIVE_TEST_POST_DELAY:-0}" <<'PY'
 import json
 import sqlite3
 import sys
@@ -157,6 +163,19 @@ try:
     auth_rows = connection.execute("SELECT request_id, kind, target_request_id, outcome FROM auth_requests ORDER BY created_at").fetchall()
 finally:
     connection.close()
+if sys.argv[6] == "1":
+    if len(rows) != 1 or not rows[0][1].startswith("native-postdeadline-") or session_count != 0:
+        raise SystemExit(f"Expected one delayed native action and no remaining sessions: actions={rows!r}, sessions={session_count}")
+    connection = sqlite3.connect(sys.argv[1])
+    try:
+        mappings = connection.execute("SELECT request_id, action_id FROM action_requests WHERE action_id = ?", (rows[0][0],)).fetchall()
+        integrity = connection.execute("PRAGMA quick_check").fetchone()
+    finally:
+        connection.close()
+    if len(mappings) != 1 or mappings[0][1] != rows[0][0] or integrity != ("ok",):
+        raise SystemExit(f"Expected one matching durable late-action receipt and healthy SQLite: mappings={mappings!r}, integrity={integrity!r}")
+    print(json.dumps({"actionAfterDeadline": rows[0], "mapping": mappings[0], "quick_check": integrity[0]}))
+    sys.exit(0)
 if sys.argv[5] == "1":
     if len(rows) != 1 or not rows[0][1].startswith("native-deadline-") or session_count != 0:
         raise SystemExit(f"Expected one recovered native deadline action and no remaining sessions: actions={rows!r}, sessions={session_count}")
