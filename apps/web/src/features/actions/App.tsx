@@ -12,6 +12,8 @@ function isUnsupportedClientVersion(error: unknown) {
 }
 
 const compatibilityMessage = "This RemoteCode client version is not supported. Update the host or use a supported client version.";
+const loginDeadlineExpiredMessage = "The sign-in deadline expired before the host could be checked. No login request was sent. Try again when the host is reachable.";
+const loginPreflightFailureMessage = "The host could not be checked. No login request was sent. Try again when the host is reachable.";
 
 function requestErrorMessage(error: unknown, fallback: string) {
   return isUnsupportedClientVersion(error) ? compatibilityMessage : fallback;
@@ -183,8 +185,28 @@ export function App() {
     }
   }
 
-  async function requireAuthRecovery() {
-    const { data, error: versionError } = await api.api.version.get();
+  async function requireAuthRecovery(deadline?: number) {
+    const remaining = deadline === undefined ? undefined : deadline - Date.now();
+    if (remaining !== undefined && remaining <= 0) {
+      setAuthMessage(loginDeadlineExpiredMessage);
+      return false;
+    }
+    const request = remaining === undefined
+      ? api.api.version.get()
+      : createApiClient(window.location.origin, { timeoutMs: remaining }).api.version.get();
+    const response = deadline === undefined ? await request : await beforeDeadline(request, deadline);
+    if (deadline !== undefined && (!response || Date.now() >= deadline)) {
+      setAuthMessage(loginDeadlineExpiredMessage);
+      return false;
+    }
+    if (!response) return false;
+    const { data, error: versionError } = response;
+    if (deadline !== undefined && versionError && !isUnsupportedClientVersion(versionError)) {
+      setAuthMessage(Date.now() >= deadline || isUnknownOutcomeError(versionError)
+        ? loginDeadlineExpiredMessage
+        : loginPreflightFailureMessage);
+      return false;
+    }
     const compatible = !versionError && Boolean(data?.capabilities.includes("auth-request-recovery-v1"));
     setAuthCompatible(compatible);
     if (!compatible) setError("This host does not confirm auth-request-recovery-v1. Update the host and reload before signing in or out.");
@@ -357,8 +379,20 @@ export function App() {
   }
 
   async function confirmLogin(operation: PendingAuth, epoch: number, deadline = Infinity) {
-    const { data, error: sessionError } = await authReadApi.api.auth.session.get();
+    let response;
+    if (Number.isFinite(deadline)) {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) return false;
+      response = await beforeDeadline(
+        createApiClient(window.location.origin, { timeoutMs: Math.min(3_500, remaining) }).api.auth.session.get(),
+        deadline,
+      );
+      if (!response) return false;
+    } else {
+      response = await authReadApi.api.auth.session.get();
+    }
     if (epoch !== authEpoch.current || Date.now() >= deadline) return false;
+    const { data, error: sessionError } = response;
     if (!sessionError && data && "loginRequestId" in data && data.loginRequestId === operation.requestId) {
       if (!persistAuth(null)) return false;
       restoreActionRecovery(data.userId);
@@ -381,7 +415,11 @@ export function App() {
   }
 
   async function consultUncertainAuth(operation: Exclude<PendingAuth, { kind: "logout" }>, credential: string, epoch: number, deadline: number) {
-    if (epoch !== authEpoch.current || Date.now() >= deadline) return;
+    if (epoch !== authEpoch.current) return;
+    if (Date.now() >= deadline) {
+      setAuthMessage("The auth outcome is unknown. Check its receipt later without resending.");
+      return;
+    }
     if (operation.kind === "login" && await beforeDeadline(confirmLogin(operation, epoch, deadline), deadline)) return;
     if (epoch !== authEpoch.current) return;
     if (Date.now() >= deadline) {
@@ -401,11 +439,15 @@ export function App() {
       }
       let response: Awaited<ReturnType<typeof beforeDeadline<unknown>>> | null = null;
       try {
-        response = await beforeDeadline(authReadApi.api.auth.receipts({ requestId: operation.requestId }).lookup.post({ password: credential }), deadline);
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) break;
+        const lookupApi = createApiClient(window.location.origin, { timeoutMs: Math.min(3_500, remaining) });
+        response = await beforeDeadline(lookupApi.api.auth.receipts({ requestId: operation.requestId }).lookup.post({ password: credential }), deadline);
       } catch {
         continue;
       }
       if (epoch !== authEpoch.current) return;
+      if (Date.now() >= deadline) break;
       if (!response) continue;
       const { data, error: lookupError, status } = response as { data?: unknown; error?: unknown; status?: number };
       if (!lookupError && data && typeof data === "object" && "receipt" in data && matchesAuthReceipt((data as { receipt: unknown }).receipt, operation)) {
@@ -441,6 +483,7 @@ export function App() {
       setError("Enter the host passphrase before sending this auth operation.");
       return;
     }
+    const loginDeadline = kind === "login" ? Date.now() + 13_000 : undefined;
     authBusy.current = true;
     setAuthWorking(true);
     const epoch = ++authEpoch.current;
@@ -450,26 +493,49 @@ export function App() {
     let authRecovery: Exclude<PendingAuth, { kind: "logout" }> | null = null;
     let authDeadline = 0;
     try {
-      if (!await requireAuthRecovery() || epoch !== authEpoch.current) return;
+      if (!await requireAuthRecovery(loginDeadline) || epoch !== authEpoch.current) return;
+      if (loginDeadline !== undefined && Date.now() >= loginDeadline) {
+        setAuthMessage("The sign-in deadline expired before login could be sent. No login request was sent. Try again when the host is reachable.");
+        return;
+      }
       const operation: PendingAuth = kind === "revoke_login" && previous
         ? { kind, requestId: crypto.randomUUID(), targetRequestId: previous.requestId }
         : { kind: kind as "login" | "logout", requestId: crypto.randomUUID() };
       if (!persistAuth(operation)) return;
+      if (loginDeadline !== undefined && Date.now() >= loginDeadline) {
+        if (persistAuth(previous)) setAuthMessage("The sign-in deadline expired before login could be sent. No login request was sent. Try again when the host is reachable.");
+        return;
+      }
       if (kind === "logout") hideSession();
       setAuthMessage("The auth outcome is unknown until confirmed. The mutation will not be resent automatically.");
-      if (operation.kind !== "logout") {
-        authRecovery = operation;
-        authDeadline = Date.now() + 13_000;
+      if (operation.kind !== "logout") authDeadline = loginDeadline ?? Date.now() + 13_000;
+      const loginRemaining = operation.kind === "login" ? authDeadline - Date.now() : undefined;
+      if (loginRemaining !== undefined && loginRemaining <= 0) {
+        if (persistAuth(previous)) setAuthMessage("The sign-in deadline expired before login could be sent. No login request was sent. Try again when the host is reachable.");
+        return;
       }
+      if (operation.kind !== "logout") authRecovery = operation;
       const response = operation.kind === "login"
-        ? await authPostApi.api.auth.login.post({ password: credential, requestId: operation.requestId })
+        ? await beforeDeadline(
+          createApiClient(window.location.origin, { timeoutMs: Math.min(6_000, loginRemaining ?? 1) }).api.auth.login.post({ password: credential, requestId: operation.requestId }),
+          authDeadline,
+        )
         : operation.kind === "logout"
           ? await api.api.auth.logout.post({ requestId: operation.requestId })
           : await authPostApi.api.auth.login({ loginRequestId: operation.targetRequestId }).revoke.post({ password: credential, requestId: operation.requestId });
       if (epoch !== authEpoch.current) return;
+      if (!response) {
+        if (operation.kind !== "logout") await consultUncertainAuth(operation, credential, epoch, authDeadline);
+        else setAuthMessage("The auth outcome is unknown. Check its receipt without resending.");
+        return;
+      }
+      if (operation.kind === "login" && Date.now() >= authDeadline) {
+        await consultUncertainAuth(operation, credential, epoch, authDeadline);
+        return;
+      }
       const { data, error: requestError, status } = response;
       if (operation.kind === "login" && !requestError && data && "receipt" in data && matchesAuthReceipt(data.receipt, operation)) {
-        if (!await confirmLogin(operation, epoch) && epoch === authEpoch.current) setAuthMessage("Login receipt received, but no matching cookie is confirmed. Check auth receipt or explicitly revoke old login.");
+        if (!await confirmLogin(operation, epoch, authDeadline) && epoch === authEpoch.current) setAuthMessage("Login receipt received, but no matching cookie is confirmed. Check auth receipt or explicitly revoke old login.");
       } else if (operation.kind !== "login" && !requestError && matchesAuthReceipt(data, operation)) {
         if (persistAuth(null)) setAuthMessage(operation.kind === "logout" ? "Confirmed logout. Newer sessions are not changed by receipt recovery." : "Confirmed old login revoked or fenced. You may now sign in with a distinct request.");
       } else if (operation.kind !== "logout" && [401, 403, 422, 426].includes(status)
@@ -483,7 +549,7 @@ export function App() {
       }
     } catch {
       if (authRecovery) await consultUncertainAuth(authRecovery, credential, epoch, authDeadline);
-      else if (epoch === authEpoch.current) setAuthMessage("The auth outcome is unknown. Check its receipt without resending.");
+      else if (epoch === authEpoch.current) setAuthMessage(kind === "login" ? loginPreflightFailureMessage : "The auth outcome is unknown. Check its receipt without resending.");
     } finally {
       authBusy.current = false;
       setAuthWorking(false);

@@ -69,6 +69,219 @@ for (const viewport of [{ name: "desktop", width: 1280, height: 900 }, { name: "
       expect(new Set(operations).size).toBe(2);
     });
 
+    test("preflight deadline starts at the Sign in tap and permits only an explicit retry", async ({ page }) => {
+      let versionRequests = 0;
+      let loginPosts = 0;
+      let holdCapability = true;
+      let capabilityEntered = false;
+      let releaseCapability: (() => void) | undefined;
+      let markCapabilityStarted: (() => void) | undefined;
+      let markRouteFinished: (() => void) | undefined;
+      const capabilityGate = new Promise<void>((resolve) => { releaseCapability = resolve; });
+      const capabilityStarted = new Promise<void>((resolve) => { markCapabilityStarted = resolve; });
+      const routeFinished = new Promise<void>((resolve) => { markRouteFinished = resolve; });
+      page.on("request", (request) => {
+        if (request.method() === "POST" && new URL(request.url()).pathname === "/api/auth/login") loginPosts++;
+      });
+      await page.goto("/");
+      const signIn = page.getByRole("button", { name: "Sign in", exact: true });
+      await expect(signIn).toBeEnabled();
+      await enterPassword(page);
+      await page.route("**/api/version", async (route) => {
+        versionRequests++;
+        if (!holdCapability) {
+          await route.continue();
+          return;
+        }
+        holdCapability = false;
+        capabilityEntered = true;
+        try {
+          const response = await route.fetch();
+          markCapabilityStarted?.();
+          await capabilityGate;
+          await route.fulfill({ response }).catch(() => {});
+        } finally {
+          markRouteFinished?.();
+        }
+      });
+
+      try {
+        const tapStarted = Date.now();
+        const capabilityRequest = page.waitForRequest((request) => new URL(request.url()).pathname === "/api/version", { timeout: 5_000 });
+        await signIn.click();
+        await capabilityRequest;
+        await capabilityStarted;
+        const recovery = page.getByTestId("auth-recovery-status");
+        await expect(recovery).toContainText("The sign-in deadline expired before the host could be checked. No login request was sent.", { timeout: 15_000 });
+        const elapsed = Date.now() - tapStarted;
+        expect(elapsed).toBeGreaterThanOrEqual(12_500);
+        expect(elapsed).toBeLessThan(14_500);
+        expect(loginPosts).toBe(0);
+        expect(await pending(page)).toBeNull();
+        expect(await page.context().cookies()).toEqual([]);
+        expect(await page.request.get("/api/auth/session").then((response) => response.status())).toBe(401);
+
+        releaseCapability?.();
+        if (capabilityEntered) await routeFinished;
+        expect(versionRequests).toBe(1);
+        expect(loginPosts).toBe(0);
+        expect(await pending(page)).toBeNull();
+        await expect(recovery).toContainText("No login request was sent");
+
+        await enterPassword(page);
+        await signIn.click();
+        await expect(page.getByTestId("connection-status")).toHaveText("Live updates connected", { timeout: 15_000 });
+        expect(versionRequests).toBe(2);
+        expect(loginPosts).toBe(1);
+        const session = await (await page.request.get("/api/auth/session")).json();
+        expect(session.loginRequestId).toMatch(/^[a-f0-9-]{36}$/);
+        expect(await pending(page)).toBeNull();
+        await page.getByRole("button", { name: "Sign out", exact: true }).click();
+        await expect(signIn).toBeEnabled();
+        expect(await page.request.get("/api/auth/session").then((response) => response.status())).toBe(401);
+      } finally {
+        releaseCapability?.();
+        if (capabilityEntered) await routeFinished;
+        await page.unrouteAll({ behavior: "wait" });
+      }
+    });
+
+    test("capability preflight failure confirms no login was sent", async ({ page }) => {
+      let loginPosts = 0;
+      page.on("request", (request) => {
+        if (request.method() === "POST" && new URL(request.url()).pathname === "/api/auth/login") loginPosts++;
+      });
+      await page.goto("/");
+      const signIn = page.getByRole("button", { name: "Sign in", exact: true });
+      await expect(signIn).toBeEnabled();
+      await page.route("**/api/version", async (route) => { await route.abort("failed"); });
+      await enterPassword(page);
+      const versionRequest = page.waitForRequest((request) => new URL(request.url()).pathname === "/api/version", { timeout: 5_000 });
+      await signIn.click();
+      await versionRequest;
+      await expect(page.getByTestId("auth-recovery-status")).toHaveText("The host could not be checked. No login request was sent. Try again when the host is reachable.");
+      expect(loginPosts).toBe(0);
+      expect(await pending(page)).toBeNull();
+      expect(await page.context().cookies()).toEqual([]);
+      expect(await page.request.get("/api/auth/session").then((response) => response.status())).toBe(401);
+      await expect(signIn).toBeEnabled();
+    });
+
+    test("login POST that crosses the tap deadline stays unknown and is never replayed", async ({ page }) => {
+      let loginPosts = 0;
+      let holdLogin = true;
+      let loginRouteEntered = false;
+      let loginRequestId = "";
+      let releaseLogin: (() => void) | undefined;
+      let markLoginStarted: (() => void) | undefined;
+      let markRouteFinished: (() => void) | undefined;
+      const loginGate = new Promise<void>((resolve) => { releaseLogin = resolve; });
+      const loginStarted = new Promise<void>((resolve) => { markLoginStarted = resolve; });
+      const routeFinished = new Promise<void>((resolve) => { markRouteFinished = resolve; });
+      let holdReceiptLookups = true;
+      let receiptLookups = 0;
+      let releaseReceiptLookups: (() => void) | undefined;
+      let markReceiptLookupStarted: (() => void) | undefined;
+      const receiptLookupGate = new Promise<void>((resolve) => { releaseReceiptLookups = resolve; });
+      const receiptLookupStarted = new Promise<void>((resolve) => { markReceiptLookupStarted = resolve; });
+      const heldReceiptHandlers: Promise<void>[] = [];
+      await page.goto("/");
+      const signIn = page.getByRole("button", { name: "Sign in", exact: true });
+      await expect(signIn).toBeEnabled();
+      await enterPassword(page);
+      await page.route("**/api/auth/login", async (route) => {
+        loginPosts++;
+        const body = route.request().postDataJSON();
+        if (!holdLogin) {
+          await route.continue();
+          return;
+        }
+        holdLogin = false;
+        loginRouteEntered = true;
+        loginRequestId = body.requestId;
+        markLoginStarted?.();
+        try {
+          await loginGate;
+          await route.abort("failed").catch(() => {});
+        } finally {
+          markRouteFinished?.();
+        }
+      });
+      await page.route("**/api/auth/receipts/*/lookup", async (route) => {
+        if (!holdReceiptLookups) {
+          await route.continue();
+          return;
+        }
+        receiptLookups++;
+        markReceiptLookupStarted?.();
+        let finish!: () => void;
+        heldReceiptHandlers.push(new Promise<void>((resolve) => { finish = resolve; }));
+        try {
+          await receiptLookupGate;
+          await route.abort("failed").catch(() => {});
+        } finally {
+          finish();
+        }
+      });
+
+      try {
+        const tapStarted = Date.now();
+        await signIn.click();
+        await loginStarted;
+        await receiptLookupStarted;
+        expect(loginRequestId).toMatch(/^[a-f0-9-]{36}$/);
+        const recovery = page.getByTestId("auth-recovery-status");
+        await expect(recovery).toHaveText(/^(The auth outcome is unknown\. Check its receipt later without resending\.|No auth receipt is confirmed yet\.)/, { timeout: 15_000 });
+        const elapsed = Date.now() - tapStarted;
+        expect(elapsed).toBeGreaterThanOrEqual(12_500);
+        expect(elapsed).toBeLessThan(14_500);
+        expect(loginPosts).toBe(1);
+        expect(receiptLookups).toBe(2);
+        expect(await pending(page)).toEqual({ kind: "login", requestId: loginRequestId });
+        expect(await page.context().cookies()).toEqual([]);
+        expect(await page.request.get("/api/auth/session").then((response) => response.status())).toBe(401);
+
+        holdReceiptLookups = false;
+        releaseLogin?.();
+        releaseReceiptLookups?.();
+        if (loginRouteEntered) await routeFinished;
+        await Promise.all(heldReceiptHandlers);
+        expect(loginPosts).toBe(1);
+        expect(await pending(page)).toEqual({ kind: "login", requestId: loginRequestId });
+        const missingReceipt = await page.request.post(`/api/auth/receipts/${loginRequestId}/lookup`, { data: { password } });
+        expect(missingReceipt.status()).toBe(404);
+        expect(await missingReceipt.json()).toMatchObject({ error: "receipt_not_found" });
+
+        await enterPassword(page);
+        await page.getByRole("button", { name: "Check auth receipt" }).click();
+        await expect(recovery).toContainText("No auth receipt is confirmed yet");
+        expect(await pending(page)).toEqual({ kind: "login", requestId: loginRequestId });
+        await expect(signIn).toBeDisabled();
+        await enterPassword(page);
+        await page.getByRole("button", { name: "Revoke old login" }).click();
+        await expect(recovery).toContainText("Confirmed old login revoked or fenced.");
+        expect(await pending(page)).toBeNull();
+
+        await enterPassword(page);
+        await signIn.click();
+        await expect(page.getByTestId("connection-status")).toHaveText("Live updates connected", { timeout: 15_000 });
+        const session = await (await page.request.get("/api/auth/session")).json();
+        expect(session.loginRequestId).not.toBe(loginRequestId);
+        expect(loginPosts).toBe(2);
+        expect(await pending(page)).toBeNull();
+        await page.getByRole("button", { name: "Sign out", exact: true }).click();
+        await expect(signIn).toBeEnabled();
+        expect(await page.request.get("/api/auth/session").then((response) => response.status())).toBe(401);
+      } finally {
+        holdReceiptLookups = false;
+        releaseLogin?.();
+        releaseReceiptLookups?.();
+        if (loginRouteEntered) await routeFinished;
+        await Promise.all(heldReceiptHandlers);
+        await page.unrouteAll({ behavior: "wait" });
+      }
+    });
+
     test("lost login cookie survives reload; credential lookup never authenticates and explicit revocation permits a distinct login", async ({ page }) => {
       let loginId = "";
       let posts = 0;
