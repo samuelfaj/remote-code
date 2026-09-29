@@ -1,5 +1,13 @@
 # Pivot policy
 
+## Pivot record — RC-020 2.625GiB local readiness point — partial — 2026-09-28
+
+- **Decision:** Measure the midpoint between the 2.5-GiB passing point and the 2.75-GiB fail-closed point. No product source or task criteria changed; RC-020 remains In Progress.
+- **Observed:** A nominal 2,818,572,288-byte payload produced a 2,822,369,280-byte SQLite file. Five direct `PRAGMA quick_check` calls were `ok` at 430.45–494.02 ms. The in-process readiness route returned 503 `not_ready` at 401.78 ms; five sequential and eight concurrent keyed action POSTs all returned 503 `storage_unavailable`. SQLite readback found zero action rows and request mappings for those 13 attempts; final direct `quick_check` was `ok`. Fixture login/session setup was separate.
+- **Limits/review:** macOS 26.6.2 arm64, Bun 1.3.13, Node 24.3.0, source commit `a38ad25ca6349f99be6dcacfe3520eb79b0e1167`. Initial probe review `01a0eaa9-c76a-7271-9810-a90e4ce61851` found three safety/validation defects; the corrected probe passed follow-up review `01a0eab1-7858-7cf2-8ef5-df29c7cdf701`. The `bun --check` command unexpectedly executed the full probe and exited 0; this one run is the only measurement, with no retry. Its free-space readings were 844 GiB before and 842 GiB after; a later parent read was 844 GiB. This is local in-process evidence, not a reliable size limit, native Linux proof, or RC-020 acceptance.
+- **Next:** Measure 2.5625 GiB through the same path; preserve durable readback for every accepted or rejected request. Keep the task In Progress and all original criteria unchanged.
+- **X:** No post; this is a local capacity measurement, not a deployed user-facing milestone.
+
 ## Pivot record — RC-020 2.75GiB local readiness boundary — partial — 2026-09-28
 
 - **Decision:** Continue the size search after the 2.5-GiB pass with 2.75 GiB; no code, timeout, or acceptance criterion changed. RC-020 remains In Progress.
@@ -116,7 +124,7 @@ Recover the authoritative login receipt, not the original bearer cookie. Preserv
 
 ## Next action
 
-RC-018 remains in progress with bounded browser receipt checks for keyed login and targeted revocation; logout remains manual because a revoked cookie may no longer authorize its receipt lookup without a passphrase. RC-020's 2.5-to-2.75-GiB local readiness bracket is recorded in `plan/checkpoint-evidence.md#rc-020-2p75gib-quick_check-cost-assessment--partial--2026-09-28`; the next slice is the 2.625-GiB midpoint through the same readiness/action path on macOS, with durable readback after any rejected write. These are local measurements only; production Linux behavior and full RC-020 acceptance remain open. RC-012 and RC-014 remain partial; RC-011 remains `REVISE`. RC-002's prior provider operation remains unknown and untouched. RC-004 is complete as a design contract; preserve actual task dependencies and do not claim full-backlog completion.
+RC-018 remains in progress with bounded browser receipt checks for keyed login and targeted revocation; logout remains manual because a revoked cookie may no longer authorize its receipt lookup without a passphrase. RC-020's local readiness bracket from 2.5 GiB passing to 2.625 GiB failing is recorded in `plan/checkpoint-evidence.md#rc-020-2p625gib-quick_check-cost-assessment--partial--2026-09-28`; the next slice is 2.5625 GiB through the same readiness/action path, with SQLite readback after every accepted or rejected write. These are local macOS measurements only; production Linux behavior and full RC-020 acceptance remain open. RC-012 and RC-014 remain partial; RC-011 remains `REVISE`. RC-002's prior provider operation remains unknown and untouched. RC-004 is complete as a design contract; preserve actual task dependencies and do not claim full-backlog completion.
 
 
 ## Purpose
