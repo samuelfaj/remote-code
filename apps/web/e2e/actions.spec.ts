@@ -705,6 +705,167 @@ test("a delayed receipt becomes visible on the second automatic read without res
   expect((await confirmedIds(page)).filter((receipt) => receipt.action === action)).toHaveLength(1);
 });
 
+test("keeps one overall action deadline from click through slow capability check and lost POST response", async ({ page }) => {
+  let posts = 0;
+  let lookups = 0;
+  let requestId = "";
+  let markCommitted!: () => void;
+  let releasePostResponse!: () => void;
+  let markPostHandlerFinished!: () => void;
+  const actionCommitted = new Promise<void>((resolve) => { markCommitted = resolve; });
+  const heldPostResponse = new Promise<void>((resolve) => { releasePostResponse = resolve; });
+  const postHandlerFinished = new Promise<void>((resolve) => { markPostHandlerFinished = resolve; });
+  await page.routeWebSocket("**/api/events*", (socket) => {
+    const server = socket.connectToServer();
+    socket.onMessage((message) => server.send(message));
+    server.onMessage((message) => {
+      if (JSON.parse(String(message)).type !== "action.created") socket.send(message);
+    });
+  });
+  await signIn(page);
+  await page.route("**/api/version", async (route) => {
+    const response = await route.fetch();
+    await new Promise((resolve) => setTimeout(resolve, 6_500));
+    await route.fulfill({ response });
+  });
+  await page.route("**/api/actions/receipts/*", (route) => { lookups++; void route.continue(); });
+  await page.route("**/api/actions", async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    posts++;
+    requestId = route.request().postDataJSON().requestId;
+    try {
+      const response = await route.fetch();
+      expect(response.status()).toBe(201);
+      markCommitted();
+      await heldPostResponse;
+      try {
+        await route.fulfill({ response });
+      } catch {
+        // The browser may cancel the response after its total wait budget expires.
+      }
+    } finally {
+      markPostHandlerFinished();
+    }
+  });
+
+  const action = `click deadline ${crypto.randomUUID()}`;
+  await page.getByLabel("Action description").fill(action);
+  const clickedAt = Date.now();
+  try {
+    await page.getByRole("button", { name: "Write backend receipt" }).click();
+    await actionCommitted;
+    await expect(page.getByTestId("action-recovery-status")).toContainText("outcome is unknown", { timeout: 11_500 });
+    expect(Date.now() - clickedAt).toBeLessThan(11_500);
+    expect(posts).toBe(1);
+    expect(lookups).toBe(0);
+    expect(requestId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(await page.evaluate(() => sessionStorage.getItem("remotecode.pending-action:local"))).toBe(requestId);
+    await expect(page.getByRole("button", { name: "Check action receipt" })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Write backend receipt" })).toBeDisabled();
+
+    releasePostResponse();
+    await postHandlerFinished;
+    await expect(page.getByTestId("action-recovery-status")).toContainText("outcome is unknown");
+    expect(lookups).toBe(0);
+    expect((await confirmedIds(page)).filter((receipt) => receipt.action === action)).toHaveLength(1);
+
+    const manualReceiptResponse = page.waitForResponse((response) =>
+      new URL(response.url()).pathname === `/api/actions/receipts/${requestId}` && response.request().method() === "GET");
+    await page.getByRole("button", { name: "Check action receipt" }).click();
+    const response = await manualReceiptResponse;
+    expect(response.status()).toBe(200);
+    expect((await response.json()).action).toBe(action);
+    await expect(page.getByTestId("action-recovery-status")).toContainText("Confirmed receipt");
+    await expect(page.getByRole("button", { name: "Write backend receipt" })).toBeEnabled();
+    expect(posts).toBe(1);
+    expect(lookups).toBe(1);
+    expect(await page.evaluate(() => sessionStorage.getItem("remotecode.pending-action:local"))).toBeNull();
+  } finally {
+    releasePostResponse();
+    await page.unroute("**/api/version");
+    await page.unroute("**/api/actions");
+    await page.unroute("**/api/actions/receipts/*");
+  }
+});
+
+test("does not confirm a canonical receipt after the click deadline", async ({ page }) => {
+  let posts = 0;
+  let lookups = 0;
+  let requestId = "";
+  let markActionCommitted!: () => void;
+  let markReceiptFetched!: () => void;
+  let releaseReceipt!: () => void;
+  const actionCommitted = new Promise<void>((resolve) => { markActionCommitted = resolve; });
+  const receiptFetched = new Promise<void>((resolve) => { markReceiptFetched = resolve; });
+  const heldReceipt = new Promise<void>((resolve) => { releaseReceipt = resolve; });
+  await page.routeWebSocket("**/api/events*", (socket) => {
+    const server = socket.connectToServer();
+    socket.onMessage((message) => server.send(message));
+    server.onMessage((message) => {
+      if (JSON.parse(String(message)).type !== "action.created") socket.send(message);
+    });
+  });
+  await signIn(page);
+  await page.route("**/api/actions", async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    posts++;
+    requestId = route.request().postDataJSON().requestId;
+    const response = await route.fetch();
+    expect(response.status()).toBe(201);
+    await route.abort("failed");
+    markActionCommitted();
+  });
+  await page.route("**/api/actions/receipts/*", async (route) => {
+    if (route.request().method() !== "GET") return route.continue();
+    lookups++;
+    if (lookups === 1) {
+      const response = await route.fetch();
+      expect(response.status()).toBe(200);
+      markReceiptFetched();
+      await heldReceipt;
+      try {
+        await route.fulfill({ response });
+      } catch {
+        // The browser may cancel the read after its total wait budget expires.
+      }
+    } else await route.continue();
+  });
+
+  const action = `receipt deadline ${crypto.randomUUID()}`;
+  await page.getByLabel("Action description").fill(action);
+  try {
+    await page.getByRole("button", { name: "Write backend receipt" }).click();
+    await actionCommitted;
+    await receiptFetched;
+    await page.evaluate(() => {
+      const originalNow = Date.now.bind(Date);
+      (window as typeof window & { restoreActionDeadlineClock?: () => void }).restoreActionDeadlineClock = () => { Date.now = originalNow; };
+      Date.now = () => originalNow() + 20_000;
+    });
+    releaseReceipt();
+    await expect(page.getByTestId("action-recovery-status")).toContainText("outcome is unknown");
+    expect(posts).toBe(1);
+    expect(lookups).toBe(1);
+    expect(await page.evaluate(() => sessionStorage.getItem("remotecode.pending-action:local"))).toBe(requestId);
+    await page.evaluate(() => (window as typeof window & { restoreActionDeadlineClock?: () => void }).restoreActionDeadlineClock?.());
+
+    const manualReceiptResponse = page.waitForResponse((response) =>
+      new URL(response.url()).pathname === `/api/actions/receipts/${requestId}` && response.request().method() === "GET");
+    await page.getByRole("button", { name: "Check action receipt" }).click();
+    const response = await manualReceiptResponse;
+    expect(response.status()).toBe(200);
+    expect((await response.json()).action).toBe(action);
+    await expect(page.getByTestId("action-recovery-status")).toContainText("Confirmed receipt");
+    expect(posts).toBe(1);
+    expect(lookups).toBe(2);
+  } finally {
+    releaseReceipt();
+    await page.evaluate(() => (window as typeof window & { restoreActionDeadlineClock?: () => void }).restoreActionDeadlineClock?.()).catch(() => {});
+    await page.unroute("**/api/actions");
+    await page.unroute("**/api/actions/receipts/*");
+  }
+});
+
 test("a malformed successful action receipt stays unknown until canonical recovery on desktop and mobile", async ({ page }) => {
   await signIn(page);
   let posts = 0;

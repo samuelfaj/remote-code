@@ -94,8 +94,6 @@ export function App() {
   const api = useMemo(() => createApiClient(window.location.origin), []);
   const authPostApi = useMemo(() => createApiClient(window.location.origin, { timeoutMs: 6_000 }), []);
   const authReadApi = useMemo(() => createApiClient(window.location.origin, { timeoutMs: 3_500 }), []);
-  const actionPostApi = useMemo(() => createApiClient(window.location.origin, { timeoutMs: 6_000 }), []);
-  const actionReceiptApi = useMemo(() => createApiClient(window.location.origin, { timeoutMs: 3_500 }), []);
   const [action, setAction] = useState("Verify shared Linux backend");
   const [eventState, setEventState] = useState<ActionEventState>(emptyActionEventState);
   const eventStateRef = useRef(eventState);
@@ -558,15 +556,24 @@ export function App() {
     const epoch = authEpoch.current;
     const generation = connectionGeneration.current;
     const isCurrent = () => epoch === authEpoch.current && generation === connectionGeneration.current;
+    const deadline = Date.now() + 10_000;
     actionBusy.current = true;
     setActionPhase("sending");
     setError("");
     setRecoveryMessage("");
     let requestId: string | undefined;
-    let deadline = 0;
     try {
-      const version = await api.api.version.get();
+      const preflightRemaining = deadline - Date.now();
+      if (preflightRemaining <= 0) {
+        setError("There was not enough time to send the action. Try again.");
+        return;
+      }
+      const version = await createApiClient(window.location.origin, { timeoutMs: preflightRemaining }).api.version.get();
       if (!isCurrent()) return;
+      if (Date.now() >= deadline) {
+        setError("There was not enough time to send the action. Try again.");
+        return;
+      }
       if (version.error || !version.data || !Array.isArray(version.data.capabilities)
         || !version.data.capabilities.includes("action-request-recovery-v1")) {
         setError("Update the host to support action receipt recovery. No action was sent.");
@@ -586,14 +593,21 @@ export function App() {
         return;
       }
       setPendingRequestId(requestId);
-      deadline = Date.now() + 10_000;
-      let postTimer: ReturnType<typeof setTimeout> | undefined;
-      const response = await Promise.race([
-        actionPostApi.api.actions.post({ action: value, requestId }),
-        new Promise<null>((resolve) => { postTimer = setTimeout(() => resolve(null), 6_000); }),
-      ]);
-      if (postTimer) clearTimeout(postTimer);
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) {
+        const cleared = forgetPendingAction(sessionUserId, requestId);
+        if (!isCurrent()) return;
+        if (cleared) setError("There was not enough time to send the action. Try again.");
+        else setRecoveryMessage("No action was sent, but browser storage could not clear the pending identity. Check its receipt before sending again.");
+        return;
+      }
+      const response = await createApiClient(window.location.origin, { timeoutMs: Math.min(6_000, remaining) })
+        .api.actions.post({ action: value, requestId });
       if (!isCurrent()) return;
+      if (Date.now() >= deadline) {
+        await consultUncertainAction(requestId, sessionUserId, deadline, isCurrent);
+        return;
+      }
       const receipt = response && actionReceiptFromResponse(response);
       const requestError = response?.error;
       if (receipt) {
@@ -623,15 +637,8 @@ export function App() {
   async function readActionReceiptOnce(requestId: string, deadline: number) {
     const remaining = deadline - Date.now();
     if (remaining <= 0) return null;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    try {
-      return await Promise.race([
-        actionReceiptApi.api.actions.receipts({ requestId }).get(),
-        new Promise<null>((resolve) => { timer = setTimeout(() => resolve(null), Math.min(2_000, remaining)); }),
-      ]);
-    } finally {
-      if (timer) clearTimeout(timer);
-    }
+    return createApiClient(window.location.origin, { timeoutMs: Math.min(2_000, remaining) })
+      .api.actions.receipts({ requestId }).get();
   }
 
   async function consultUncertainAction(requestId: string, userId: string, deadline: number, isCurrent: () => boolean) {
@@ -664,6 +671,8 @@ export function App() {
         setError("The host session expired or was revoked.");
         return;
       }
+      // A read started before the deadline may finish after it.
+      if (Date.now() >= deadline) break;
       const receipt = response && actionReceiptFromResponse(response);
       if (receipt) {
         const cleared = forgetPendingAction(userId, requestId);
