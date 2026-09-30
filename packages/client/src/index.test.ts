@@ -1,6 +1,7 @@
 import { Database } from "bun:sqlite";
-import { expect, it } from "bun:test";
+import { afterEach, expect, it } from "bun:test";
 import { createServer } from "node:http";
+import { mkdtempSync, rmSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,7 +10,16 @@ import { getWebHealth } from "../../../apps/web/src/features/health/api";
 import { createApi } from "../../../apps/api/src/app";
 import { ApiClientError, createApiClient, isUnknownOutcomeError } from "./index";
 
-const databasePath = () => join(tmpdir(), `rc013-client-${crypto.randomUUID()}.sqlite`);
+const directories: string[] = [];
+function databasePath() {
+  const directory = mkdtempSync(join(tmpdir(), "rc018-client-"));
+  directories.push(directory);
+  return join(directory, "host.sqlite");
+}
+
+afterEach(() => {
+  for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true });
+});
 
 function expectUnknownOutcome(error: unknown) {
   expect(isUnknownOutcomeError(error)).toBe(true);
@@ -56,16 +66,9 @@ it("does not return empty history when the API is offline before a read", async 
   const origin = `http://127.0.0.1:${server.port}`;
   server.stop(true);
 
-  let result: Awaited<ReturnType<ReturnType<typeof createApiClient>["api"]["actions"]["get"]>> | undefined;
-  let transportFailure: unknown;
-  try {
-    result = await createApiClient(origin, { timeoutMs: 100 }).api.actions.get();
-  } catch (error) {
-    transportFailure = error;
-  }
-
-  expect(transportFailure !== undefined || (result?.data === null && result.error !== null)).toBe(true);
-  expect(result?.data).not.toEqual({ actions: [] });
+  const result = await createApiClient(origin, { timeoutMs: 100 }).api.actions.get();
+  expect(result.data).toBeNull();
+  expectUnknownOutcome(result.error);
 });
 
 it("recovers authoritative history after the API restarts following a successful read", async () => {
@@ -495,29 +498,26 @@ it("propagates caller cancellation while a request is in flight", async () => {
   let markRequestAborted!: () => void;
   const requestStarted = new Promise<void>((resolve) => { markRequestStarted = resolve; });
   const requestAborted = new Promise<void>((resolve) => { markRequestAborted = resolve; });
-  const server = Bun.serve({
-    port: 0,
-    fetch: (request) => new Promise<Response>((resolve) => {
-      markRequestStarted();
-      request.signal.addEventListener("abort", () => {
-        markRequestAborted();
-        resolve(Response.json({ status: "not_ready" }));
-      }, { once: true });
-    }),
+  const server = createServer((request) => {
+    request.socket.once("close", markRequestAborted);
+    markRequestStarted();
   });
   const controller = new AbortController();
 
   try {
-    const pending = createApiClient(`http://127.0.0.1:${server.port}`).api.health.ready.get({
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const pending = createApiClient(`http://127.0.0.1:${(server.address() as AddressInfo).port}`).api.health.ready.get({
       fetch: { signal: controller.signal },
     });
     await requestStarted;
     controller.abort();
     const result = await pending;
     await requestAborted;
+    expect(result.data).toBeNull();
     expectUnknownOutcome(result.error);
   } finally {
-    server.stop(true);
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 });
 

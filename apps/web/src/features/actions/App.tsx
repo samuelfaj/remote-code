@@ -202,7 +202,7 @@ export function App() {
     if (!response) return false;
     const { data, error: versionError } = response;
     if (deadline !== undefined && versionError && !isUnsupportedClientVersion(versionError)) {
-      setAuthMessage(Date.now() >= deadline || isUnknownOutcomeError(versionError)
+      setAuthMessage(Date.now() >= deadline
         ? loginDeadlineExpiredMessage
         : loginPreflightFailureMessage);
       return false;

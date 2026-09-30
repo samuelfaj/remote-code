@@ -1,5 +1,12 @@
 # Pivot policy
 
+## Pivot record — independent workspace metadata — 2026-09-30 (UTC)
+
+- **Decision:** Remove RC-021 and RC-027 as RC-028 prerequisites. Workspace metadata does not execute Distill or depend on cross-device file saving. Keep both original product journeys open, keep every RC-028 delivery/proof/failure requirement, and retain accepted persistence, ownership, typed-client, state, compatibility, and storage foundations. This uses the user's explicit `/sam-pivot` sequencing authority; it does not accept a phase or the unknown RC-002 effect.
+- **Assessment:** Read-only planning review `01a0efb0-12fb-7a21-9dff-51f6438ad4d6` confirmed the independent slice is feasible but unaccepted. Docker reports Linux/aarch64 and the existing `remotecode-rc010-final-20260925:local` image is available. Use an API-only command; do not invoke the prototype startup's Distill tools.
+- **Next implementation:** Extend existing workspace storage/routes for owner-scoped detail, rename, and archive with stable IDs and immutable atomic receipts. Snapshot existing creation receipts before permitting metadata changes. Test legacy rows, replay after rename/archive, conflicting IDs, foreign IDs, receipt-write rollback, independent client selection, and container recreation against the same volume. RC-028 remains To do until implementation starts; no runtime proof is claimed here.
+- **Authority:** The current objective authorizes required commits, pushes, normal releases/deploys, and autonomous decisions, overriding older repository permission limits. Irreversible production data or financial effects remain outside this authority. No release or deployment has occurred.
+
 ## Pivot record — RC-018 web keyed-login tap-relative deadline — partial — 2026-09-29
 
 - **Decision and eligibility:** Continue the eligible RC-018 browser consumer after the installed-iOS pre-POST proof. Avoid modifying borrowed simulator storage or adding a production-only fault seam. RC-018's Start and direct dependencies RC-006, RC-008, RC-013, RC-004, and RC-016 are accepted; all original ticket fields remain unchanged.

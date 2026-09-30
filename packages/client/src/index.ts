@@ -62,7 +62,7 @@ function createRequestSignal(callerSignal: AbortSignal | undefined, timeoutMs: n
   };
 }
 
-function streamWithTimeoutError(response: Response, signal: AbortSignal, cleanup: () => void) {
+function streamWithUnknownOutcomeError(response: Response, cleanup: () => void) {
   if (!response.body) {
     cleanup();
     return response;
@@ -78,7 +78,7 @@ function streamWithTimeoutError(response: Response, signal: AbortSignal, cleanup
         } else controller.enqueue(value);
       } catch (error) {
         cleanup();
-        controller.error(signal.aborted ? new ApiClientError(error) : error);
+        controller.error(new ApiClientError(error));
       }
     },
     async cancel(reason) {
@@ -112,10 +112,9 @@ export function createApiClient(origin: string, options: ApiClientOptions = {}) 
         headers,
         signal,
       });
-    } catch (error) {
+    } catch {
       timedSignal.cleanup();
-      if (signal.aborted) return unknownOutcomeResponse();
-      throw error;
+      return unknownOutcomeResponse();
     }
 
     const contentType = response.headers.get("content-type")?.split(";")[0];
@@ -123,15 +122,14 @@ export function createApiClient(origin: string, options: ApiClientOptions = {}) 
       && response.headers.get("transfer-encoding") === "chunked"
       && !response.headers.has("content-length");
     if (contentType === "text/event-stream" || streamingText) {
-      return streamWithTimeoutError(response, signal, timedSignal.cleanup);
+      return streamWithUnknownOutcomeError(response, timedSignal.cleanup);
     }
 
     try {
       await response.clone().arrayBuffer();
-    } catch (error) {
+    } catch {
       timedSignal.cleanup();
-      if (signal.aborted) return unknownOutcomeResponse();
-      throw error;
+      return unknownOutcomeResponse();
     }
     timedSignal.cleanup();
     return response;

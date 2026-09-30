@@ -38,11 +38,14 @@ function readActions(database: Database): CursorAction[] {
 }
 
 function readRequestReceipt(database: Database, userId: string, requestId: string) {
-  return database.query<ActionReceipt, [string, string]>(`
+  const receipts = database.query<ActionReceipt, [string, string]>(`
     SELECT actions.id, actions.action, actions.created_at AS createdAt
     FROM action_requests JOIN actions ON actions.id = action_requests.action_id
-    WHERE action_requests.user_id = ? AND action_requests.request_id = ?
-  `).get(userId, requestId);
+    WHERE action_requests.user_id = ? AND action_requests.request_id = ? COLLATE NOCASE
+    LIMIT 2
+  `).all(userId, requestId);
+  if (receipts.length > 1) throw new Error("Stored action request identity is ambiguous");
+  return receipts[0] ?? null;
 }
 
 function sendSnapshot(databasePath: string, client: EventsClient) {
@@ -74,6 +77,9 @@ function openDatabase(databasePath: string) {
 }
 
 export function actionsFeature(databasePath: string, allowedOrigin: string) {
+  const requestIdSchema = t.Transform(t.String({ format: "uuid", minLength: 36, maxLength: 36 }))
+    .Decode((value) => value.toLowerCase())
+    .Encode((value) => value.toLowerCase());
   try {
     const database = openDatabase(databasePath);
     try {
@@ -167,7 +173,7 @@ export function actionsFeature(databasePath: string, allowedOrigin: string) {
       } finally {
         database.close();
       }
-    }, { params: t.Object({ requestId: t.String({ format: "uuid" }) }) })
+    }, { params: t.Object({ requestId: requestIdSchema }) })
     .post(
       "/api/actions",
       ({ body, request, set }) => {
@@ -229,7 +235,7 @@ export function actionsFeature(databasePath: string, allowedOrigin: string) {
       },
       { body: t.Object({
         action: t.String({ minLength: 1, maxLength: 120 }),
-        requestId: t.Optional(t.String({ format: "uuid" })),
+        requestId: t.Optional(requestIdSchema),
       }) },
     )
     .ws("/api/events", {

@@ -146,26 +146,40 @@ for (const viewport of [{ name: "desktop", width: 1280, height: 900 }, { name: "
       }
     });
 
-    test("capability preflight failure confirms no login was sent", async ({ page }) => {
-      let loginPosts = 0;
-      page.on("request", (request) => {
-        if (request.method() === "POST" && new URL(request.url()).pathname === "/api/auth/login") loginPosts++;
+    for (const failure of ["503 unknown outcome", "network error"]) {
+      test(`immediate capability preflight ${failure} reports unreachable host, not deadline expiry`, async ({ page }) => {
+        let versionRequests = 0;
+        let loginPosts = 0;
+        page.on("request", (request) => {
+          if (request.method() === "POST" && new URL(request.url()).pathname === "/api/auth/login") loginPosts++;
+        });
+        await page.goto("/");
+        const signIn = page.getByRole("button", { name: "Sign in", exact: true });
+        await expect(signIn).toBeEnabled();
+        await page.route("**/api/version", async (route) => {
+          versionRequests++;
+          if (failure === "503 unknown outcome") {
+            await route.fulfill({ status: 503, json: { error: "request_outcome_unknown" } });
+          } else {
+            await route.abort("failed");
+          }
+        });
+        await enterPassword(page);
+        const tapStarted = Date.now();
+        const versionRequest = page.waitForRequest((request) => new URL(request.url()).pathname === "/api/version", { timeout: 5_000 });
+        await signIn.click();
+        await versionRequest;
+        await expect(page.getByTestId("auth-recovery-status")).toHaveText("The host could not be checked. No login request was sent. Try again when the host is reachable.");
+        expect(Date.now() - tapStarted).toBeLessThan(5_000);
+        expect(await pending(page)).toBeNull();
+        expect(await page.context().cookies()).toEqual([]);
+        expect(await page.request.get("/api/auth/session").then((response) => response.status())).toBe(401);
+        await expect(page.getByTestId("connection-status")).toHaveCount(0);
+        await expect(signIn).toBeEnabled();
+        expect(versionRequests).toBe(1);
+        expect(loginPosts).toBe(0);
       });
-      await page.goto("/");
-      const signIn = page.getByRole("button", { name: "Sign in", exact: true });
-      await expect(signIn).toBeEnabled();
-      await page.route("**/api/version", async (route) => { await route.abort("failed"); });
-      await enterPassword(page);
-      const versionRequest = page.waitForRequest((request) => new URL(request.url()).pathname === "/api/version", { timeout: 5_000 });
-      await signIn.click();
-      await versionRequest;
-      await expect(page.getByTestId("auth-recovery-status")).toHaveText("The host could not be checked. No login request was sent. Try again when the host is reachable.");
-      expect(loginPosts).toBe(0);
-      expect(await pending(page)).toBeNull();
-      expect(await page.context().cookies()).toEqual([]);
-      expect(await page.request.get("/api/auth/session").then((response) => response.status())).toBe(401);
-      await expect(signIn).toBeEnabled();
-    });
+    }
 
     test("login POST that crosses the tap deadline stays unknown and is never replayed", async ({ page }) => {
       let loginPosts = 0;
