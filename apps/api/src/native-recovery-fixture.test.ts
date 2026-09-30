@@ -50,6 +50,79 @@ it("injects native response loss only after the real action commits and preserve
   }
 });
 
+it("revokes the actual receipt session before a held lookup returns unauthorized", async () => {
+  const directory = mkdtempSync(join(process.env.RC_NATIVE_TEST_WORK_DIR ?? tmpdir(), "privacy-receipt-fixture-"));
+  const databasePath = join(directory, "host.sqlite");
+  const password = "native-fixture-password";
+  const app = createNativeRecoveryTestApi(databasePath, password);
+  const login = async () => {
+    const response = await app.handle(new Request("https://localhost/api/auth/login", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ password }),
+    }));
+    const cookie = response.headers.get("set-cookie")?.split(";")[0];
+    if (!cookie) throw new Error("Missing authenticated native fixture session");
+    return cookie;
+  };
+  const controllerCookie = await login();
+  const mobileCookie = await login();
+  const server = app.listen(0);
+  const port = server.server?.port;
+  if (!port) throw new Error("Native fixture did not listen");
+  const origin = `http://127.0.0.1:${port}`;
+  const requestId = crypto.randomUUID();
+  const action = "native privacy receipt revocation proof";
+  const control = (path: string, method = "GET", body?: object) => fetch(`${origin}${path}`, {
+    method,
+    headers: { cookie: controllerCookie, ...(body ? { "content-type": "application/json" } : {}) },
+    ...(body ? { body: JSON.stringify(body) } : {}),
+  });
+  try {
+    const armed = await control("/__test__/lose-action-response", "POST", { privacyUnauthorizedReceipt: true });
+    expect(armed.status).toBe(200);
+    const post = await fetch(`${origin}/api/actions`, {
+      method: "POST", headers: { cookie: mobileCookie, "content-type": "application/json" },
+      body: JSON.stringify({ requestId, action }),
+    });
+    expect(post.status).toBe(201);
+    await post.body?.cancel();
+
+    const receiptRead = fetch(`${origin}/api/actions/receipts/${requestId}`, { headers: { cookie: mobileCookie } });
+    const started = await control("/__test__/wait-privacy-receipt");
+    expect(started.status).toBe(200);
+    expect(await started.json()).toEqual({ privacyReceiptReads: 1, privacySessionRevocations: 1, privacyReceiptRequestId: requestId });
+    const released = await control("/__test__/release-privacy-receipt", "POST");
+    expect(released.status).toBe(200);
+    expect(await released.json()).toEqual({ released: true });
+    const unauthorized = await receiptRead;
+    expect(unauthorized.status).toBe(401);
+    expect(await unauthorized.json()).toEqual({ error: "unauthorized" });
+
+    expect((await fetch(`${origin}/api/auth/session`, { headers: { cookie: mobileCookie } })).status).toBe(401);
+    expect((await fetch(`${origin}/api/auth/session`, { headers: { cookie: controllerCookie } })).status).toBe(200);
+    const diagnostics = await control("/__test__/response-loss");
+    expect(diagnostics.status).toBe(200);
+    expect(await diagnostics.json()).toMatchObject({
+      lostResponse: true, actionPosts: 1, requestId, privacyReceiptReads: 1,
+      privacySessionRevocations: 1, privacyReceiptRequestId: requestId, privacyReceiptResponseStatus: 401,
+    });
+    const database = new Database(databasePath, { readonly: true, create: false });
+    try {
+      expect(database.query("SELECT id, action FROM actions").all()).toHaveLength(1);
+      expect(database.query("SELECT request_id, action_id FROM action_requests").all()).toHaveLength(1);
+      expect(database.query("SELECT COUNT(*) AS count FROM sessions").get()).toEqual({ count: 1 });
+      expect(database.query("PRAGMA quick_check").get()).toEqual({ quick_check: "ok" });
+    } finally { database.close(); }
+
+    expect((await control("/api/auth/logout", "POST", {})).status).toBe(204);
+    const afterLogout = new Database(databasePath, { readonly: true, create: false });
+    try { expect(afterLogout.query("SELECT COUNT(*) AS count FROM sessions").get()).toEqual({ count: 0 }); }
+    finally { afterLogout.close(); }
+  } finally {
+    await server.stop(true);
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 it("returns the canonical action receipt when the real handler accepts after a delay", async () => {
   const directory = mkdtempSync(join(tmpdir(), "rc018-native-post-delay-"));
   const password = "native-post-delay-password";

@@ -2,7 +2,7 @@
 
 RemoteCode is being planned as a persistent Linux workspace for each user. The backend, desktop GUI, workspaces, Bots, and their data live in a Docker container. Web and mobile clients connect to that container through HTTP and WebSocket. When a Bot needs a person to log in or complete another visual step, the user can take control of its Linux session and then hand it back.
 
-The project is intended to be open source and self-hostable, with paid hosting for people who prefer a managed workspace. This repository currently contains the product plan and screen concepts, not a working application.
+The project is intended to be open source and self-hostable, with paid hosting for people who prefer a managed workspace. This repository contains the product plan, screen concepts, and local proof implementations. The full application remains incomplete; [checkpoint evidence](plan/checkpoint-evidence.md) separates verified behavior from open requirements.
 
 ## Read the plan
 

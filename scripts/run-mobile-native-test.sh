@@ -9,6 +9,10 @@ case "$WORK_DIR" in
 esac
 mkdir -p "$WORK_DIR"
 API_PORT="${RC_NATIVE_TEST_API_PORT:-39211}"
+if [[ ("${RC_NATIVE_TEST_WORKSPACES:-0}" == "1" || "${RC_NATIVE_TEST_PRIVACY_EXPIRY:-0}" == "1" || "${RC_NATIVE_TEST_PRIVACY_BUSY:-0}" == "1") && "$API_PORT" != "39211" ]]; then
+  echo "Selected workspace tests require API port 39211." >&2
+  exit 2
+fi
 API_ORIGIN="http://127.0.0.1:$API_PORT"
 API_PASSWORD="remote-code-native-test-passphrase"
 DATABASE_PATH="$WORK_DIR/remotecode-native.sqlite"
@@ -18,12 +22,39 @@ DERIVED_DATA_PATH="${RC_NATIVE_TEST_DERIVED_DATA:-$WORK_DIR/DerivedData}"
 API_ENTRY="apps/api/src/index.ts"
 TEST_SELECTION="RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testInstalledAppUsesAuthenticatedSnapshotEventsAndReceipts"
 SKIP_TEST_ARG=""
+if [[ "${RC_NATIVE_TEST_PRIVACY_EXPIRY:-0}" == "1" ]]; then
+  for mode in RC_NATIVE_TEST_RECOVERY RC_NATIVE_TEST_AUTO_ACTION RC_NATIVE_TEST_HEALTH RC_NATIVE_TEST_DEADLINE RC_NATIVE_TEST_POST_DELAY RC_NATIVE_TEST_LOGIN_DEADLINE RC_NATIVE_TEST_LOGIN_PREFLIGHT_DEADLINE RC_NATIVE_TEST_WORKSPACES RC_NATIVE_TEST_PRIVACY_BUSY; do
+    if [[ "${!mode:-0}" == "1" ]]; then
+      echo "RC_NATIVE_TEST_PRIVACY_EXPIRY cannot be combined with $mode." >&2
+      exit 2
+    fi
+  done
+  TEST_SELECTION="RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testActionReceiptUnauthorizedClearsPrivateWorkspaceState"
+fi
+if [[ "${RC_NATIVE_TEST_PRIVACY_BUSY:-0}" == "1" ]]; then
+  for mode in RC_NATIVE_TEST_RECOVERY RC_NATIVE_TEST_AUTO_ACTION RC_NATIVE_TEST_HEALTH RC_NATIVE_TEST_DEADLINE RC_NATIVE_TEST_POST_DELAY RC_NATIVE_TEST_LOGIN_DEADLINE RC_NATIVE_TEST_LOGIN_PREFLIGHT_DEADLINE RC_NATIVE_TEST_WORKSPACES RC_NATIVE_TEST_PRIVACY_EXPIRY; do
+    if [[ "${!mode:-0}" == "1" ]]; then
+      echo "RC_NATIVE_TEST_PRIVACY_BUSY cannot be combined with $mode." >&2
+      exit 2
+    fi
+  done
+  TEST_SELECTION="RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testWorkspaceUnauthorizedClearsBusyActionAndIgnoresOldReceiptAfterRelogin"
+fi
+if [[ "${RC_NATIVE_TEST_WORKSPACES:-0}" == "1" ]]; then
+  for mode in RC_NATIVE_TEST_RECOVERY RC_NATIVE_TEST_AUTO_ACTION RC_NATIVE_TEST_HEALTH RC_NATIVE_TEST_DEADLINE RC_NATIVE_TEST_POST_DELAY RC_NATIVE_TEST_LOGIN_DEADLINE RC_NATIVE_TEST_LOGIN_PREFLIGHT_DEADLINE; do
+    if [[ "${!mode:-0}" == "1" ]]; then
+      echo "RC_NATIVE_TEST_WORKSPACES cannot be combined with $mode." >&2
+      exit 2
+    fi
+  done
+  TEST_SELECTION="RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testInstalledAppCreatesAndMutatesTwoWorkspaceMetadataRecords"
+fi
 EXTRA_SKIP_ARGS=()
 if [[ "${RC_NATIVE_TEST_RECOVERY:-0}" == "1" ]]; then
   API_ENTRY="apps/api/test-support/native-recovery.ts"
   TEST_SELECTION="RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests"
   SKIP_TEST_ARG="-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testReadinessShowsRealSQLiteLockAndRecoversWithoutBlockingLogin"
-  EXTRA_SKIP_ARGS=("-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testAutomaticActionReceiptAfterLostBody" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testAutomaticActionReceiptStallEndsUnknownWithoutReplay" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testAutomaticActionMalformedTimestampStaysUnknownWithoutReplay" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testActionDeadlineStartsAtTapAndIgnoresLateReceiptWithoutReplay" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testActionPostAcceptedAfterTapDeadlineStaysUnknownUntilManualReceipt" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testNativeLoginDeadlineStartsAtTapAndNeverReplays" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testNativeLoginPreflightDeadlineSendsNoRequestAndAllowsManualRetry")
+  EXTRA_SKIP_ARGS=("-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testAutomaticActionReceiptAfterLostBody" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testAutomaticActionReceiptStallEndsUnknownWithoutReplay" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testAutomaticActionMalformedTimestampStaysUnknownWithoutReplay" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testActionDeadlineStartsAtTapAndIgnoresLateReceiptWithoutReplay" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testActionPostAcceptedAfterTapDeadlineStaysUnknownUntilManualReceipt" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testNativeLoginDeadlineStartsAtTapAndNeverReplays" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testNativeLoginPreflightDeadlineSendsNoRequestAndAllowsManualRetry" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testInstalledAppCreatesAndMutatesTwoWorkspaceMetadataRecords" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testActionReceiptUnauthorizedClearsPrivateWorkspaceState" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testWorkspaceUnauthorizedClearsBusyActionAndIgnoresOldReceiptAfterRelogin")
 fi
 if [[ "${RC_NATIVE_TEST_AUTO_ACTION:-0}" == "1" ]]; then
   API_ENTRY="apps/api/test-support/native-recovery.ts"
@@ -57,6 +88,21 @@ fi
 if [[ "${RC_NATIVE_TEST_LOGIN_PREFLIGHT_DEADLINE:-0}" == "1" ]]; then
   API_ENTRY="apps/api/test-support/native-recovery.ts"
   TEST_SELECTION="RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testNativeLoginPreflightDeadlineSendsNoRequestAndAllowsManualRetry"
+  SKIP_TEST_ARG=""
+  EXTRA_SKIP_ARGS=()
+fi
+if [[ "${RC_NATIVE_TEST_WORKSPACES:-0}" == "1" ]]; then
+  API_ENTRY="apps/api/src/index.ts"
+  SKIP_TEST_ARG=""
+  EXTRA_SKIP_ARGS=()
+fi
+if [[ "${RC_NATIVE_TEST_PRIVACY_EXPIRY:-0}" == "1" ]]; then
+  API_ENTRY="apps/api/test-support/native-recovery.ts"
+  SKIP_TEST_ARG=""
+  EXTRA_SKIP_ARGS=()
+fi
+if [[ "${RC_NATIVE_TEST_PRIVACY_BUSY:-0}" == "1" ]]; then
+  API_ENTRY="apps/api/test-support/native-recovery.ts"
   SKIP_TEST_ARG=""
   EXTRA_SKIP_ARGS=()
 fi
@@ -163,7 +209,7 @@ if ! EXPO_PUBLIC_API_ORIGIN="$API_ORIGIN" \
   exit 1
 fi
 
-python3 - "$DATABASE_PATH" "${RC_NATIVE_TEST_RECOVERY:-0}" "${RC_NATIVE_TEST_HEALTH:-0}" "${RC_NATIVE_TEST_AUTO_ACTION:-0}" "${RC_NATIVE_TEST_DEADLINE:-0}" "${RC_NATIVE_TEST_POST_DELAY:-0}" "${RC_NATIVE_TEST_LOGIN_DEADLINE:-0}" "${RC_NATIVE_TEST_LOGIN_PREFLIGHT_DEADLINE:-0}" <<'PY'
+python3 - "$DATABASE_PATH" "${RC_NATIVE_TEST_RECOVERY:-0}" "${RC_NATIVE_TEST_HEALTH:-0}" "${RC_NATIVE_TEST_AUTO_ACTION:-0}" "${RC_NATIVE_TEST_DEADLINE:-0}" "${RC_NATIVE_TEST_POST_DELAY:-0}" "${RC_NATIVE_TEST_LOGIN_DEADLINE:-0}" "${RC_NATIVE_TEST_LOGIN_PREFLIGHT_DEADLINE:-0}" "${RC_NATIVE_TEST_WORKSPACES:-0}" "${RC_NATIVE_TEST_PRIVACY_EXPIRY:-0}" "${RC_NATIVE_TEST_PRIVACY_BUSY:-0}" <<'PY'
 import json
 import sqlite3
 import sys
@@ -175,6 +221,93 @@ try:
     auth_rows = connection.execute("SELECT request_id, kind, target_request_id, outcome FROM auth_requests ORDER BY created_at").fetchall()
 finally:
     connection.close()
+if sys.argv[10] == "1" or sys.argv[11] == "1":
+    connections = sqlite3.connect(sys.argv[1])
+    try:
+        workspaces = connections.execute("SELECT id, name, archived FROM workspaces ORDER BY created_at, id").fetchall()
+        creates = connections.execute("SELECT request_id, workspace_id FROM workspace_requests").fetchall()
+        workspace_receipts = connections.execute("SELECT request_id, workspace_id, kind, name, archived FROM workspace_receipts").fetchall()
+        changes = connections.execute("SELECT request_id, workspace_id, kind FROM workspace_change_requests").fetchall()
+        action_mappings = connections.execute("SELECT request_id, action_id FROM action_requests").fetchall()
+        sessions = connections.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
+        integrity = connections.execute("PRAGMA quick_check").fetchone()
+    finally:
+        connections.close()
+    if len(rows) != 1 or not rows[0][1].startswith("native-privacy-action-"):
+        raise SystemExit(f"Expected exactly one committed privacy-regression action: {rows!r}")
+    run_id = rows[0][1].removeprefix("native-privacy-action-")
+    if len(run_id) != 36 or len(action_mappings) != 1 or action_mappings[0][1] != rows[0][0]:
+        raise SystemExit(f"Expected exactly one matching action request mapping: actions={rows!r}, mappings={action_mappings!r}")
+    expected_workspace = f"native-privacy-workspace-{run_id}"
+    if len(workspaces) != 1 or workspaces[0][1:] != (expected_workspace, 0):
+        raise SystemExit(f"Private workspace must remain durable and unchanged after UI privacy clearing: {workspaces!r}")
+    if len(creates) != 1 or creates[0][1] != workspaces[0][0]:
+        raise SystemExit(f"Expected exactly one durable creation mapping and no new workspace writes: {creates!r}")
+    if len(workspace_receipts) != 1 or workspace_receipts[0][1:] != (workspaces[0][0], "create", expected_workspace, 0):
+        raise SystemExit(f"Expected one immutable create receipt for the retained workspace: {workspace_receipts!r}")
+    if changes or sessions != 0 or integrity != ("ok",):
+        raise SystemExit(f"Privacy regression left unexpected state: changes={changes!r}, sessions={sessions}, integrity={integrity!r}")
+    if sys.argv[11] == "1":
+        from collections import Counter
+        auth_effects = Counter((row[1], row[3]) for row in auth_rows)
+        expected_auth_effects = Counter({("login", "session_created"): 2, ("logout", "sessions_revoked"): 1})
+        if auth_effects != expected_auth_effects or len({row[0] for row in auth_rows}) != 3:
+            raise SystemExit(f"Expected two real native logins and one explicit UI logout receipt: {auth_rows!r}")
+    print(json.dumps({"actions": rows, "actionMappings": len(action_mappings), "workspaces": workspaces, "creationMappings": len(creates), "workspaceReceipts": len(workspace_receipts), "changeMappings": len(changes), "authEffects": {f"{kind}:{outcome}": count for (kind, outcome), count in Counter((row[1], row[3]) for row in auth_rows).items()} if sys.argv[11] == "1" else None, "remainingSessions": sessions, "quick_check": integrity[0]}, indent=2))
+    sys.exit(0)
+if sys.argv[9] == "1":
+    from collections import Counter
+    connection = sqlite3.connect(sys.argv[1])
+    try:
+        workspaces = connection.execute("SELECT id, name, archived FROM workspaces ORDER BY created_at, id").fetchall()
+        creates = connection.execute("SELECT request_id, workspace_id FROM workspace_requests").fetchall()
+        receipts = connection.execute("SELECT request_id, workspace_id, kind, name, archived FROM workspace_receipts").fetchall()
+        changes = connection.execute("SELECT request_id, workspace_id, kind FROM workspace_change_requests").fetchall()
+        sessions = connection.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
+        integrity = connection.execute("PRAGMA quick_check").fetchone()
+    finally:
+        connection.close()
+    kinds = Counter(row[2] for row in receipts)
+    if len(workspaces) != 2 or len({row[0] for row in workspaces}) != 2:
+        raise SystemExit(f"Expected exactly two distinct workspace records: {workspaces!r}")
+    if len(creates) != 2 or {row[1] for row in creates} != {row[0] for row in workspaces}:
+        raise SystemExit(f"Expected two creation mappings for the retained workspace IDs: {creates!r}")
+    if len(receipts) != 4 or kinds != Counter({"create": 2, "rename": 1, "archive": 1}):
+        raise SystemExit(f"Expected two creation and two immutable change receipts: {receipts!r}")
+    if len(changes) != 2 or Counter(row[2] for row in changes) != Counter({"rename": 1, "archive": 1}):
+        raise SystemExit(f"Expected two persisted change acceptance markers: {changes!r}")
+    if {(row[0], row[1], row[2]) for row in changes} != {(row[0], row[1], row[2]) for row in receipts if row[2] in ("rename", "archive")}:
+        raise SystemExit(f"Change acceptance markers must target their immutable operation receipts: markers={changes!r}, receipts={receipts!r}")
+    created = [row for row in receipts if row[2] == "create"]
+    renamed = [row for row in receipts if row[2] == "rename"]
+    archived_receipt = [row for row in receipts if row[2] == "archive"]
+    if len(created) != 2 or len(renamed) != 1 or len(archived_receipt) != 1:
+        raise SystemExit("Workspace receipts do not contain the expected immutable create/rename/archive history")
+    renamed_name = renamed[0][3]
+    prefix = "native-workspace-A-renamed-"
+    if not renamed_name.startswith(prefix):
+        raise SystemExit(f"Rename receipt must preserve the accepted A name: {renamed!r}")
+    run_id = renamed_name.removeprefix(prefix)
+    expected_a = f"native-workspace-A-{run_id}"
+    expected_b = f"native-workspace-B-{run_id}"
+    live_by_name = {row[1]: row for row in workspaces}
+    created_by_id = {row[1]: row for row in created}
+    if len(run_id) != 36 or len(live_by_name) != 2 or set(live_by_name) != {renamed_name, expected_b}:
+        raise SystemExit(f"Live workspace names do not match this native run: run_id={run_id!r}, workspaces={workspaces!r}")
+    live_a = live_by_name[renamed_name]
+    live_b = live_by_name[expected_b]
+    if set(created_by_id) != {live_a[0], live_b[0]}:
+        raise SystemExit(f"Creation receipts do not map exactly to live A/B IDs: created={created!r}, workspaces={workspaces!r}")
+    if created_by_id[live_a[0]][3:5] != (expected_a, 0) or created_by_id[live_b[0]][3:5] != (expected_b, 0):
+        raise SystemExit(f"Original create names/states were not preserved for this run: {created!r}")
+    if (renamed[0][1], renamed[0][3], renamed[0][4]) != (live_a[0], renamed_name, 0):
+        raise SystemExit(f"Rename receipt must target A and preserve its active renamed state: {renamed!r}")
+    if (archived_receipt[0][1], archived_receipt[0][3], archived_receipt[0][4]) != (live_b[0], expected_b, 1):
+        raise SystemExit(f"Archive receipt must target B and retain its data/state: {archived_receipt!r}")
+    if live_a[2] != 0 or live_b[2] != 1 or sessions != 0 or integrity != ("ok",):
+        raise SystemExit(f"Workspace UI proof left invalid final state: A={live_a!r}, B={live_b!r}, sessions={sessions}, integrity={integrity!r}")
+    print(json.dumps({"workspaces": workspaces, "creationMappings": len(creates), "workspaceReceipts": kinds, "changeMarkers": len(changes), "remainingSessions": sessions, "quick_check": integrity[0]}, indent=2))
+    sys.exit(0)
 if sys.argv[8] == "1":
     from collections import Counter
     kinds = Counter(row[1] for row in auth_rows)

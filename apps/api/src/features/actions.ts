@@ -38,14 +38,24 @@ function readActions(database: Database): CursorAction[] {
 }
 
 function readRequestReceipt(database: Database, userId: string, requestId: string) {
-  const receipts = database.query<ActionReceipt, [string, string]>(`
+  const receipts = database.query<unknown, [string, string]>(`
     SELECT actions.id, actions.action, actions.created_at AS createdAt
-    FROM action_requests JOIN actions ON actions.id = action_requests.action_id
+    FROM action_requests LEFT JOIN actions ON actions.id = action_requests.action_id
     WHERE action_requests.user_id = ? AND action_requests.request_id = ? COLLATE NOCASE
     LIMIT 2
   `).all(userId, requestId);
   if (receipts.length > 1) throw new Error("Stored action request identity is ambiguous");
-  return receipts[0] ?? null;
+  if (!receipts.length) return null;
+  const receipt = receipts[0];
+  if (
+    typeof receipt !== "object" || receipt === null ||
+    !("id" in receipt) || typeof receipt.id !== "string" ||
+    !("action" in receipt) || typeof receipt.action !== "string" ||
+    !("createdAt" in receipt) || typeof receipt.createdAt !== "string"
+  ) {
+    throw new Error("Stored action receipt is invalid");
+  }
+  return { id: receipt.id, action: receipt.action, createdAt: receipt.createdAt };
 }
 
 function sendSnapshot(databasePath: string, client: EventsClient) {

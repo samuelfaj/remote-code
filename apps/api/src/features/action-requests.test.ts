@@ -338,8 +338,11 @@ for (const cut of ["before acceptance", "after commit before headers", "truncate
 }
 
 
-for (const ambiguous of [false, true]) {
-  it(`recreates the API with legacy ${ambiguous ? "conflicting case aliases and fails closed" : "uppercase identity without repeating its effect"}`, async () => {
+for (const legacy of ["uppercase identity", "conflicting case aliases", "uppercase orphan", "orphan and valid alias"] as const) {
+  it(`recreates the API with legacy ${legacy} without accepting another effect`, async () => {
+    const ambiguous = legacy === "conflicting case aliases" || legacy === "orphan and valid alias";
+    const orphan = legacy === "uppercase orphan" || legacy === "orphan and valid alias";
+    const unavailable = ambiguous || orphan;
     const { path } = setup();
     const requestId = "abcdef12-3456-4789-abcd-ef1234567890";
     const receipts = Array.from({ length: ambiguous ? 2 : 1 }, (_, index) => ({
@@ -353,7 +356,9 @@ for (const ambiguous of [false, true]) {
         database.query("INSERT INTO action_requests (user_id, request_id, action_id) VALUES (?, ?, ?)")
           .run("alice", index === 0 ? requestId.toUpperCase() : requestId, receipt.id);
       }
+      if (orphan) database.query("DELETE FROM actions WHERE id = ?").run(receipts[0]!.id);
     } finally { database.close(); }
+    const expectedReceipts = orphan ? receipts.slice(1) : receipts;
     const api = createApi(path).listen(0);
     const port = api.server?.port;
     if (!port) throw new Error("API did not bind");
@@ -384,31 +389,31 @@ for (const ambiguous of [false, true]) {
     }
     try {
       const before = await waitForSnapshot();
-      expect(before.actions.map((receipt) => receipt.id).sort()).toEqual(receipts.map((receipt) => receipt.id).sort());
+      expect(before.actions.map((receipt) => receipt.id).sort()).toEqual(expectedReceipts.map((receipt) => receipt.id).sort());
       const origin = `http://127.0.0.1:${port}`;
       const client = createApiClient(origin, { headers: { cookie: `remotecode_session=${"a".repeat(64)}` } });
       const other = createApiClient(origin, { headers: { cookie: `remotecode_session=${"b".repeat(64)}` } });
       for (const identity of [requestId, requestId.toUpperCase()]) {
         expect((await other.api.actions.receipts({ requestId: identity }).get()).status).toBe(404);
         const lookup = await client.api.actions.receipts({ requestId: identity }).get();
-        expect(lookup.status).toBe(ambiguous ? 500 : 200);
-        if (ambiguous) {
-          expect(lookup.data).toBeNull();
-          expect(lookup.error).not.toBeNull();
-          expect(actionReceiptFromResponse(lookup)).toBeNull();
-          expect(isDefinitiveActionRejection(lookup)).toBe(false);
-        } else expect(actionReceiptFromResponse(lookup)).toEqual(receipts[0]!);
-        for (const receipt of receipts) {
+        for (const receipt of [...receipts].reverse()) {
           const replay = await client.api.actions.post({ requestId: identity, action: receipt.action });
-          expect(replay.status).toBe(ambiguous ? 500 : 200);
-          if (ambiguous) {
+          expect(replay.status).toBe(unavailable ? 500 : 200);
+          if (unavailable) {
             expect(replay.data).toBeNull();
             expect(replay.error).not.toBeNull();
             expect(actionReceiptFromResponse(replay)).toBeNull();
             expect(isDefinitiveActionRejection(replay)).toBe(false);
           } else expect(actionReceiptFromResponse(replay)).toEqual(receipt);
         }
-        expect((await client.api.actions.post({ requestId: identity, action: "another effect" })).status).toBe(ambiguous ? 500 : 409);
+        expect(lookup.status).toBe(unavailable ? 500 : 200);
+        if (unavailable) {
+          expect(lookup.data).toBeNull();
+          expect(lookup.error).not.toBeNull();
+          expect(actionReceiptFromResponse(lookup)).toBeNull();
+          expect(isDefinitiveActionRejection(lookup)).toBe(false);
+        } else expect(actionReceiptFromResponse(lookup)).toEqual(receipts[0]!);
+        expect((await client.api.actions.post({ requestId: identity, action: "another effect" })).status).toBe(unavailable ? 500 : 409);
       }
       const synchronized = waitForSnapshot();
       socket.send(JSON.stringify({ type: "sync" }));
@@ -416,7 +421,7 @@ for (const ambiguous of [false, true]) {
       expect(events).toHaveLength(0);
       const stored = new Database(path, { readonly: true });
       try {
-        expect(stored.query("SELECT id, action, created_at AS createdAt FROM actions ORDER BY sequence").all()).toEqual(receipts);
+        expect(stored.query("SELECT id, action, created_at AS createdAt FROM actions ORDER BY sequence").all()).toEqual(expectedReceipts);
         expect(stored.query("SELECT user_id, request_id, action_id FROM action_requests ORDER BY rowid").all()).toEqual(
           receipts.map((receipt, index) => ({ user_id: "alice", request_id: index === 0 ? requestId.toUpperCase() : requestId, action_id: receipt.id })),
         );

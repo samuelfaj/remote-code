@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native-web";
-import { actionReceiptFromResponse, isDefinitiveActionRejection, isUnknownOutcomeError, applyActionEvent, CLIENT_VERSION, createApiClient, emptyActionEventState } from "@remotecode/client";
+import { actionReceiptFromResponse, isDefinitiveActionRejection, isUnknownOutcomeError, applyActionEvent, CLIENT_VERSION, createApiClient, emptyActionEventState, workspacePanelUserId } from "@remotecode/client";
 import type { ActionEventState } from "@remotecode/client";
 import { getWebHealth } from "../health/api";
+import { WorkspacePanel } from "../workspaces/WorkspacePanel";
 
 function isUnsupportedClientVersion(error: unknown) {
   if (typeof error !== "object" || error === null || !("value" in error)) return false;
@@ -829,6 +830,8 @@ export function App() {
     );
   }
 
+  const panelUserId = workspacePanelUserId(sessionUserId, authenticated);
+
   return (
     <ScrollView contentContainerStyle={styles.page}>
       <View style={styles.shell}>
@@ -919,6 +922,7 @@ export function App() {
             </View>
           )) : <Text style={styles.empty}>The backend has no receipts yet.</Text>}
         </View>
+        {panelUserId ? <WorkspacePanel key={panelUserId} userId={panelUserId} onUnauthorized={hideSession} /> : null}
       </View>
     </ScrollView>
   );

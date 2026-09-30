@@ -1,7 +1,7 @@
 import { Database } from "bun:sqlite";
 import { Elysia, t } from "elysia";
 import { createApi } from "../src/app";
-import { isAuthenticated } from "../src/features/auth";
+import { isAuthenticated, sessionTokenHash, sessionUserId } from "../src/features/auth";
 
 export function createNativeRecoveryTestApi(databasePath: string, password: string) {
   let lockOwner: Database | undefined;
@@ -48,6 +48,16 @@ export function createNativeRecoveryTestApi(databasePath: string, password: stri
   let loginVersionFinished: Promise<void> | null = null;
   let markLoginVersionFinished: (() => void) | null = null;
   let loginVersionRequestFinished = false;
+  let privacyUnauthorizedReceipt = false;
+  let privacyReceiptReads = 0;
+  let privacySessionRevocations = 0;
+  let privacySessionRevoked = false;
+  let privacyReceiptRequestId: string | null = null;
+  let privacyReceiptResponseStatus: number | null = null;
+  let privacyReceiptStarted: Promise<void> | null = null;
+  let markPrivacyReceiptStarted: (() => void) | null = null;
+  let privacyReceiptGate: Promise<void> | null = null;
+  let releasePrivacyReceiptGate: (() => void) | null = null;
   return new Elysia()
     .onBeforeHandle({ as: "global" }, async ({ request, body, set }) => {
       const path = new URL(request.url).pathname;
@@ -95,6 +105,24 @@ export function createNativeRecoveryTestApi(databasePath: string, password: stri
         set.status = 503;
         return { error: "injected_before_login" };
       }
+      if (privacyUnauthorizedReceipt && lostResponse && request.method === "GET" && path.startsWith("/api/actions/receipts/")) {
+        privacyReceiptReads++;
+        privacyReceiptRequestId = path.slice("/api/actions/receipts/".length).toLowerCase();
+        if (!privacySessionRevoked) {
+          const userId = sessionUserId(databasePath, request);
+          const tokenHash = sessionTokenHash(request);
+          if (!userId || !tokenHash || !privacyReceiptGate) throw new Error("Privacy fixture requires the authenticated native receipt session");
+          const database = new Database(databasePath);
+          try {
+            const deleted = database.query("DELETE FROM sessions WHERE user_id = ? AND token_hash = ?").run(userId, tokenHash);
+            if (deleted.changes !== 1) throw new Error("Privacy fixture did not revoke exactly the receipt session");
+            privacySessionRevocations += deleted.changes;
+          } finally { database.close(); }
+          privacySessionRevoked = true;
+          markPrivacyReceiptStarted?.();
+          await privacyReceiptGate;
+        }
+      }
       if (armed && request.method === "POST" && path === "/api/actions") {
         actionPosts++;
         markActionPostStarted?.();
@@ -136,6 +164,9 @@ export function createNativeRecoveryTestApi(databasePath: string, password: stri
     })
     .onAfterHandle({ as: "global" }, ({ request, body, set }) => {
       const path = new URL(request.url).pathname;
+      if (privacyUnauthorizedReceipt && privacySessionRevoked && request.method === "GET" && path.startsWith("/api/actions/receipts/")) {
+        privacyReceiptResponseStatus = typeof set.status === "number" ? set.status : 200;
+      }
       if (request.method === "GET" && path === "/api/version" && loginVersionFinished && !loginVersionRequestFinished) {
         loginVersionRequestFinished = true;
         markLoginVersionFinished?.();
@@ -171,7 +202,7 @@ export function createNativeRecoveryTestApi(databasePath: string, password: stri
       markActionPostAccepted?.();
       if (typeof body === "object" && body !== null && "requestId" in body && typeof body.requestId === "string") requestId = body.requestId;
       // The action has committed; only its response body is malformed.
-      if (actionDeadlineScenario) return new Response('{"id":', { status: 201, headers: { "content-type": "application/json" } });
+      if (actionDeadlineScenario || privacyUnauthorizedReceipt) return new Response('{"id":', { status: 201, headers: { "content-type": "application/json" } });
       return new Response(new ReadableStream({
         start(controller) { controller.enqueue(new TextEncoder().encode('{"id":')); },
       }), { status: 201, headers: { "content-type": "application/json" } });
@@ -363,14 +394,29 @@ export function createNativeRecoveryTestApi(databasePath: string, password: stri
       if (actionDeadlinePostDelayScenario) {
         actionPostDelayGate = new Promise<void>((resolve) => { releaseActionPostDelay = resolve; });
       }
-      receiptFault = actionDeadlineScenario || actionDeadlinePostDelayScenario ? null : body?.receiptFault === "none" ? null : body?.receiptFault ?? "fail";
+      privacyUnauthorizedReceipt = body?.privacyUnauthorizedReceipt === true;
+      receiptFault = privacyUnauthorizedReceipt || actionDeadlineScenario || actionDeadlinePostDelayScenario ? null : body?.receiptFault === "none" ? null : body?.receiptFault ?? "fail";
       actionPosts = 0;
       requestId = null;
+      privacyReceiptReads = 0;
+      privacySessionRevocations = 0;
+      privacySessionRevoked = false;
+      privacyReceiptRequestId = null;
+      privacyReceiptResponseStatus = null;
+      privacyReceiptGate = null;
+      releasePrivacyReceiptGate = null;
+      privacyReceiptStarted = null;
+      markPrivacyReceiptStarted = null;
+      if (privacyUnauthorizedReceipt) {
+        privacyReceiptGate = new Promise<void>((resolve) => { releasePrivacyReceiptGate = resolve; });
+        privacyReceiptStarted = new Promise<void>((resolve) => { markPrivacyReceiptStarted = resolve; });
+      }
       return { armed: true };
     }, { body: t.Optional(t.Object({
       receiptFault: t.Optional(t.Union([t.Literal("fail"), t.Literal("stall"), t.Literal("malformed"), t.Literal("none")])),
       actionDeadline: t.Optional(t.Literal(true)),
       actionDeadlinePostDelay: t.Optional(t.Literal(true)),
+      privacyUnauthorizedReceipt: t.Optional(t.Literal(true)),
     })) })
     .post("/__test__/release-action-post", ({ request, set }) => {
       if (!isAuthenticated(databasePath, request)) {
@@ -412,12 +458,39 @@ export function createNativeRecoveryTestApi(databasePath: string, password: stri
       await accepted;
       return { actionPosts, actionPostDelayCompleted, lostResponse };
     })
+    .get("/__test__/wait-privacy-receipt", async ({ request, set }) => {
+      if (!isAuthenticated(databasePath, request)) {
+        set.status = 401;
+        return { error: "unauthorized" };
+      }
+      if (!privacyUnauthorizedReceipt || !privacyReceiptStarted) {
+        set.status = 409;
+        return { waiting: false };
+      }
+      await privacyReceiptStarted;
+      return { privacyReceiptReads, privacySessionRevocations, privacyReceiptRequestId };
+    })
+    .post("/__test__/release-privacy-receipt", ({ request, set }) => {
+      if (!isAuthenticated(databasePath, request)) {
+        set.status = 401;
+        return { error: "unauthorized" };
+      }
+      if (!privacyUnauthorizedReceipt || !privacySessionRevoked || !releasePrivacyReceiptGate) {
+        set.status = 409;
+        return { released: false };
+      }
+      const release = releasePrivacyReceiptGate;
+      releasePrivacyReceiptGate = null;
+      privacyReceiptGate = null;
+      release();
+      return { released: true };
+    })
     .get("/__test__/response-loss", ({ request, set }) => {
       if (!isAuthenticated(databasePath, request)) {
         set.status = 401;
         return { error: "unauthorized" };
       }
-      return { lostResponse, failedRead, receiptReads, receiptReadAtMs, receiptDelayCompleted: lateReceiptCompleted, actionPostDelayCompleted, actionPosts, requestId: requestId ?? "" };
+      return { lostResponse, failedRead, receiptReads, receiptReadAtMs, receiptDelayCompleted: lateReceiptCompleted, actionPostDelayCompleted, actionPosts, requestId: requestId ?? "", privacyReceiptReads, privacySessionRevocations, privacyReceiptRequestId, privacyReceiptResponseStatus };
     });
 }
 

@@ -3,8 +3,9 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { randomUUID } from "expo-crypto";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
-import { actionReceiptFromResponse, isDefinitiveActionRejection, applyActionEvent, CLIENT_VERSION, createApiClient, emptyActionEventState, type ActionEventState } from "@remotecode/client";
+import { actionReceiptFromResponse, isDefinitiveActionRejection, applyActionEvent, CLIENT_VERSION, createApiClient, emptyActionEventState, type ActionEventState, workspacePanelUserId } from "@remotecode/client";
 import { getMobileHealth } from "./src/features/health/api";
+import { WorkspacePanel } from "./src/features/workspaces/WorkspacePanel";
 
 const apiOrigin = process.env.EXPO_PUBLIC_API_ORIGIN ?? "http://127.0.0.1:3000";
 const clientOrigin = process.env.EXPO_PUBLIC_CLIENT_ORIGIN ?? "http://localhost:5173";
@@ -70,6 +71,7 @@ export default function App() {
   const [password, setPassword] = useState("");
   const [action, setAction] = useState("");
   const [connection, setConnection] = useState<Connection>("signed_out");
+  const [sessionUserId, setSessionUserId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [events, setEvents] = useState<ActionEventState>(emptyActionEventState);
   const [busy, setBusy] = useState(false);
@@ -385,6 +387,7 @@ export default function App() {
         return;
       }
       clearRecoveryView();
+      setSessionUserId(null);
       setConnection("disconnected");
       let response: { status: number; error: unknown; data: unknown } | null = null;
       try {
@@ -426,6 +429,7 @@ export default function App() {
       const receipt = response.data && "receipt" in response.data ? response.data.receipt : null;
       if (authReceiptMatches(receipt, pending)) {
         if (await finishAuth(pending, generation)) {
+          setSessionUserId(null);
           setConnection("signed_out");
           setAuthMessage(pending.kind === "logout" ? "Sign-out confirmed. You may start a new login." : "Old login revocation confirmed. You may start a distinct new login.");
         }
@@ -463,6 +467,7 @@ export default function App() {
       const key = `remotecode.pending-action:${JSON.stringify([apiOrigin, userId])}`;
       const pending = await withPendingStorage(async () => validatePendingId(await AsyncStorage.getItem(key)));
       if (generation !== operationGeneration.current) return;
+      setSessionUserId(userId);
       setPendingKey(key);
       setPendingRequestId(pending);
       setStorageReady(true);
@@ -547,9 +552,11 @@ export default function App() {
           setAction("");
           setBusy(false);
           clearRecoveryView();
+          setSessionUserId(null);
           setConnection("signed_out");
           setError("The host session expired or was revoked. Sign in again.");
         } else {
+          if (event.code === 4406) setSessionUserId(null);
           setConnection(event.code === 4406 ? "incompatible" : "disconnected");
           if (event.code === 4406) setError(compatibilityMessage);
         }
@@ -759,6 +766,7 @@ export default function App() {
           setPassword("");
           setAction("");
           setBusy(false);
+          setSessionUserId(null);
           setConnection("signed_out");
           setError("The host session expired or was revoked. Sign in again.");
           return;
@@ -775,6 +783,19 @@ export default function App() {
     }
   }
 
+  function expireWorkspaceSession() {
+    operationGeneration.current++;
+    if (syncTimeout.current) clearTimeout(syncTimeout.current);
+    socket.current?.close();
+    socket.current = null;
+    setSessionUserId(null);
+    setConnection("signed_out");
+    setBusy(false);
+    eventState.current = emptyActionEventState();
+    setEvents(eventState.current);
+    setError("The host session expired or was revoked. Sign in again.");
+  }
+
   async function signOut() {
     if (authPending.current) return;
     await runAuth(async (generation) => {
@@ -784,6 +805,7 @@ export default function App() {
       if (syncTimeout.current) clearTimeout(syncTimeout.current);
       eventState.current = emptyActionEventState();
       setEvents(eventState.current);
+      setSessionUserId(null);
       setConnection("disconnected");
       clearRecoveryView();
       setPassword("");
@@ -795,12 +817,18 @@ export default function App() {
       if (generation !== operationGeneration.current) return;
       if (!response.error && authReceiptMatches(response.data, pending)) {
         if (await finishAuth(pending, generation)) {
+          setSessionUserId(null);
           setConnection("signed_out");
           setAuthMessage("Sign-out confirmed.");
         }
       } else setAuthMessage("Disconnected on this device. The logout outcome is unknown; the host session may still be active. Check its receipt.");
     });
   }
+
+  const panelUserId = workspacePanelUserId(
+    sessionUserId,
+    connection !== "signed_out" && connection !== "incompatible",
+  );
 
   return (
     <SafeAreaProvider>
@@ -854,6 +882,7 @@ export default function App() {
               </View>
             ))}
           </View> : null}
+          {panelUserId ? <WorkspacePanel key={panelUserId} origin={apiOrigin} userId={panelUserId} onUnauthorized={expireWorkspaceSession} /> : null}
         </ScrollView>
       </SafeAreaView>
     </SafeAreaProvider>

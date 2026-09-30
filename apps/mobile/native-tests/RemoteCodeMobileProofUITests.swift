@@ -119,8 +119,12 @@ final class RemoteCodeMobileProofUITests: XCTestCase {
         let actionInput = app.textFields["Action"]
         XCTAssertTrue(actionInput.waitForExistence(timeout: 10))
         actionInput.tap()
-        actionInput.typeText(submittedAction)
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        for character in submittedAction {
+            actionInput.typeText(String(character))
+        }
         app.keyboards.buttons["Return"].tap()
+        app.staticTexts["Host connection"].firstMatch.tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5), "The keyboard must be dismissed before tapping Submit action")
         XCTAssertEqual(actionInput.value as? String, submittedAction, "The submitted action must not be changed by keyboard suggestions")
         let submit = app.buttons["Submit action"]
@@ -141,6 +145,378 @@ final class RemoteCodeMobileProofUITests: XCTestCase {
         let sessionResponse = try await apiSession.get(URL(string: "/api/auth/session", relativeTo: api)!)
         XCTAssertEqual(sessionResponse.statusCode, 401, "Native sign-out must revoke the persisted host session")
         XCTAssertFalse(app.staticTexts["Receipt \(nativeReceipt.id)"].exists, "Signing out must clear the confirmed receipt from the app")
+    }
+
+    @MainActor
+    func testActionReceiptUnauthorizedClearsPrivateWorkspaceState() async throws {
+        let app = XCUIApplication(bundleIdentifier: "com.remotecode.mobileproof")
+        let observer = URLSession(configuration: .ephemeral)
+        app.launch()
+        let apiLabel = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Host: ")).firstMatch
+        XCTAssertTrue(apiLabel.waitForExistence(timeout: 10))
+        let api = try XCTUnwrap(URL(string: String(apiLabel.label.dropFirst("Host: ".count))))
+        XCTAssertEqual(api.host, "127.0.0.1")
+        XCTAssertEqual(api.port, 39211)
+        signIn(app)
+        try await observer.signIn(at: api, password: password)
+
+        let runID = UUID().uuidString
+        let workspaceName = "native-privacy-workspace-\(runID)"
+        for _ in 0..<5 where !app.staticTexts["Workspaces"].exists {
+            app.scrollViews.firstMatch.swipeUp()
+        }
+        XCTAssertTrue(app.staticTexts["Workspaces"].waitForExistence(timeout: 10))
+        let workspaceNameInput = app.textFields["Workspace name"]
+        workspaceNameInput.tap()
+        workspaceNameInput.typeText(workspaceName)
+        app.keyboards.buttons["Return"].tap()
+        app.buttons["Create workspace"].tap()
+        XCTAssertTrue(app.staticTexts["Workspace change confirmed."].waitForExistence(timeout: 15))
+        app.buttons["Open workspace \(workspaceName)"].tap()
+        XCTAssertTrue(app.staticTexts["Selected: \(workspaceName)"].waitForExistence(timeout: 10))
+        let workspaceRows = try await observer.workspaceList(at: api)
+        let workspace = try XCTUnwrap(workspaceRows.first { $0.name == workspaceName })
+        let initialWorkspace = try await observer.workspace(at: api, id: workspace.id)
+        XCTAssertEqual(initialWorkspace.name, workspaceName)
+
+        func fixtureRequest(_ path: String, method: String = "GET", body: [String: Any]? = nil) async throws -> (Any, HTTPURLResponse) {
+            var request = URLRequest(url: URL(string: path, relativeTo: api)!)
+            request.httpMethod = method
+            if let body {
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            }
+            let (data, response) = try await observer.data(for: request)
+            return (try JSONSerialization.jsonObject(with: data), try XCTUnwrap(response as? HTTPURLResponse))
+        }
+
+        let (armed, armResponse) = try await fixtureRequest("/__test__/lose-action-response", method: "POST", body: ["privacyUnauthorizedReceipt": true])
+        XCTAssertEqual(armResponse.statusCode, 200)
+        XCTAssertEqual((armed as? [String: Any])?["armed"] as? Bool, true)
+        let action = "native-privacy-action-\(runID)"
+        let actionInput = app.textFields["Action"]
+        for _ in 0..<5 where !actionInput.isHittable {
+            app.scrollViews.firstMatch.swipeDown()
+        }
+        XCTAssertTrue(actionInput.isHittable)
+        actionInput.tap()
+        actionInput.typeText(action)
+        app.keyboards.buttons["Return"].tap()
+        app.buttons["Submit action"].tap()
+
+        let (waitingData, waitingResponse) = try await fixtureRequest("/__test__/wait-privacy-receipt")
+        XCTAssertEqual(waitingResponse.statusCode, 200)
+        let waiting = try XCTUnwrap(waitingData as? [String: Any])
+        let requestId = try XCTUnwrap(waiting["privacyReceiptRequestId"] as? String)
+        XCTAssertEqual(waiting["privacyReceiptReads"] as? Int, 1)
+        XCTAssertEqual(waiting["privacySessionRevocations"] as? Int, 1)
+        XCTAssertEqual(UUID(uuidString: requestId)?.uuidString.lowercased(), requestId.lowercased())
+        XCTAssertTrue(app.staticTexts.matching(identifier: "connection-status").firstMatch.waitForLabel("connected", timeout: 5), "The native WebSocket must not report expiry before the held receipt lookup replies")
+        XCTAssertTrue(app.staticTexts["Workspaces"].exists)
+        XCTAssertTrue(app.staticTexts[workspaceName].exists)
+        XCTAssertTrue(app.staticTexts["Selected: \(workspaceName)"].exists)
+        let actionsBeforeReceiptReply = try await observer.actions(at: api)
+        let matchingActionReceipts = actionsBeforeReceiptReply.filter { $0.action == action }
+        XCTAssertEqual(matchingActionReceipts.count, 1)
+        let actionReceipt = try XCTUnwrap(matchingActionReceipts.first)
+
+        let (released, releaseResponse) = try await fixtureRequest("/__test__/release-privacy-receipt", method: "POST")
+        XCTAssertEqual(releaseResponse.statusCode, 200)
+        XCTAssertEqual((released as? [String: Any])?["released"] as? Bool, true)
+        let connection = app.staticTexts.matching(identifier: "connection-status").firstMatch
+        XCTAssertTrue(connection.waitForLabel("signed out", timeout: 10), "The real action receipt route's 401 must clear the native session")
+        XCTAssertFalse(app.staticTexts["Workspaces"].exists)
+        XCTAssertFalse(app.staticTexts[workspaceName].exists)
+        XCTAssertFalse(app.staticTexts["Selected: \(workspaceName)"].exists)
+        XCTAssertFalse(app.staticTexts["Receipt \(actionReceipt.id)"].exists)
+        try await Task.sleep(nanoseconds: 1_500_000_000)
+        XCTAssertEqual(connection.label, "signed out")
+        XCTAssertFalse(app.staticTexts["Workspaces"].exists, "Late action callbacks must not restore private workspace state")
+        XCTAssertFalse(app.staticTexts[workspaceName].exists)
+
+        let (diagnosticData, diagnosticResponse) = try await fixtureRequest("/__test__/response-loss")
+        XCTAssertEqual(diagnosticResponse.statusCode, 200)
+        let diagnostics = try XCTUnwrap(diagnosticData as? [String: Any])
+        XCTAssertEqual(diagnostics["lostResponse"] as? Bool, true)
+        XCTAssertEqual(diagnostics["actionPosts"] as? Int, 1)
+        XCTAssertEqual(diagnostics["receiptReads"] as? Int, 1)
+        XCTAssertEqual(diagnostics["requestId"] as? String, requestId)
+        XCTAssertEqual(diagnostics["privacyReceiptReads"] as? Int, 1)
+        XCTAssertEqual(diagnostics["privacySessionRevocations"] as? Int, 1)
+        XCTAssertEqual(diagnostics["privacyReceiptRequestId"] as? String, requestId)
+        XCTAssertEqual(diagnostics["privacyReceiptResponseStatus"] as? Int, 401)
+        let observedWorkspace = try await observer.workspace(at: api, id: workspace.id)
+        XCTAssertEqual(observedWorkspace.name, workspaceName)
+        XCTAssertEqual(observedWorkspace.archived, false)
+
+        var logout = URLRequest(url: URL(string: "/api/auth/logout", relativeTo: api)!)
+        logout.httpMethod = "POST"
+        logout.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        logout.httpBody = Data("{}".utf8)
+        let (_, logoutResponse) = try await observer.data(for: logout)
+        XCTAssertEqual((logoutResponse as? HTTPURLResponse)?.statusCode, 204)
+    }
+
+    @MainActor
+    func testWorkspaceUnauthorizedClearsBusyActionAndIgnoresOldReceiptAfterRelogin() async throws {
+        let app = XCUIApplication(bundleIdentifier: "com.remotecode.mobileproof")
+        let observer = URLSession(configuration: .ephemeral)
+        app.launch()
+        let apiLabel = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Host: ")).firstMatch
+        XCTAssertTrue(apiLabel.waitForExistence(timeout: 10))
+        let api = try XCTUnwrap(URL(string: String(apiLabel.label.dropFirst("Host: ".count))))
+        XCTAssertEqual(api.host, "127.0.0.1")
+        XCTAssertEqual(api.port, 39211)
+        signIn(app)
+        try await observer.signIn(at: api, password: password)
+
+        let runID = UUID().uuidString
+        let workspaceName = "native-privacy-workspace-\(runID)"
+        for _ in 0..<5 where !app.staticTexts["Workspaces"].exists {
+            app.scrollViews.firstMatch.swipeUp()
+        }
+        let workspaceNameInput = app.textFields["Workspace name"]
+        XCTAssertTrue(workspaceNameInput.waitForExistence(timeout: 10))
+        workspaceNameInput.tap()
+        workspaceNameInput.typeText(workspaceName)
+        app.keyboards.buttons["Return"].tap()
+        app.buttons["Create workspace"].tap()
+        XCTAssertTrue(app.staticTexts["Workspace change confirmed."].waitForExistence(timeout: 15))
+        app.buttons["Open workspace \(workspaceName)"].tap()
+        XCTAssertTrue(app.staticTexts["Selected: \(workspaceName)"].waitForExistence(timeout: 10))
+        let workspaceRows = try await observer.workspaceList(at: api)
+        let workspace = try XCTUnwrap(workspaceRows.first { $0.name == workspaceName })
+        let originalMetadata = try await observer.workspace(at: api, id: workspace.id)
+        XCTAssertEqual(originalMetadata.name, workspaceName)
+
+        func fixtureRequest(_ path: String, method: String = "GET", body: [String: Any]? = nil) async throws -> (Any, HTTPURLResponse) {
+            var request = URLRequest(url: URL(string: path, relativeTo: api)!)
+            request.httpMethod = method
+            if let body {
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            }
+            let (data, response) = try await observer.data(for: request)
+            return (try JSONSerialization.jsonObject(with: data), try XCTUnwrap(response as? HTTPURLResponse))
+        }
+
+        let (armed, armResponse) = try await fixtureRequest("/__test__/lose-action-response", method: "POST", body: ["privacyUnauthorizedReceipt": true])
+        XCTAssertEqual(armResponse.statusCode, 200)
+        XCTAssertEqual((armed as? [String: Any])?["armed"] as? Bool, true)
+        let action = "native-privacy-action-\(runID)"
+        let actionInput = app.textFields["Action"]
+        for _ in 0..<5 where !actionInput.isHittable {
+            app.scrollViews.firstMatch.swipeDown()
+        }
+        XCTAssertTrue(actionInput.isHittable)
+        actionInput.tap()
+        actionInput.typeText(action)
+        app.keyboards.buttons["Return"].tap()
+        app.buttons["Submit action"].tap()
+
+        let (waitingData, waitingResponse) = try await fixtureRequest("/__test__/wait-privacy-receipt")
+        XCTAssertEqual(waitingResponse.statusCode, 200)
+        let waiting = try XCTUnwrap(waitingData as? [String: Any])
+        let requestId = try XCTUnwrap(waiting["privacyReceiptRequestId"] as? String)
+        XCTAssertEqual(waiting["privacyReceiptReads"] as? Int, 1)
+        XCTAssertEqual(waiting["privacySessionRevocations"] as? Int, 1)
+        XCTAssertEqual(UUID(uuidString: requestId)?.uuidString.lowercased(), requestId.lowercased())
+        let acceptedActions = try await observer.actions(at: api)
+        XCTAssertEqual(acceptedActions.filter { $0.action == action }.count, 1, "The observer must see exactly one accepted action before workspace refresh")
+        let actionReceipt = try XCTUnwrap(acceptedActions.first { $0.action == action })
+        XCTAssertTrue(app.staticTexts.matching(identifier: "connection-status").firstMatch.waitForLabel("connected", timeout: 3))
+        XCTAssertFalse(app.buttons["Submit action"].isEnabled, "The original action must remain busy while its receipt lookup is held")
+
+        for _ in 0..<5 where !app.buttons["Refresh workspaces"].isHittable {
+            app.scrollViews.firstMatch.swipeUp()
+        }
+        let refresh = app.buttons["Refresh workspaces"]
+        XCTAssertTrue(refresh.isEnabled && refresh.isHittable)
+        refresh.tap()
+        let connection = app.staticTexts.matching(identifier: "connection-status").firstMatch
+        XCTAssertTrue(connection.waitForLabel("signed out", timeout: 5), "Workspace GET 401 must clear the root session while action receipt remains held")
+        XCTAssertFalse(app.staticTexts["Workspaces"].exists)
+        XCTAssertFalse(app.staticTexts[workspaceName].exists)
+        XCTAssertFalse(app.staticTexts["Selected: \(workspaceName)"].exists)
+        let signInButton = app.buttons["Sign in to host"]
+        XCTAssertTrue(signInButton.waitForExistence(timeout: 5))
+        let passwordInput = app.secureTextFields["Host password"]
+        passwordInput.tap()
+        passwordInput.typeText(password)
+        app.staticTexts["Host connection"].firstMatch.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(signInButton.isEnabled && signInButton.isHittable, "Workspace expiry must clear action busy state while its old receipt request remains held")
+        signInButton.tap()
+        XCTAssertTrue(connection.waitForLabel("connected", timeout: 10))
+        for _ in 0..<5 where !app.staticTexts[workspaceName].exists {
+            app.scrollViews.firstMatch.swipeUp()
+        }
+        XCTAssertTrue(app.staticTexts["Workspaces"].exists)
+        XCTAssertTrue(app.staticTexts[workspaceName].exists)
+        XCTAssertFalse(app.staticTexts["Selected: \(workspaceName)"].exists, "A new login must not inherit the earlier workspace selection")
+
+        let (released, releaseResponse) = try await fixtureRequest("/__test__/release-privacy-receipt", method: "POST")
+        XCTAssertEqual(releaseResponse.statusCode, 200)
+        XCTAssertEqual((released as? [String: Any])?["released"] as? Bool, true)
+        var diagnostics: [String: Any] = [:]
+        let oldReceiptDeadline = Date().addingTimeInterval(10)
+        repeat {
+            let (data, response) = try await fixtureRequest("/__test__/response-loss")
+            XCTAssertEqual(response.statusCode, 200)
+            diagnostics = try XCTUnwrap(data as? [String: Any])
+            if diagnostics["privacyReceiptResponseStatus"] as? Int == 401 { break }
+            try await Task.sleep(nanoseconds: 100_000_000)
+        } while Date() < oldReceiptDeadline
+        XCTAssertEqual(diagnostics["privacyReceiptResponseStatus"] as? Int, 401, "The held old receipt must return 401 before checking replacement-session state")
+        try await Task.sleep(nanoseconds: 1_500_000_000)
+        XCTAssertTrue(connection.waitForLabel("connected", timeout: 5), "Old receipt 401 must not sign out the replacement session")
+        XCTAssertTrue(app.staticTexts["Workspaces"].exists)
+        XCTAssertTrue(app.staticTexts[workspaceName].exists)
+        XCTAssertFalse(app.staticTexts["Selected: \(workspaceName)"].exists)
+        let receiptCheck = app.buttons["Check action receipt"]
+        XCTAssertTrue(receiptCheck.waitForExistence(timeout: 5))
+        receiptCheck.tap()
+        let recovery = app.staticTexts.matching(identifier: "action-recovery-status").firstMatch
+        XCTAssertTrue(recovery.waitForLabelContaining("Confirmed receipt", timeout: 15), "Manual receipt check must clear the interrupted pending identity")
+        XCTAssertTrue(recovery.label.contains(actionReceipt.id), "Manual recovery must show the canonical receipt held before relogin")
+        XCTAssertTrue(app.staticTexts["Receipt \(actionReceipt.id)"].waitForExistence(timeout: 10))
+        XCTAssertTrue(receiptCheck.waitForNonExistence(timeout: 5), "A confirmed receipt must clear pending action identity")
+        let refreshedButton = app.buttons["Refresh workspaces"]
+        for _ in 0..<5 where !refreshedButton.isHittable {
+            app.scrollViews.firstMatch.swipeUp()
+        }
+        XCTAssertTrue(refreshedButton.isEnabled && refreshedButton.isHittable)
+        refreshedButton.tap()
+        XCTAssertTrue(app.staticTexts[workspaceName].waitForExistence(timeout: 10), "The replacement session must still complete a real workspace refresh")
+        app.buttons["Open workspace \(workspaceName)"].tap()
+        XCTAssertTrue(app.staticTexts["Selected: \(workspaceName)"].waitForExistence(timeout: 10))
+
+        let (diagnosticData, diagnosticResponse) = try await fixtureRequest("/__test__/response-loss")
+        XCTAssertEqual(diagnosticResponse.statusCode, 200)
+        diagnostics = try XCTUnwrap(diagnosticData as? [String: Any])
+        XCTAssertEqual(diagnostics["lostResponse"] as? Bool, true)
+        XCTAssertEqual(diagnostics["actionPosts"] as? Int, 1, "Receipt recovery must not replay the action POST")
+        XCTAssertEqual(diagnostics["receiptReads"] as? Int, 2)
+        XCTAssertEqual(diagnostics["requestId"] as? String, requestId)
+        XCTAssertEqual(diagnostics["privacyReceiptReads"] as? Int, 2)
+        XCTAssertEqual(diagnostics["privacySessionRevocations"] as? Int, 1)
+        XCTAssertEqual(diagnostics["privacyReceiptRequestId"] as? String, requestId)
+        XCTAssertEqual(diagnostics["privacyReceiptResponseStatus"] as? Int, 200)
+        let unchangedMetadata = try await observer.workspace(at: api, id: workspace.id)
+        XCTAssertEqual(unchangedMetadata.id, originalMetadata.id)
+        XCTAssertEqual(unchangedMetadata.name, workspaceName)
+        let finalWorkspaces = try await observer.workspaceList(at: api)
+        XCTAssertEqual(finalWorkspaces.count, 1)
+
+        let signOut = app.buttons["Sign out"]
+        for _ in 0..<5 where !signOut.isHittable {
+            app.scrollViews.firstMatch.swipeDown()
+        }
+        XCTAssertTrue(signOut.isEnabled && signOut.isHittable)
+        signOut.tap()
+        XCTAssertTrue(connection.waitForLabel("signed out", timeout: 10))
+        XCTAssertFalse(app.staticTexts["Workspaces"].exists)
+        let revokedObserverSession = try await observer.get(URL(string: "/api/auth/session", relativeTo: api)!)
+        XCTAssertEqual(revokedObserverSession.statusCode, 401)
+    }
+
+    @MainActor
+    func testInstalledAppCreatesAndMutatesTwoWorkspaceMetadataRecords() async throws {
+        let app = XCUIApplication(bundleIdentifier: "com.remotecode.mobileproof")
+        let observer = URLSession(configuration: .ephemeral)
+        app.launch()
+        let apiLabel = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Host: ")).firstMatch
+        XCTAssertTrue(apiLabel.waitForExistence(timeout: 10))
+        let api = try XCTUnwrap(URL(string: String(apiLabel.label.dropFirst("Host: ".count))))
+        XCTAssertEqual(api.host, "127.0.0.1")
+        XCTAssertEqual(api.port, 39211, "Native workspace observer must use the runner's regular API port")
+        signIn(app)
+        try await observer.signIn(at: api, password: password)
+
+        let runID = UUID().uuidString
+        let nameA = "native-workspace-A-\(runID)"
+        let nameB = "native-workspace-B-\(runID)"
+        for _ in 0..<5 where !app.staticTexts["Workspaces"].exists {
+            app.scrollViews.firstMatch.swipeUp()
+        }
+        XCTAssertTrue(app.staticTexts["Workspaces"].waitForExistence(timeout: 10))
+        let nameInput = app.textFields["Workspace name"]
+        nameInput.tap()
+        nameInput.typeText(nameA)
+        app.keyboards.buttons["Return"].tap()
+        app.buttons["Create workspace"].tap()
+        XCTAssertTrue(app.staticTexts["Workspace change confirmed."].waitForExistence(timeout: 15))
+        app.buttons["Refresh workspaces"].tap()
+        XCTAssertTrue(app.staticTexts[nameA].waitForExistence(timeout: 10))
+
+        nameInput.tap()
+        nameInput.typeText(nameB)
+        app.keyboards.buttons["Return"].tap()
+        app.buttons["Create workspace"].tap()
+        XCTAssertTrue(app.staticTexts["Workspace change confirmed."].waitForExistence(timeout: 15))
+        app.buttons["Refresh workspaces"].tap()
+        XCTAssertTrue(app.staticTexts[nameB].waitForExistence(timeout: 10))
+        let initialRows = try await observer.workspaceList(at: api)
+        let workspaceA = try XCTUnwrap(initialRows.first { $0.name == nameA })
+        let workspaceB = try XCTUnwrap(initialRows.first { $0.name == nameB })
+        XCTAssertNotEqual(workspaceA.id, workspaceB.id)
+        XCTAssertTrue(app.buttons["Open workspace \(nameA)"].exists)
+        XCTAssertTrue(app.buttons["Open workspace \(nameB)"].exists)
+        var observedA = try await observer.workspace(at: api, id: workspaceA.id)
+        var observedB = try await observer.workspace(at: api, id: workspaceB.id)
+        XCTAssertEqual(observedA.name, nameA)
+        XCTAssertEqual(observedB.name, nameB)
+
+        app.buttons["Open workspace \(nameA)"].tap()
+        XCTAssertTrue(app.staticTexts["Selected: \(nameA)"].waitForExistence(timeout: 10))
+        let renameInput = app.textFields["New workspace name"]
+        let renamedA = "native-workspace-A-renamed-\(runID)"
+        renameInput.tap()
+        renameInput.typeText(renamedA)
+        app.keyboards.buttons["Return"].tap()
+        app.buttons["Rename workspace"].tap()
+        XCTAssertTrue(app.staticTexts["Workspace change confirmed."].waitForExistence(timeout: 15))
+        observedA = try await observer.workspace(at: api, id: workspaceA.id)
+        observedB = try await observer.workspace(at: api, id: workspaceB.id)
+        XCTAssertEqual(observedA.name, renamedA)
+        XCTAssertEqual(observedB.name, nameB)
+
+        app.buttons["Open workspace \(nameB)"].tap()
+        XCTAssertTrue(app.staticTexts["Selected: \(nameB)"].waitForExistence(timeout: 10))
+        app.buttons["Archive workspace"].tap()
+        XCTAssertTrue(app.staticTexts["Workspace change confirmed."].waitForExistence(timeout: 15))
+        app.buttons["Open workspace \(nameB)"].tap()
+        XCTAssertTrue(app.staticTexts["Selected: \(nameB)"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Archived workspaces are read-only."].exists)
+        XCTAssertFalse(app.buttons["Rename workspace"].exists)
+        XCTAssertFalse(app.buttons["Archive workspace"].exists)
+        observedB = try await observer.workspace(at: api, id: workspaceB.id)
+        observedA = try await observer.workspace(at: api, id: workspaceA.id)
+        XCTAssertEqual(observedB.archived, true)
+        XCTAssertEqual(observedB.name, nameB)
+        XCTAssertEqual(observedA.id, workspaceA.id)
+        XCTAssertEqual(observedA.name, renamedA)
+
+        app.terminate()
+        app.launch()
+        signIn(app)
+        for _ in 0..<5 where !app.staticTexts[renamedA].exists {
+            app.scrollViews.firstMatch.swipeUp()
+        }
+        XCTAssertTrue(app.staticTexts[renamedA].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["\(nameB) (archived, read-only)"].waitForExistence(timeout: 10))
+        observedA = try await observer.workspace(at: api, id: workspaceA.id)
+        observedB = try await observer.workspace(at: api, id: workspaceB.id)
+        XCTAssertEqual(observedA.name, renamedA)
+        XCTAssertEqual(observedB.archived, true)
+
+        app.buttons["Sign out"].tap()
+        XCTAssertTrue(app.staticTexts.matching(identifier: "connection-status").firstMatch.waitForLabel("signed out", timeout: 10))
+        XCTAssertFalse(app.staticTexts["Workspaces"].exists, "Logout must hide the private workspace panel")
+        let revokedSession = try await observer.get(URL(string: "/api/auth/session", relativeTo: api)!)
+        let privateWorkspaceRead = try await observer.get(URL(string: "/api/workspaces", relativeTo: api)!)
+        XCTAssertEqual(revokedSession.statusCode, 401)
+        XCTAssertEqual(privateWorkspaceRead.statusCode, 401)
     }
 
     @MainActor
@@ -900,6 +1276,17 @@ final class RemoteCodeMobileProofUITests: XCTestCase {
     }
 }
 
+private struct WorkspaceMetadata: Decodable {
+    let id: String
+    let name: String
+    let createdAt: String
+    let archived: Bool?
+}
+
+private struct WorkspaceMetadataList: Decodable {
+    let workspaces: [WorkspaceMetadata]
+}
+
 private struct NativeFailureDiagnostics: Decodable {
     let lostResponse: Bool
     let failedRead: Bool
@@ -959,6 +1346,18 @@ private extension URLSession {
         let (data, response) = try await data(for: request)
         XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 201)
         return try JSONDecoder().decode(ActionReceipt.self, from: data)
+    }
+
+    func workspaceList(at baseURL: URL) async throws -> [WorkspaceMetadata] {
+        let (data, response) = try await data(from: URL(string: "/api/workspaces", relativeTo: baseURL)!)
+        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
+        return try JSONDecoder().decode(WorkspaceMetadataList.self, from: data).workspaces
+    }
+
+    func workspace(at baseURL: URL, id: String) async throws -> WorkspaceMetadata {
+        let (data, response) = try await data(from: URL(string: "/api/workspaces/\(id)", relativeTo: baseURL)!)
+        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
+        return try JSONDecoder().decode(WorkspaceMetadata.self, from: data)
     }
 
     func actions(at baseURL: URL) async throws -> [ActionReceipt] {

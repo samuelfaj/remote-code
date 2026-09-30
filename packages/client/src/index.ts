@@ -1,5 +1,7 @@
 export { actionReceiptFromResponse, isDefinitiveActionRejection } from "./action-recovery";
 export { applyActionEvent, emptyActionEventState } from "./action-events";
+export { pendingWorkspaceFromValue, pendingWorkspaceValueMatches, workspaceDeadlineIsOpen, workspaceErrorStatus, workspaceFromValue, workspaceListFromValue, workspaceReceiptFromValue, workspacePanelUserId } from "./workspaces";
+export type { PendingWorkspace, Workspace, WorkspaceKind } from "./workspaces";
 export type { ActionEventState, ActionReceipt } from "./action-events";
 
 import { treaty } from "@elysiajs/eden";
