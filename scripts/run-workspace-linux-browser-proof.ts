@@ -112,9 +112,14 @@ function testStartFailureCleanup() {
   const value = `${run}-start-failure`;
   if (command("docker", ["container", "ls", "-aq", "--filter", `name=^/${name}$`], { capture: true })) throw new Error("Start-failure test container name already exists; refusing reuse.");
   const id = command("docker", ["create", "--name", name, "--label", `${label}=${value}`, "--platform", "linux/amd64", "--pull", "never", "--read-only", "-p", `127.0.0.1:${apiPort}:39517`, "--entrypoint", "/bin/true", image], { capture: true });
+  let anonymousVolumes: string[] | null = null;
+  let startAttempted = false;
   let startError = "";
-  try { command("docker", ["start", name]); }
-  catch (error) { startError = error instanceof Error ? error.message : String(error); }
+  try {
+    anonymousVolumes = (JSON.parse(command("docker", ["inspect", id, "--format", "{{json .Mounts}}"], { capture: true })) as Array<{ Type: string; Name?: string }>).filter((mount) => mount.Type === "volume").map((mount) => mount.Name!);
+    startAttempted = true;
+    command("docker", ["start", name]);
+  } catch (error) { startError = error instanceof Error ? error.message : String(error); }
   const expectedIdentity = `${id} /${name} ${value}`;
   let state = "unverified";
   let removed = false;
@@ -124,14 +129,15 @@ function testStartFailureCleanup() {
     const [actualId, actualName, actualLabel, actualState] = inspected.split(" ");
     state = actualState ?? "unverified";
     if (actualId !== id || actualName !== `/${name}` || actualLabel !== value) throw new Error(`Created test-container identity mismatch: ${inspected}`);
-    command("docker", ["rm", "-f", name]);
+    command("docker", ["rm", "-f", "-v", name]);
     removed = !command("docker", ["container", "ls", "-aq", "--filter", `name=^/${name}$`], { capture: true });
   } catch (error) { cleanupError = error instanceof Error ? error.message : String(error); }
   const expectedError = /39517|port is already allocated|address already in use/i.test(startError);
-  const result = { name, id, expectedIdentity, state, startFailed: Boolean(startError), expectedPortFailure: expectedError, removed, cleanupError, startError };
+  const anonymousVolumesRemoved = anonymousVolumes?.every((volume) => !command("docker", ["volume", "ls", "-q", "--filter", `name=^${volume}$`], { capture: true })) ?? null;
+  const result = { name, id, expectedIdentity, state, startAttempted, startFailed: startAttempted && Boolean(startError), expectedPortFailure: expectedError, removed, anonymousVolumes, anonymousVolumesRemoved, cleanupError, startError };
   records.setupFailure = result;
   writeFileSync(resolve(proofDir!, "setup-failure.json"), `${JSON.stringify(result, null, 2)}\n`);
-  if (!startError || state === "running" || !expectedError || !removed) throw new Error(`Controlled Docker start failure cleanup failed: ${JSON.stringify(result)}`);
+  if (!startAttempted || !startError || state === "running" || !expectedError || !removed || !anonymousVolumesRemoved) throw new Error(`Controlled Docker start failure cleanup failed: ${JSON.stringify(result)}`);
 }
 
 async function pageWithLogin(): Promise<{ context: BrowserContext; page: Page }> {
