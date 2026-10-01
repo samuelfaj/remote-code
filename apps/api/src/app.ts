@@ -4,6 +4,7 @@ import { actionsFeature } from "./features/actions";
 import { authFeature, sessionToken } from "./features/auth";
 import { compatibilityFeature } from "./features/compatibility";
 import { storageFeature } from "./features/storage";
+import { fileRequestSchemaReady } from "./features/file-requests";
 import { workspaceFilesFeature } from "./features/workspace-files";
 import { workspaceFolderSchemaReady, workspaceFoldersFeature } from "./features/workspace-folders";
 import { checkDatabase, healthFeature, initializeDatabase, type ReadinessCheck } from "./features/health";
@@ -42,14 +43,16 @@ export function createApi(
   initializeDatabase(configuredDatabasePath);
   const actions = actionsFeature(configuredDatabasePath, authConfig.webOrigin ?? "http://localhost:5173");
   const workspaceFolders = workspaceFoldersFeature(configuredDatabasePath);
-  let storageUnavailable = corruptAtStartup(configuredDatabasePath) || !workspaceFolders.isReady();
+  let storageUnavailable = corruptAtStartup(configuredDatabasePath) || !workspaceFolders.isReady() ||
+    !fileRequestSchemaReady(configuredDatabasePath);
   let probe: Promise<boolean> | null = null;
   const observeReadiness = () => {
     if (probe) return probe;
     let timer: ReturnType<typeof setTimeout> | undefined;
     probe = Promise.race([
       Promise.resolve().then(readinessCheck)
-        .then((ready) => ready && workspaceFolders.isReady() && workspaceFolderSchemaReady(configuredDatabasePath))
+        .then((ready) => ready && workspaceFolders.isReady() && workspaceFolderSchemaReady(configuredDatabasePath) &&
+          fileRequestSchemaReady(configuredDatabasePath))
         .catch(() => false),
       new Promise<boolean>((resolve) => { timer = setTimeout(() => resolve(false), 400); }),
     ]).then((ready) => { storageUnavailable = !ready; return ready; })

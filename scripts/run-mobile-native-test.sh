@@ -450,11 +450,16 @@ if sys.argv[9] == "1":
         creates = connection.execute("SELECT request_id, workspace_id FROM workspace_requests").fetchall()
         receipts = connection.execute("SELECT request_id, workspace_id, kind, name, archived FROM workspace_receipts").fetchall()
         changes = connection.execute("SELECT request_id, workspace_id, kind FROM workspace_change_requests").fetchall()
+        action_mappings = connection.execute("SELECT request_id, action_id FROM action_requests").fetchall()
         sessions = connection.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
         integrity = connection.execute("PRAGMA quick_check").fetchone()
     finally:
         connection.close()
     kinds = Counter(row[2] for row in receipts)
+    if len(rows) != 1 or rows[0][1] != "2026-10-01T12:34:56.789Z":
+        raise SystemExit(f"Expected exactly one action preserving canonical ISO-looking text: {rows!r}")
+    if len(action_mappings) != 1 or action_mappings[0][1] != rows[0][0]:
+        raise SystemExit(f"Expected one action request mapping to the confirmed scalar receipt: actions={rows!r}, mappings={action_mappings!r}")
     if len(workspaces) != 2 or len({row[0] for row in workspaces}) != 2:
         raise SystemExit(f"Expected exactly two distinct workspace records: {workspaces!r}")
     if len(creates) != 2 or {row[1] for row in creates} != {row[0] for row in workspaces}:
@@ -470,17 +475,13 @@ if sys.argv[9] == "1":
     archived_receipt = [row for row in receipts if row[2] == "archive"]
     if len(created) != 2 or len(renamed) != 1 or len(archived_receipt) != 1:
         raise SystemExit("Workspace receipts do not contain the expected immutable create/rename/archive history")
-    renamed_name = renamed[0][3]
-    prefix = "native-workspace-A-renamed-"
-    if not renamed_name.startswith(prefix):
-        raise SystemExit(f"Rename receipt must preserve the accepted A name: {renamed!r}")
-    run_id = renamed_name.removeprefix(prefix)
-    expected_a = f"native-workspace-A-{run_id}"
-    expected_b = f"native-workspace-B-{run_id}"
+    renamed_name = "2026-10-03T12:34:56.789Z"
+    expected_a = "2026-10-01T12:34:56.789Z"
+    expected_b = "2026-10-02T12:34:56.789Z"
     live_by_name = {row[1]: row for row in workspaces}
     created_by_id = {row[1]: row for row in created}
-    if len(run_id) != 36 or len(live_by_name) != 2 or set(live_by_name) != {renamed_name, expected_b}:
-        raise SystemExit(f"Live workspace names do not match this native run: run_id={run_id!r}, workspaces={workspaces!r}")
+    if len(live_by_name) != 2 or set(live_by_name) != {renamed_name, expected_b}:
+        raise SystemExit(f"Live workspace names do not preserve exact ISO-looking scalar text: workspaces={workspaces!r}")
     live_a = live_by_name[renamed_name]
     live_b = live_by_name[expected_b]
     if set(created_by_id) != {live_a[0], live_b[0]}:

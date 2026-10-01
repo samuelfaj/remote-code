@@ -433,25 +433,34 @@ final class RemoteCodeMobileProofUITests: XCTestCase {
         signIn(app)
         try await observer.signIn(at: api, password: password)
 
-        let runID = UUID().uuidString
-        let nameA = "native-workspace-A-\(runID)"
-        let nameB = "native-workspace-B-\(runID)"
+        let nameA = "2026-10-01T12:34:56.789Z"
+        let nameB = "2026-10-02T12:34:56.789Z"
         for _ in 0..<5 where !app.staticTexts["Workspaces"].exists {
             app.scrollViews.firstMatch.swipeUp()
         }
         XCTAssertTrue(app.staticTexts["Workspaces"].waitForExistence(timeout: 10))
         let nameInput = app.textFields["Workspace name"]
         nameInput.tap()
-        nameInput.typeText(nameA)
-        app.keyboards.buttons["Return"].tap()
+        for character in nameA { nameInput.typeText(String(character)) }
+        XCTAssertEqual(nameInput.value as? String, nameA, "The first workspace input must preserve exact ISO-looking text")
+        app.staticTexts["Host connection"].firstMatch.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
         app.buttons["Create workspace"].tap()
         XCTAssertTrue(app.staticTexts["Workspace change confirmed."].waitForExistence(timeout: 15))
         app.buttons["Refresh workspaces"].tap()
         XCTAssertTrue(app.staticTexts[nameA].waitForExistence(timeout: 10))
 
         nameInput.tap()
-        nameInput.typeText(nameB)
-        app.keyboards.buttons["Return"].tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        if let currentName = nameInput.value as? String, !currentName.isEmpty {
+            nameInput.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5)).tap()
+            for _ in 0..<(currentName.count + 2) { nameInput.typeText(XCUIKeyboardKey.delete.rawValue) }
+        }
+        XCTAssertEqual(nameInput.value as? String, "Workspace name", "The workspace name field must be empty before entering the second exact value")
+        for character in nameB { nameInput.typeText(String(character)) }
+        XCTAssertEqual(nameInput.value as? String, nameB, "The second workspace input must preserve exact ISO-looking text")
+        app.staticTexts["Host connection"].firstMatch.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
         app.buttons["Create workspace"].tap()
         XCTAssertTrue(app.staticTexts["Workspace change confirmed."].waitForExistence(timeout: 15))
         app.buttons["Refresh workspaces"].tap()
@@ -470,10 +479,12 @@ final class RemoteCodeMobileProofUITests: XCTestCase {
         app.buttons["Open workspace \(nameA)"].tap()
         XCTAssertTrue(app.staticTexts["Selected: \(nameA)"].waitForExistence(timeout: 10))
         let renameInput = app.textFields["New workspace name"]
-        let renamedA = "native-workspace-A-renamed-\(runID)"
+        let renamedA = "2026-10-03T12:34:56.789Z"
         renameInput.tap()
-        renameInput.typeText(renamedA)
-        app.keyboards.buttons["Return"].tap()
+        for character in renamedA { renameInput.typeText(String(character)) }
+        XCTAssertEqual(renameInput.value as? String, renamedA, "The renamed workspace input must preserve exact ISO-looking text")
+        app.staticTexts["Host connection"].firstMatch.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
         app.buttons["Rename workspace"].tap()
         XCTAssertTrue(app.staticTexts["Workspace change confirmed."].waitForExistence(timeout: 15))
         observedA = try await observer.workspace(at: api, id: workspaceA.id)
@@ -496,6 +507,27 @@ final class RemoteCodeMobileProofUITests: XCTestCase {
         XCTAssertEqual(observedB.name, nameB)
         XCTAssertEqual(observedA.id, workspaceA.id)
         XCTAssertEqual(observedA.name, renamedA)
+
+        let action = nameA
+        for _ in 0..<5 where !app.textFields["Action"].isHittable {
+            app.scrollViews.firstMatch.swipeDown()
+        }
+        let actionInput = app.textFields["Action"]
+        XCTAssertTrue(actionInput.isHittable)
+        actionInput.tap()
+        for character in action { actionInput.typeText(String(character)) }
+        app.keyboards.buttons["Return"].tap()
+        app.staticTexts["Host connection"].firstMatch.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+        XCTAssertEqual(actionInput.value as? String, action, "The action input must preserve canonical ISO-looking text")
+        let submit = app.buttons["Submit action"]
+        XCTAssertTrue(submit.isEnabled && submit.isHittable)
+        submit.tap()
+        XCTAssertTrue(app.staticTexts[action].waitForExistence(timeout: 15))
+        let actionHistory = try await observer.actions(at: api)
+        let actionReceipt = try XCTUnwrap(actionHistory.first { $0.action == action })
+        XCTAssertTrue(app.staticTexts["Receipt \(actionReceipt.id)"].waitForExistence(timeout: 10))
+        XCTAssertEqual(actionHistory.filter { $0.action == action }.count, 1)
 
         app.terminate()
         app.launch()

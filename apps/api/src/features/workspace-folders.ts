@@ -4,11 +4,12 @@ import { closeSync, constants, fsyncSync, mkdirSync, readFileSync, realpathSync,
 import { dirname } from "node:path";
 import { Elysia, t } from "elysia";
 import { sessionUserId } from "./auth";
+import { createFileRequestTables, fileRequestSchemaMatches } from "./file-requests";
 
 const requestIdSchema = t.Transform(t.String({ format: "uuid", minLength: 36, maxLength: 36 }))
   .Decode((value) => value.toLowerCase())
   .Encode((value) => value.toLowerCase());
-const folderSchemaVersion = 1;
+const folderSchemaVersion = 2;
 const folderMarker = ".remotecode-workspace";
 const requiredFolderColumns = ["user_id", "request_id", "workspace_id", "state", "folder_device", "folder_inode"];
 const nativeSymbols = {
@@ -82,7 +83,7 @@ function workspaceRootCurrent(databasePath: string, rootFd: number) {
 
 function folderSchemaMatches(database: Database) {
   const version = database.query<{ user_version: number }, []>("PRAGMA user_version").get()?.user_version;
-  if (version !== folderSchemaVersion) return false;
+  if (version !== folderSchemaVersion || !fileRequestSchemaMatches(database)) return false;
   const columns = database.query<{ name: string }, []>("PRAGMA table_info(workspace_folder_requests)").all();
   if (requiredFolderColumns.some((name) => !columns.some((column) => column.name === name))) return false;
   database.query(`SELECT ${requiredFolderColumns.join(", ")} FROM workspace_folder_requests LIMIT 0`).get();
@@ -133,6 +134,16 @@ function initializeFolderSchema(databasePath: string) {
             if (!names.includes(name)) database!.exec(`ALTER TABLE workspace_folder_requests ADD COLUMN ${name} TEXT`);
           }
         }
+        createFileRequestTables(database!);
+        database!.exec(`PRAGMA user_version = ${folderSchemaVersion}`);
+      }).immediate();
+    } else if (version === 1) {
+      database.transaction(() => {
+        const columns = database!.query<{ name: string }, []>("PRAGMA table_info(workspace_folder_requests)").all();
+        if (requiredFolderColumns.some((name) => !columns.some((column) => column.name === name))) {
+          throw new Error("Workspace folder schema is invalid");
+        }
+        createFileRequestTables(database!);
         database!.exec(`PRAGMA user_version = ${folderSchemaVersion}`);
       }).immediate();
     }

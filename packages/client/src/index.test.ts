@@ -61,6 +61,35 @@ it("uses the same typed API and session cookie from web and mobile callers", asy
   }
 });
 
+it("preserves date-looking user text and canonical timestamp strings across shared API calls", async () => {
+  const app = createApi(databasePath(), undefined, { password: "client-test-password" });
+  const login = await app.handle(new Request("https://localhost/api/auth/login", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ password: "client-test-password" }),
+  }));
+  const cookie = login.headers.get("set-cookie")?.split(";")[0];
+  if (!cookie) throw new Error("Test auth cookie missing");
+  app.listen({ hostname: "127.0.0.1", port: 0 });
+  const port = app.server?.port;
+  if (!port) throw new Error("API did not bind");
+  const text = "2026-10-01T00:00:00.000Z";
+  const client = createApiClient(`http://127.0.0.1:${port}`, { headers: { cookie } });
+  try {
+    const action = await client.api.actions.post({ action: text, requestId: crypto.randomUUID() });
+    if (action.error || !action.data || !("action" in action.data)) throw new Error("Action unavailable");
+    expect(action.data.action).toBe(text);
+    expect(typeof action.data.createdAt).toBe("string");
+    const workspace = await client.api.workspaces.post({ name: text, requestId: crypto.randomUUID() });
+    if (workspace.error || !workspace.data || !("name" in workspace.data)) throw new Error("Workspace unavailable");
+    expect(workspace.data.name).toBe(text);
+    const profile = await client.api.profile.put({ displayName: text, requestId: crypto.randomUUID() });
+    if (profile.error || !profile.data || !("displayName" in profile.data)) throw new Error("Profile unavailable");
+    expect(profile.data.displayName).toBe(text);
+    const history = await client.api.actions.get();
+    expect(history.data?.actions?.some((entry) => entry.action === text)).toBe(true);
+  } finally { await app.stop(true); }
+});
+
 it("does not return empty history when the API is offline before a read", async () => {
   const server = Bun.serve({ port: 0, fetch: () => Response.json({ actions: [] }) });
   const origin = `http://127.0.0.1:${server.port}`;
@@ -419,17 +448,21 @@ it("normalizes native timeouts without static Response.json", async () => {
 });
 
 it("normalizes a timeout before response headers", async () => {
+  let requests = 0;
   const server = Bun.serve({
     port: 0,
     fetch: async () => {
+      requests++;
       await new Promise((resolve) => setTimeout(resolve, 150));
       return Response.json({ status: "ready" });
     },
   });
+  const port = server.port;
 
   try {
-    const result = await createApiClient(`http://127.0.0.1:${server.port}`, { timeoutMs: 30 })
+    const result = await createApiClient(`http://127.0.0.1:${port}`, { timeoutMs: 30 })
       .api.health.ready.get();
+    if (!isUnknownOutcomeError(result.error)) throw new Error(`Unexpected timeout response: ${JSON.stringify({ port, requests, status: result.status, error: result.error })}`);
     expect(result.data).toBeNull();
     expectUnknownOutcome(result.error);
   } finally {

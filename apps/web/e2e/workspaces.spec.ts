@@ -13,6 +13,45 @@ async function signIn(page: import("@playwright/test").Page) {
   await expect(page.getByTestId("workspace-panel")).toBeVisible();
 }
 
+for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }]) {
+  test(`keeps date-looking action and workspace text literal at ${viewport.width}px`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    const base = Date.now();
+    const action = new Date(base).toISOString();
+    const name = new Date(base + 60_000).toISOString();
+    const renamed = new Date(base + 120_000).toISOString();
+    await signIn(page);
+    await page.getByLabel("Action description").fill(action);
+    await page.getByRole("button", { name: "Write backend receipt" }).click();
+    await expect(page.getByTestId("latest-receipt")).toContainText(action);
+    await expect(page.getByTestId("pending-action")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Write backend receipt" })).toBeEnabled();
+    await page.getByLabel("Workspace name").fill(name);
+    await page.getByRole("button", { name: "Create workspace" }).click();
+    await expect(page.getByRole("button", { name: `Open workspace ${name}` })).toBeVisible();
+    await page.getByRole("button", { name: `Open workspace ${name}` }).click();
+    await page.getByLabel("New workspace name").fill(renamed);
+    await page.getByRole("button", { name: "Rename workspace" }).click();
+    await expect(page.getByTestId("selected-workspace")).toContainText(renamed);
+    await page.reload();
+    await expect(page.getByRole("button", { name: `Open workspace ${renamed}` })).toBeVisible();
+    const response = await page.request.get(`${apiUrl}/api/workspaces`);
+    const body = await response.json() as { workspaces: Array<{ id: string; name: string }> };
+    const workspace = body.workspaces.find((row) => row.name === renamed);
+    expect(workspace?.id).toBeTruthy();
+    const actions = await (await page.request.get(`${apiUrl}/api/actions`)).json() as { actions: Array<{ action: string }> };
+    expect(actions.actions.filter((row) => row.action === action)).toHaveLength(1);
+    await page.getByRole("button", { name: `Open workspace ${renamed}` }).click();
+    await page.getByRole("button", { name: "Archive workspace" }).click();
+    await expect(page.getByText("Archived workspaces are read-only.")).toBeVisible();
+    const archived = await (await page.request.get(`${apiUrl}/api/workspaces/${workspace!.id}`)).json();
+    expect(archived).toMatchObject({ id: workspace!.id, name: renamed, archived: true });
+    await page.getByRole("button", { name: "Sign out" }).click();
+    await expect(page.getByTestId("workspace-panel")).toHaveCount(0);
+    await expect(page.getByTestId("latest-receipt")).toHaveCount(0);
+  });
+}
+
 test("two browser contexts keep workspace selection local while observing shared metadata", async ({
   browser,
   page,

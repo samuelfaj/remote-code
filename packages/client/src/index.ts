@@ -136,7 +136,7 @@ export function createApiClient(origin: string, options: ApiClientOptions = {}) 
     timedSignal.cleanup();
     return response;
   }, { preconnect: fetch.preconnect });
-  return treaty<App>(origin, { fetcher });
+  return treaty<App>(origin, { fetcher, parseDate: false });
 }
 
 export async function getHealth(origin: string, options?: ApiClientOptions) {

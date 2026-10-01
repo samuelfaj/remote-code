@@ -1,5 +1,6 @@
 import { Database } from "bun:sqlite";
 import { existsSync, statfsSync } from "node:fs";
+import { fileRequestSchemaMatches } from "./file-requests";
 
 self.onmessage = (event: MessageEvent<string>) => {
   let database: Database | undefined;
@@ -17,10 +18,11 @@ self.onmessage = (event: MessageEvent<string>) => {
     database.query("SELECT user_id, request_id, action_id FROM action_requests LIMIT 1").get();
     database.query("SELECT user_id, request_id, workspace_id FROM workspace_requests LIMIT 1").get();
     database.query("SELECT user_id, request_id, workspace_id, kind FROM workspace_change_requests LIMIT 1").get();
-    if (database.query<{ user_version: number }, []>("PRAGMA user_version").get()?.user_version !== 1) {
+    if (database.query<{ user_version: number }, []>("PRAGMA user_version").get()?.user_version !== 2) {
       throw new Error("Workspace folder schema version is invalid");
     }
     database.query("SELECT user_id, request_id, workspace_id, state, folder_device, folder_inode FROM workspace_folder_requests LIMIT 1").get();
+    if (!fileRequestSchemaMatches(database)) throw new Error("Workspace file operation schema is incomplete");
     database.query("SELECT id, user_id, name, created_at, archived FROM workspaces LIMIT 1").get();
     database.query("SELECT user_id, request_id, workspace_id, kind, name, created_at, archived FROM workspace_receipts LIMIT 1").get();
     if (database.query(`
