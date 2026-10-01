@@ -836,21 +836,223 @@ it.skipIf(process.platform !== "linux")("refuses SAVE for stale, foreign, archiv
   finally { verify.close(); }
 });
 
-for (const kind of ["create", "save"] as const) {
+it.skipIf(process.platform !== "linux")("moves exact file inode between existing directories over Eden and keeps a historical receipt", async () => {
+  const { app, databasePath, workspaceId, folderPath } = setup();
+  await provision(app, workspaceId);
+  mkdirSync(join(folderPath, "src"));
+  mkdirSync(join(folderPath, "dst"));
+  const sourcePath = "src/note.txt";
+  const destinationPath = "dst/note.txt";
+  const source = join(folderPath, sourcePath);
+  const destination = join(folderPath, destinationPath);
+  const bytes = Buffer.from("\uFEFFmove this text\n");
+  writeFileSync(source, bytes);
+  chmodSync(source, 0o751);
+  const sourceInfo = lstatSync(source);
+  app.listen({ hostname: "127.0.0.1", port: 0 });
+  const port = app.server?.port;
+  if (!port) throw new Error("File API did not bind");
+  try {
+    const client = createApiClient(`http://127.0.0.1:${port}`, { headers: { cookie: `remotecode_session=${ownerToken}` } });
+    const opened = await client.api.workspaces({ workspaceId }).files.content.get({ query: { path: sourcePath } });
+    if (opened.error || !opened.data || !("version" in opened.data)) throw new Error("MOVE source must have a confirmed file version");
+    const requestId = crypto.randomUUID();
+    const body = { requestId: requestId.toUpperCase(), sourcePath, destinationPath, expectedVersion: opened.data.version };
+    const moved = await client.api.workspaces({ workspaceId }).files.move.post(body);
+    expect(moved.error).toBeNull();
+    expect(moved.data).toMatchObject({ requestId, workspaceId, kind: "move", sourcePath, path: destinationPath, version: opened.data.version });
+    expect(existsSync(source)).toBe(false);
+    expect(readFileSync(destination)).toEqual(bytes);
+    expect(lstatSync(destination).ino).toBe(sourceInfo.ino);
+    expect(lstatSync(destination).mode & 0o777).toBe(0o751);
+    const database = new Database(databasePath, { readonly: true });
+    try {
+      expect(database.query("SELECT kind, state, source_path, destination_path, expected_sha256, source_device, source_inode FROM file_operation_intents WHERE request_id = ?").get(requestId))
+        .toEqual({ kind: "move", state: "completed", source_path: sourcePath, destination_path: destinationPath, expected_sha256: opened.data.version,
+          source_device: String(sourceInfo.dev), source_inode: String(sourceInfo.ino) });
+      expect(database.query("SELECT kind, source_path, destination_path, result_path, result_sha256 FROM file_operation_outcomes WHERE request_id = ?").get(requestId))
+        .toEqual({ kind: "move", source_path: sourcePath, destination_path: destinationPath, result_path: destinationPath, result_sha256: opened.data.version });
+    } finally { database.close(); }
+    const edited = Buffer.from("later destination edit");
+    writeFileSync(destination, edited);
+    const replay = await client.api.workspaces({ workspaceId }).files.move.post(body);
+    expect(replay.data).toEqual(moved.data);
+    expect(existsSync(source)).toBe(false);
+    expect(readFileSync(destination)).toEqual(edited);
+    const changedKey = await client.api.workspaces({ workspaceId }).files.move.post({ ...body, destinationPath: "dst/other.txt" });
+    expect(changedKey.error?.status as number).toBe(409);
+    const changedVersion = await client.api.workspaces({ workspaceId }).files.move.post({ ...body, expectedVersion: "0".repeat(64) });
+    expect(changedVersion.error?.status as number).toBe(409);
+    expect(readFileSync(destination)).toEqual(edited);
+    const crossKind = await client.api.workspaces({ workspaceId }).files.post({ requestId, path: "dst/created.txt", content: "conflict" });
+    expect(crossKind.error?.status as number).toBe(409);
+    expect(readFileSync(destination)).toEqual(edited);
+  } finally { await app.stop(true); }
+});
+
+it.skipIf(process.platform !== "linux")("recovers MOVE receipt from destination inode after outcome SQL failure and process restart", async () => {
+  const { app, databasePath, workspaceId, folderPath } = setup();
+  await provision(app, workspaceId);
+  mkdirSync(join(folderPath, "src"));
+  mkdirSync(join(folderPath, "dst"));
+  const sourcePath = "src/recovery.txt";
+  const destinationPath = "dst/recovery.txt";
+  const source = join(folderPath, sourcePath);
+  const destination = join(folderPath, destinationPath);
+  const bytes = Buffer.from("move recovery bytes");
+  writeFileSync(source, bytes);
+  const inode = lstatSync(source).ino;
+  const version = createHash("sha256").update(bytes).digest("hex");
+  const requestId = crypto.randomUUID();
+  const body = { requestId, sourcePath, destinationPath, expectedVersion: version };
+  const trigger = new Database(databasePath);
+  trigger.exec("CREATE TRIGGER fail_move_outcome BEFORE INSERT ON file_operation_outcomes WHEN NEW.kind = 'move' BEGIN SELECT RAISE(ABORT, 'injected MOVE outcome failure'); END");
+  trigger.close();
+  expect((await request(app, `/${workspaceId}/files/move`, ownerToken, "POST", body)).status).toBe(503);
+  expect(existsSync(source)).toBe(false);
+  expect(readFileSync(destination)).toEqual(bytes);
+  expect(lstatSync(destination).ino).toBe(inode);
+  const prepared = new Database(databasePath, { readonly: true });
+  try {
+    expect(prepared.query("SELECT kind, state, source_path, destination_path, expected_sha256, stage_device FROM file_operation_intents WHERE request_id = ?").get(requestId))
+      .toEqual({ kind: "move", state: "prepared", source_path: sourcePath, destination_path: destinationPath, expected_sha256: version, stage_device: null });
+    expect(prepared.query("SELECT COUNT(*) AS count FROM file_operation_outcomes WHERE request_id = ?").get(requestId)).toEqual({ count: 0 });
+  } finally { prepared.close(); }
+  const repair = new Database(databasePath);
+  repair.exec("DROP TRIGGER fail_move_outcome");
+  repair.close();
+  const child = Bun.spawnSync(["bun", "-e", `
+    import { createApi } from "./apps/api/src/app.ts";
+    const app = createApi(process.env.DATABASE_PATH);
+    const response = await app.handle(new Request("http://localhost/api/workspaces/" + process.env.RC029_WORKSPACE_ID + "/files/receipts/" + process.env.RC029_REQUEST_ID,
+      { headers: { cookie: "remotecode_session=" + "a".repeat(64) } }));
+    console.log(JSON.stringify({ status: response.status, body: await response.json() }));
+  `], { cwd: process.cwd(), env: { ...process.env, DATABASE_PATH: databasePath, RC029_WORKSPACE_ID: workspaceId, RC029_REQUEST_ID: requestId } });
+  expect(child.exitCode).toBe(0);
+  expect(JSON.parse(child.stdout.toString()).status).toBe(200);
+  expect(existsSync(source)).toBe(false);
+  expect(lstatSync(destination).ino).toBe(inode);
+  const completed = new Database(databasePath, { readonly: true });
+  try {
+    expect(completed.query("SELECT state FROM file_operation_intents WHERE request_id = ?").get(requestId)).toEqual({ state: "completed" });
+    expect(completed.query("SELECT kind, result_sha256 FROM file_operation_outcomes WHERE request_id = ?").get(requestId))
+      .toEqual({ kind: "move", result_sha256: version });
+  } finally { completed.close(); }
+});
+
+it.skipIf(process.platform !== "linux")("keeps missing and mismatched MOVE witnesses unknown and never repeats rename", async () => {
+  for (const damage of ["missing", "mismatched"] as const) {
+    const { app, databasePath, workspaceId, folderPath } = setup();
+    await provision(app, workspaceId);
+    mkdirSync(join(folderPath, "src"));
+    mkdirSync(join(folderPath, "dst"));
+    const sourcePath = "src/witness.txt";
+    const destinationPath = "dst/witness.txt";
+    const source = join(folderPath, sourcePath);
+    const destination = join(folderPath, destinationPath);
+    writeFileSync(source, "original witness");
+    const requestId = crypto.randomUUID();
+    const body = { requestId, sourcePath, destinationPath, expectedVersion: createHash("sha256").update("original witness").digest("hex") };
+    const trigger = new Database(databasePath);
+    trigger.exec("CREATE TRIGGER fail_move_outcome BEFORE INSERT ON file_operation_outcomes WHEN NEW.kind = 'move' BEGIN SELECT RAISE(ABORT, 'injected MOVE outcome failure'); END");
+    trigger.close();
+    expect((await request(app, `/${workspaceId}/files/move`, ownerToken, "POST", body)).status).toBe(503);
+    const publishedInode = lstatSync(destination).ino;
+    expect(existsSync(source)).toBe(false);
+    const repair = new Database(databasePath);
+    repair.exec("DROP TRIGGER fail_move_outcome");
+    repair.close();
+    if (damage === "missing") rmSync(destination);
+    else { rmSync(destination); writeFileSync(destination, "mismatched replacement"); expect(lstatSync(destination).ino).not.toBe(publishedInode); }
+    const savedBytes = damage === "missing" ? null : readFileSync(destination);
+    expect((await request(app, `/${workspaceId}/files/receipts/${requestId}`, ownerToken)).status).toBe(503);
+    expect((await request(app, `/${workspaceId}/files/move`, ownerToken, "POST", body)).status).toBe(503);
+    expect(existsSync(source)).toBe(false);
+    expect(damage === "missing" ? existsSync(destination) : readFileSync(destination).equals(savedBytes!)).toBe(damage === "mismatched");
+    const verify = new Database(databasePath, { readonly: true });
+    try {
+      expect(verify.query("SELECT kind, state FROM file_operation_intents WHERE request_id = ?").get(requestId)).toEqual({ kind: "move", state: "prepared" });
+      expect(verify.query("SELECT COUNT(*) AS count FROM file_operation_outcomes WHERE request_id = ?").get(requestId)).toEqual({ count: 0 });
+    } finally { verify.close(); }
+  }
+});
+
+it.skipIf(process.platform !== "linux")("refuses invalid MOVE versions, same paths, missing targets, foreign owners, symlinks, FIFO, archives, and occupied destinations", async () => {
+  const { app, databasePath, workspaceId, folderPath } = setup();
+  await provision(app, workspaceId);
+  mkdirSync(join(folderPath, "src"));
+  mkdirSync(join(folderPath, "dst"));
+  writeFileSync(join(folderPath, "src", "source.txt"), "source bytes");
+  writeFileSync(join(folderPath, "dst", "occupied.txt"), "occupied bytes");
+  const sourcePath = "src/source.txt";
+  const version = createHash("sha256").update("source bytes").digest("hex");
+  const before: string[] = readdirSync(join(folderPath, "src")).sort();
+  expect((await request(app, `/${workspaceId}/files/move`, ownerToken, "POST", {
+    requestId: crypto.randomUUID(), sourcePath, destinationPath: sourcePath, expectedVersion: version,
+  })).status).toBe(400);
+  expect((await request(app, `/${workspaceId}/files/move`, ownerToken, "POST", {
+    requestId: crypto.randomUUID(), sourcePath, destinationPath: "dst/stale.txt", expectedVersion: "0".repeat(64),
+  })).status).toBe(409);
+  expect((await request(app, `/${workspaceId}/files/move`, ownerToken, "POST", {
+    requestId: crypto.randomUUID(), sourcePath, destinationPath: "dst/occupied.txt", expectedVersion: version,
+  })).status).toBe(409);
+  expect((await request(app, `/${workspaceId}/files/move`, ownerToken, "POST", {
+    requestId: crypto.randomUUID(), sourcePath: "src/missing.txt", destinationPath: "dst/missing.txt", expectedVersion: version,
+  })).status).toBe(404);
+  expect((await request(app, `/${workspaceId}/files/move`, ownerToken, "POST", {
+    requestId: crypto.randomUUID(), sourcePath, destinationPath: "dst/missing/child.txt", expectedVersion: version,
+  })).status).toBe(404);
+  expect((await request(app, `/${workspaceId}/files/move`, foreignToken, "POST", {
+    requestId: crypto.randomUUID(), sourcePath, destinationPath: "dst/foreign.txt", expectedVersion: version,
+  })).status).toBe(404);
+  writeFileSync(join(folderPath, "dst", "link-target.txt"), "link target bytes");
+  symlinkSync("../dst/link-target.txt", join(folderPath, "src", "link.txt"));
+  expect((await request(app, `/${workspaceId}/files/move`, ownerToken, "POST", {
+    requestId: crypto.randomUUID(), sourcePath: "src/link.txt", destinationPath: "dst/link-moved.txt", expectedVersion: createHash("sha256").update("link target bytes").digest("hex"),
+  })).status).toBe(404);
+  const fifo = join(folderPath, "src", "pipe");
+  expect(Bun.spawnSync(["mkfifo", fifo]).exitCode).toBe(0);
+  expect((await request(app, `/${workspaceId}/files/move`, ownerToken, "POST", {
+    requestId: crypto.randomUUID(), sourcePath: "src/pipe", destinationPath: "dst/pipe", expectedVersion: version,
+  })).status).toBe(415);
+  const archived = await app.handle(new Request(`http://localhost/api/workspaces/${workspaceId}`, {
+    method: "PATCH", headers: { cookie: `remotecode_session=${ownerToken}`, "content-type": "application/json" },
+    body: JSON.stringify({ archived: true, requestId: crypto.randomUUID() }),
+  }));
+  expect(archived.status).toBe(200);
+  expect((await request(app, `/${workspaceId}/files/move`, ownerToken, "POST", {
+    requestId: crypto.randomUUID(), sourcePath, destinationPath: "dst/archived.txt", expectedVersion: version,
+  })).status).toBe(409);
+  expect(readFileSync(join(folderPath, sourcePath), "utf8")).toBe("source bytes");
+  expect(readFileSync(join(folderPath, "dst", "occupied.txt"), "utf8")).toBe("occupied bytes");
+  const verify = new Database(databasePath, { readonly: true });
+  try { expect(verify.query("SELECT COUNT(*) AS count FROM file_operation_intents WHERE kind = 'move'").get()).toEqual({ count: 0 }); }
+  finally { verify.close(); }
+  expect(readdirSync(join(folderPath, "src")).filter((name) => name === "source.txt") as string[]).toEqual(before);
+});
+
+for (const kind of ["create", "save", "move"] as const) {
   it.skipIf(process.platform !== "linux")(`keeps ${kind} unknown when SQLite silently ignores its outcome insertion`, async () => {
     const { app, databasePath, workspaceId, folderPath } = setup();
     await provision(app, workspaceId);
     const requestId = crypto.randomUUID();
     const path = `${kind}-ignored.txt`;
     const target = join(folderPath, path);
+    const sourcePath = `src/${kind}-ignored.txt`;
     if (kind === "save") writeFileSync(target, "before");
+    if (kind === "move") { mkdirSync(join(folderPath, "src")); writeFileSync(join(folderPath, sourcePath), "before"); }
     const database = new Database(databasePath);
     database.exec("CREATE TRIGGER ignore_file_outcome BEFORE INSERT ON file_operation_outcomes BEGIN SELECT RAISE(IGNORE); END");
     database.close();
-    const body = { requestId, path, content: "published", ...(kind === "save" ? { expectedVersion: createHash("sha256").update("before").digest("hex") } : {}) };
-    const response = await request(app, `/${workspaceId}/files${kind === "save" ? "/content" : ""}`, ownerToken, kind === "save" ? "PUT" : "POST", body);
+    const body = kind === "create" ? { requestId, path, content: "published" } : kind === "save" ?
+      { requestId, path, content: "published", expectedVersion: createHash("sha256").update("before").digest("hex") } :
+      { requestId, sourcePath, destinationPath: path, expectedVersion: createHash("sha256").update("before").digest("hex") };
+    const route = kind === "create" ? `/${workspaceId}/files` : kind === "save" ? `/${workspaceId}/files/content` : `/${workspaceId}/files/move`;
+    const method = kind === "create" ? "POST" : kind === "save" ? "PUT" : "POST";
+    const response = await request(app, route, ownerToken, method, body);
     expect(response.status).toBe(503);
-    expect(readFileSync(target, "utf8")).toBe("published");
+    expect(readFileSync(target, "utf8")).toBe(kind === "move" ? "before" : "published");
+    if (kind === "move") expect(existsSync(join(folderPath, sourcePath))).toBe(false);
     const inode = lstatSync(target).ino;
     expect((await request(app, `/${workspaceId}/files/receipts/${requestId}`, ownerToken)).status).toBe(503);
     const verify = new Database(databasePath);
@@ -861,7 +1063,44 @@ for (const kind of ["create", "save"] as const) {
     } finally { verify.close(); }
     expect((await request(app, `/${workspaceId}/files/receipts/${requestId}`, ownerToken)).status).toBe(200);
     expect(lstatSync(target).ino).toBe(inode);
-    expect(readFileSync(target, "utf8")).toBe("published");
+    expect(readFileSync(target, "utf8")).toBe(kind === "move" ? "before" : "published");
+    if (kind === "move") expect(existsSync(join(folderPath, sourcePath))).toBe(false);
+  });
+}
+
+for (const kind of ["create", "save", "move"] as const) {
+  it.skipIf(process.platform !== "linux")(`keeps ${kind} prepared when SQLite silently ignores completion update`, async () => {
+    const { app, databasePath, workspaceId, folderPath } = setup();
+    await provision(app, workspaceId);
+    const requestId = crypto.randomUUID();
+    const path = `${kind}-update-ignored.txt`;
+    const target = join(folderPath, path);
+    const sourcePath = `src/${kind}-update-ignored.txt`;
+    if (kind === "save") writeFileSync(target, "before");
+    if (kind === "move") { mkdirSync(join(folderPath, "src")); writeFileSync(join(folderPath, sourcePath), "before"); }
+    const trigger = new Database(databasePath);
+    trigger.exec("CREATE TRIGGER ignore_file_completion BEFORE UPDATE OF state ON file_operation_intents WHEN NEW.state = 'completed' BEGIN SELECT RAISE(IGNORE); END");
+    trigger.close();
+    const body = kind === "create" ? { requestId, path, content: "published" } : kind === "save" ?
+      { requestId, path, content: "published", expectedVersion: createHash("sha256").update("before").digest("hex") } :
+      { requestId, sourcePath, destinationPath: path, expectedVersion: createHash("sha256").update("before").digest("hex") };
+    const route = kind === "create" ? `/${workspaceId}/files` : kind === "save" ? `/${workspaceId}/files/content` : `/${workspaceId}/files/move`;
+    const method = kind === "save" ? "PUT" : "POST";
+    expect((await request(app, route, ownerToken, method, body)).status).toBe(503);
+    expect(readFileSync(target, "utf8")).toBe(kind === "move" ? "before" : "published");
+    if (kind === "move") expect(existsSync(join(folderPath, sourcePath))).toBe(false);
+    const inode = lstatSync(target).ino;
+    expect((await request(app, `/${workspaceId}/files/receipts/${requestId}`, ownerToken)).status).toBe(503);
+    const verify = new Database(databasePath);
+    try {
+      expect(verify.query("SELECT state FROM file_operation_intents WHERE request_id = ?").get(requestId)).toEqual({ state: "prepared" });
+      expect(verify.query("SELECT COUNT(*) AS count FROM file_operation_outcomes WHERE request_id = ?").get(requestId)).toEqual({ count: 0 });
+      verify.exec("DROP TRIGGER ignore_file_completion");
+    } finally { verify.close(); }
+    expect((await request(app, `/${workspaceId}/files/receipts/${requestId}`, ownerToken)).status).toBe(200);
+    expect(lstatSync(target).ino).toBe(inode);
+    expect(readFileSync(target, "utf8")).toBe(kind === "move" ? "before" : "published");
+    if (kind === "move") expect(existsSync(join(folderPath, sourcePath))).toBe(false);
   });
 }
 
