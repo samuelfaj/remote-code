@@ -50,6 +50,38 @@ it("injects native response loss only after the real action commits and preserve
   }
 });
 
+it("rejects unauthenticated AsyncStorage permission control without an API effect", async () => {
+  const directory = mkdtempSync(join(process.env.RC_NATIVE_TEST_WORK_DIR ?? tmpdir(), "rc018-native-storage-control-"));
+  const previousDeviceId = process.env.RC_NATIVE_TEST_STORAGE_DEVICE_ID;
+  const previousDeviceName = process.env.RC_NATIVE_TEST_STORAGE_DEVICE_NAME;
+  delete process.env.RC_NATIVE_TEST_STORAGE_DEVICE_ID;
+  delete process.env.RC_NATIVE_TEST_STORAGE_DEVICE_NAME;
+  try {
+    const app = createNativeRecoveryTestApi(join(directory, "host.sqlite"), "native-storage-control-password");
+    for (const operation of ["deny-write", "restore"]) {
+      const response = await app.handle(new Request("https://localhost/__test__/storage-manifest-permissions", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ operation }),
+      }));
+      expect(response.status).toBe(401);
+      expect(await response.json()).toEqual({ error: "unauthorized" });
+    }
+    const database = new Database(join(directory, "host.sqlite"), { readonly: true, create: false });
+    try {
+      expect(database.query("SELECT COUNT(*) AS count FROM actions").get()).toEqual({ count: 0 });
+      expect(database.query("SELECT COUNT(*) AS count FROM sessions").get()).toEqual({ count: 0 });
+      expect(database.query("PRAGMA quick_check").get()).toEqual({ quick_check: "ok" });
+    } finally { database.close(); }
+  } finally {
+    if (previousDeviceId === undefined) delete process.env.RC_NATIVE_TEST_STORAGE_DEVICE_ID;
+    else process.env.RC_NATIVE_TEST_STORAGE_DEVICE_ID = previousDeviceId;
+    if (previousDeviceName === undefined) delete process.env.RC_NATIVE_TEST_STORAGE_DEVICE_NAME;
+    else process.env.RC_NATIVE_TEST_STORAGE_DEVICE_NAME = previousDeviceName;
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 it("revokes the actual receipt session before a held lookup returns unauthorized", async () => {
   const directory = mkdtempSync(join(process.env.RC_NATIVE_TEST_WORK_DIR ?? tmpdir(), "privacy-receipt-fixture-"));
   const databasePath = join(directory, "host.sqlite");

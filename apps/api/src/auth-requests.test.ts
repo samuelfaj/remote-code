@@ -381,17 +381,19 @@ it("never mistakes a live listener with stalled HTTP for confirmed TCP refusal",
     arrived();
     return new Promise<Response>(() => {});
   } });
+  const port = server.port;
+  if (!port) throw new Error("Stalled server did not bind");
   const controller = new AbortController();
-  const stalled = fetch(`http://127.0.0.1:${server.port}`, { signal: controller.signal }).catch(() => undefined);
+  const stalled = fetch(`http://127.0.0.1:${port}`, { signal: controller.signal }).catch(() => undefined);
   try {
     await requestArrived;
-    expect(await listenerRefused(server.port!)).toBe(false);
+    expect(await listenerRefused(port)).toBe(false);
   } finally {
     controller.abort();
     await stalled;
     await server.stop(true);
   }
-  expect(await listenerRefused(server.port!)).toBe(true);
+  expect(await listenerRefused(port)).toBe(true);
 });
 
 it("rejects UUID URN aliases before they can create a separate login or fence", async () => {

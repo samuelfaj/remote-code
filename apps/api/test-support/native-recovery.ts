@@ -1,7 +1,73 @@
 import { Database } from "bun:sqlite";
+import { appendFileSync, chmodSync, lstatSync, realpathSync, readFileSync, statSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { isAbsolute, join, resolve } from "node:path";
+import { homedir } from "node:os";
 import { Elysia, t } from "elysia";
 import { createApi } from "../src/app";
 import { isAuthenticated, sessionTokenHash, sessionUserId } from "../src/features/auth";
+
+const mobileProofBundle = "com.remotecode.mobileproof";
+const mobileStoragePath = ["Library", "Application Support", mobileProofBundle, "RCTAsyncLocalStorage_V1"];
+type ManifestMode = { path: string; mode: number; uid: number; gid: number };
+type RunnerDevice = { name: string; udid: string; runtime: string; deviceType: string };
+
+function storageEvidenceDirectory() {
+  const workDir = process.env.RC_NATIVE_TEST_WORK_DIR;
+  if (!workDir || !isAbsolute(workDir) || resolve(workDir) !== workDir) throw new Error("Storage proof evidence directory must be absolute and canonical");
+  const directory = lstatSync(workDir);
+  if (!directory.isDirectory() || directory.isSymbolicLink()) throw new Error("Storage proof evidence directory must be a real directory");
+  const owner = statSync(workDir);
+  const getuid = process.getuid;
+  if (typeof getuid !== "function" || owner.uid !== getuid() || (owner.mode & 0o077) !== 0 || realpathSync(workDir) !== workDir) throw new Error("Storage proof evidence directory must be private and owned by the runner");
+  return workDir;
+}
+
+function resolveOwnedManifest(deviceId: string) {
+  const workDir = storageEvidenceDirectory();
+  const runnerDevicePath = join(workDir, "simulator.json");
+  const runnerDeviceEntry = lstatSync(runnerDevicePath);
+  if (!runnerDeviceEntry.isFile() || runnerDeviceEntry.isSymbolicLink()) throw new Error("Missing task-owned simulator record");
+  const runnerDevice = JSON.parse(readFileSync(runnerDevicePath, "utf8")) as RunnerDevice;
+  if (runnerDevice.udid !== deviceId || runnerDevice.udid !== process.env.RC_NATIVE_TEST_STORAGE_DEVICE_ID
+    || runnerDevice.name !== process.env.RC_NATIVE_TEST_STORAGE_DEVICE_NAME
+    || runnerDevice.runtime !== "com.apple.CoreSimulator.SimRuntime.iOS-18-5"
+    || runnerDevice.deviceType !== "com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro") {
+    throw new Error("Storage proof target does not match the runner-owned simulator record");
+  }
+  const devices = JSON.parse(execFileSync("xcrun", ["simctl", "list", "devices", "available", "--json"], { encoding: "utf8" })) as {
+    devices: Record<string, { udid: string; name: string; deviceTypeIdentifier: string }[]>;
+  };
+  const device = Object.entries(devices.devices).flatMap(([runtime, entries]) => entries.map((entry) => ({ ...entry, runtime }))).find((entry) => entry.udid === deviceId);
+  if (!device || device.name !== runnerDevice.name || device.runtime !== runnerDevice.runtime || device.deviceTypeIdentifier !== runnerDevice.deviceType) {
+    throw new Error("Storage proof simulator no longer matches its runner-created identity");
+  }
+  const appRoot = execFileSync("xcrun", ["simctl", "get_app_container", deviceId, mobileProofBundle, "data"], { encoding: "utf8" }).trim();
+  const canonicalRoot = realpathSync(appRoot);
+  const deviceData = realpathSync(join(homedir(), "Library", "Developer", "CoreSimulator", "Devices", deviceId, "data"));
+  const appContainers = join(deviceData, "Containers", "Data", "Application");
+  if (!canonicalRoot.startsWith(`${appContainers}/`)) throw new Error("App container is outside the runner-owned simulator data directory");
+  const storagePath = resolve(join(canonicalRoot, ...mobileStoragePath));
+  if (!storagePath.startsWith(`${canonicalRoot}/`)) throw new Error("AsyncStorage path escaped the proof app container");
+  let current = canonicalRoot;
+  for (const component of mobileStoragePath) {
+    current = join(current, component);
+    const entry = lstatSync(current);
+    if (!entry.isDirectory() || entry.isSymbolicLink()) throw new Error("AsyncStorage path must contain only real directories");
+  }
+  if (realpathSync(storagePath) !== storagePath) throw new Error("AsyncStorage path is not canonical");
+  const manifest = join(storagePath, "manifest.json");
+  const manifestEntry = lstatSync(manifest);
+  if (!manifestEntry.isFile() || manifestEntry.isSymbolicLink()) throw new Error("AsyncStorage manifest must be initialized as a regular file");
+  const owner = statSync(storagePath);
+  return { path: storagePath, mode: owner.mode & 0o7777, uid: owner.uid, gid: owner.gid } satisfies ManifestMode;
+}
+
+function recordManifestPermission(event: string, deviceId: string, mode: ManifestMode, original?: ManifestMode) {
+  const workDir = storageEvidenceDirectory();
+  const originalFields = original ? { originalMode: original.mode, originalUid: original.uid, originalGid: original.gid } : {};
+  appendFileSync(join(workDir, "manifest-permissions.jsonl"), `${JSON.stringify({ event, deviceId, bundleId: mobileProofBundle, relativePath: mobileStoragePath.join("/"), appContainerCanonical: true, mode: mode.mode, uid: mode.uid, gid: mode.gid, ...originalFields })}\n`, { mode: 0o600 });
+}
 
 export function createNativeRecoveryTestApi(databasePath: string, password: string) {
   let lockOwner: Database | undefined;
@@ -58,6 +124,46 @@ export function createNativeRecoveryTestApi(databasePath: string, password: stri
   let markPrivacyReceiptStarted: (() => void) | null = null;
   let privacyReceiptGate: Promise<void> | null = null;
   let releasePrivacyReceiptGate: (() => void) | null = null;
+  let manifestMode: ManifestMode | null = null;
+  let specialModeOriginal: ManifestMode | null = null;
+  const storageDeviceId = process.env.RC_NATIVE_TEST_STORAGE_DEVICE_ID;
+  const restoreManifestPermissions = (includeSpecialBit = false, requireAudit = true) => {
+    if (!storageDeviceId) return false;
+    let restoredAny = false;
+    let failure: unknown;
+    let auditFailure: unknown;
+    const restore = (state: ManifestMode, event: string, clear: () => void) => {
+      const current = resolveOwnedManifest(storageDeviceId);
+      if (current.path !== state.path || current.uid !== state.uid || current.gid !== state.gid) throw new Error("AsyncStorage directory identity changed before permission restoration");
+      chmodSync(current.path, state.mode);
+      const restored = lstatSync(current.path);
+      if ((restored.mode & 0o7777) !== state.mode || restored.uid !== state.uid || restored.gid !== state.gid) throw new Error("AsyncStorage directory owner or mode did not restore exactly");
+      clear();
+      restoredAny = true;
+      try {
+        recordManifestPermission(event, storageDeviceId, { path: current.path, mode: restored.mode & 0o7777, uid: restored.uid, gid: restored.gid }, state);
+      } catch (error) {
+        auditFailure ??= error;
+        console.error("AsyncStorage permission audit write failed after verified restoration:", error);
+      }
+    };
+    if (manifestMode) {
+      const state = manifestMode;
+      try { restore(state, "restored", () => { manifestMode = null; }); } catch (error) { failure ??= error; }
+    }
+    if (includeSpecialBit && specialModeOriginal) {
+      const state = specialModeOriginal;
+      try { restore(state, "special-baseline-restored", () => { specialModeOriginal = null; }); } catch (error) { failure ??= error; }
+    }
+    if (failure) throw failure;
+    if (requireAudit && auditFailure) throw auditFailure;
+    return restoredAny;
+  };
+  if (storageDeviceId) {
+    process.once("beforeExit", () => { try { restoreManifestPermissions(true, false); } catch (error) { console.error("AsyncStorage permission restoration failed:", error); } });
+    process.once("SIGINT", () => { try { restoreManifestPermissions(true, false); } catch (error) { console.error("AsyncStorage permission restoration failed:", error); } process.exit(130); });
+    process.once("SIGTERM", () => { try { restoreManifestPermissions(true, false); } catch (error) { console.error("AsyncStorage permission restoration failed:", error); } process.exit(143); });
+  }
   return new Elysia()
     .onBeforeHandle({ as: "global" }, async ({ request, body, set }) => {
       const path = new URL(request.url).pathname;
@@ -418,6 +524,82 @@ export function createNativeRecoveryTestApi(databasePath: string, password: stri
       actionDeadlinePostDelay: t.Optional(t.Literal(true)),
       privacyUnauthorizedReceipt: t.Optional(t.Literal(true)),
     })) })
+    .post("/__test__/storage-manifest-permissions", ({ request, body, set }) => {
+      if (!isAuthenticated(databasePath, request)) {
+        set.status = 401;
+        return { error: "unauthorized" };
+      }
+      if (!storageDeviceId) {
+        set.status = 409;
+        return { error: "task_owned_storage_simulator_required" };
+      }
+      try {
+        if (body.operation === "inspect") {
+          const current = resolveOwnedManifest(storageDeviceId);
+          return { mode: current.mode, uid: current.uid, gid: current.gid };
+        }
+        if (body.operation === "set-special-bit") {
+          if (manifestMode || specialModeOriginal) throw new Error("AsyncStorage permission change is already armed");
+          const original = resolveOwnedManifest(storageDeviceId);
+          if ((original.mode & 0o2000) !== 0) throw new Error("AsyncStorage directory already has the set-group-ID bit");
+          const specialMode = original.mode | 0o2000;
+          specialModeOriginal = original;
+          recordManifestPermission("before-special-bit", storageDeviceId, original);
+          chmodSync(original.path, specialMode);
+          const changed = lstatSync(original.path);
+          const changedMode = changed.mode & 0o7777;
+          if (changed.uid !== original.uid || changed.gid !== original.gid || ![specialMode, original.mode].includes(changedMode)) {
+            restoreManifestPermissions(true, false);
+            throw new Error("AsyncStorage special-bit probe changed unexpected owner or permission bits");
+          }
+          if (changedMode === original.mode) {
+            let auditFailure: unknown;
+            try { recordManifestPermission("special-bit-unavailable", storageDeviceId, { path: original.path, mode: changedMode, uid: changed.uid, gid: changed.gid }, original); }
+            catch (error) { auditFailure = error; }
+            restoreManifestPermissions(true, false);
+            if (auditFailure) throw auditFailure;
+            set.status = 409;
+            return { error: "special_bit_unavailable", mode: changedMode, uid: changed.uid, gid: changed.gid, originalMode: original.mode, originalUid: original.uid, originalGid: original.gid };
+          }
+          recordManifestPermission("special-bit-set", storageDeviceId, { path: original.path, mode: changedMode, uid: changed.uid, gid: changed.gid }, original);
+          return { changed: true, mode: changedMode, uid: changed.uid, gid: changed.gid, originalMode: original.mode, originalUid: original.uid, originalGid: original.gid };
+        }
+        if (body.operation === "deny-write") {
+          if (manifestMode) throw new Error("Manifest write failure is already armed");
+          const original = resolveOwnedManifest(storageDeviceId);
+          if ((original.mode & 0o222) === 0) throw new Error("AsyncStorage directory has no write permission to remove");
+          const deniedMode = original.mode & ~0o222;
+          manifestMode = original;
+          recordManifestPermission("before-write-denial", storageDeviceId, original);
+          chmodSync(original.path, deniedMode);
+          const changed = lstatSync(original.path);
+          if ((changed.mode & 0o7777) !== deniedMode || changed.uid !== original.uid || changed.gid !== original.gid) throw new Error("AsyncStorage write permission change did not take effect exactly");
+          recordManifestPermission("write-denied", storageDeviceId, { path: original.path, mode: changed.mode & 0o7777, uid: changed.uid, gid: changed.gid }, original);
+          return { denied: true, mode: changed.mode & 0o7777, uid: changed.uid, gid: changed.gid, originalMode: original.mode, originalUid: original.uid, originalGid: original.gid };
+        }
+        if (body.operation === "restore") {
+          if (!manifestMode) return { restored: true, alreadyRestored: true };
+          restoreManifestPermissions(false, true);
+          const current = resolveOwnedManifest(storageDeviceId);
+          return { restored: true, mode: current.mode, uid: current.uid, gid: current.gid };
+        }
+        if (body.operation === "restore-special-bit") {
+          if (manifestMode) {
+            set.status = 409;
+            return { error: "restore_manifest_permission_first" };
+          }
+          if (!specialModeOriginal) return { restored: true, alreadyRestored: true };
+          restoreManifestPermissions(true, true);
+          const current = resolveOwnedManifest(storageDeviceId);
+          return { restored: true, mode: current.mode, uid: current.uid, gid: current.gid };
+        }
+        set.status = 422;
+        return { error: "invalid_storage_operation" };
+      } catch (error) {
+        set.status = 500;
+        return { error: error instanceof Error ? error.message : "storage_permission_control_failed" };
+      }
+    }, { body: t.Object({ operation: t.Union([t.Literal("deny-write"), t.Literal("restore"), t.Literal("inspect"), t.Literal("set-special-bit"), t.Literal("restore-special-bit")]) }) })
     .post("/__test__/release-action-post", ({ request, set }) => {
       if (!isAuthenticated(databasePath, request)) {
         set.status = 401;

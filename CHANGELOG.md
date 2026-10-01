@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-10-01 (UTC)
+
+- **Native storage and Linux folder checkpoint, partial:** Two real installed-iOS storage-failure scenarios passed twice each with authoritative SQLite/no-replay readback and exact permission restoration; special-bit runtime proof remains unverified. Fixed the listener test's post-stop port-zero probe, Linux arm64 filesystem flags and a reproduced cross-process folder/archive race. Final typecheck passed; Mac suites passed twice (135 tests/1552 assertions, eight Linux-only skips), native-arm64 Linux suites twice (143/1603, no skips), and original x86 folder/auth suites twice (25/183). The separate x86 full-suite setup failure remains recorded, not reclassified as green. Reasoning review closed source findings; final wording review approved except a scenario-count phrase, now corrected. Publication pending. Planning/handoff preserve all open outcomes: 12 Complete/five In Progress/one Blocked/50 To do. X extension disconnected; no post or resource created. Next: actual RC-029 file APIs and client conflict/recovery. See `plan/checkpoint-evidence.md`.
+
 ## 2026-09-30 (UTC)
 
 - **RC-028 publication continuity:** Feature `40436efd3ee5ed3f7b0f36b023d8d083b414ff0e` and cleanup `643f278587a017e98e58abf7f101625f35f2d2f8` are published with matching authoritative branch/PR readback and successful configured CI. PR #2 now follows the managed template and identifies all 87 accumulated paths, checks and limitations. Source-clean verification uses the cleanup SHA; no product file changed afterward. The plan has 12 Complete, four In Progress, one Blocked and 51 To do. Next: actual installed-iOS pending-ID storage failure proof within RC-018. No full-goal, phase, deployment, release or X-publication claim.

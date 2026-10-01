@@ -519,6 +519,240 @@ final class RemoteCodeMobileProofUITests: XCTestCase {
         XCTAssertEqual(privateWorkspaceRead.statusCode, 401)
     }
 
+    private func requestManifestPermissions(_ operation: String, using session: URLSession) async throws -> (Int, [String: Any]) {
+        var request = URLRequest(url: URL(string: "/__test__/storage-manifest-permissions", relativeTo: api)!)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["operation": operation])
+        let (data, response) = try await session.data(for: request)
+        let status = try XCTUnwrap((response as? HTTPURLResponse)?.statusCode)
+        let body = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        return (status, body)
+    }
+
+    private func setManifestPermissions(_ operation: String, using session: URLSession) async throws -> [String: Any] {
+        let (status, body) = try await requestManifestPermissions(operation, using: session)
+        XCTAssertEqual(status, 200, String(describing: body))
+        return body
+    }
+
+    private func probeSpecialManifestMode(using session: URLSession) async throws -> (Bool, [String: Any]) {
+        let (status, body) = try await requestManifestPermissions("set-special-bit", using: session)
+        if status == 200 {
+            XCTAssertEqual(body["changed"] as? Bool, true)
+            return (true, body)
+        }
+        XCTAssertEqual(status, 409, String(describing: body))
+        XCTAssertEqual(body["error"] as? String, "special_bit_unavailable")
+        XCTAssertEqual(body["mode"] as? Int, body["originalMode"] as? Int)
+        XCTAssertEqual(body["uid"] as? Int, body["originalUid"] as? Int)
+        XCTAssertEqual(body["gid"] as? Int, body["originalGid"] as? Int)
+        return (false, body)
+    }
+
+    @MainActor
+    func testPendingActionAPrePostWriteFailureSendsNoActionAndBlocksSubmission() async throws {
+        let app = XCUIApplication(bundleIdentifier: "com.remotecode.mobileproof")
+        let observer = URLSession(configuration: .ephemeral)
+        app.launch()
+        signIn(app)
+        try await observer.signIn(at: api, password: password)
+        let (specialBitEnabled, specialMode) = try await probeSpecialManifestMode(using: observer)
+        let originalMode = try XCTUnwrap(specialMode["originalMode"] as? Int)
+        let specialDirectoryMode = try XCTUnwrap(specialMode["mode"] as? Int)
+        XCTAssertEqual(originalMode & 0o7777, originalMode)
+        XCTAssertEqual(specialDirectoryMode, specialBitEnabled ? originalMode | 0o2000 : originalMode)
+        XCTAssertEqual(specialMode["uid"] as? Int, specialMode["originalUid"] as? Int)
+        XCTAssertEqual(specialMode["gid"] as? Int, specialMode["originalGid"] as? Int)
+        var arm = URLRequest(url: URL(string: "/__test__/lose-action-response", relativeTo: api)!)
+        arm.httpMethod = "POST"
+        arm.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        arm.httpBody = try JSONSerialization.data(withJSONObject: ["receiptFault": "none"])
+        let (_, armedResponse) = try await observer.data(for: arm)
+        XCTAssertEqual((armedResponse as? HTTPURLResponse)?.statusCode, 200)
+
+        let action = "native-storage-before-post-\(UUID().uuidString)"
+        let input = app.textFields["Action"]
+        input.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        for character in action { input.typeText(String(character)) }
+        app.keyboards.buttons["Return"].tap()
+        app.staticTexts["Host connection"].firstMatch.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+        XCTAssertEqual(input.value as? String, action, "The actual input must match the recorded action before testing storage failure")
+        let permission = try await setManifestPermissions("deny-write", using: observer)
+        XCTAssertEqual(permission["denied"] as? Bool, true)
+        let deniedMode = try XCTUnwrap(permission["mode"] as? Int)
+        let permissionOriginalMode = try XCTUnwrap(permission["originalMode"] as? Int)
+        XCTAssertEqual(deniedMode, permissionOriginalMode & ~0o222)
+        XCTAssertEqual(deniedMode & 0o2000, specialBitEnabled ? 0o2000 : originalMode & 0o2000, "The native write failure must preserve every special permission bit")
+        XCTAssertEqual(permission["uid"] as? Int, permission["originalUid"] as? Int)
+        XCTAssertEqual(permission["gid"] as? Int, permission["originalGid"] as? Int)
+        let unauthenticated = URLSession(configuration: .ephemeral)
+        for operation in ["deny-write", "restore"] {
+            let (status, _) = try await requestManifestPermissions(operation, using: unauthenticated)
+            XCTAssertEqual(status, 401, "Permission controls must reject unauthenticated \(operation) requests")
+            let stillDenied = try await setManifestPermissions("inspect", using: observer)
+            XCTAssertEqual(stillDenied["mode"] as? Int, deniedMode, "Unauthorized controls must not change the actual manifest directory mode")
+            XCTAssertEqual(stillDenied["uid"] as? Int, permission["uid"] as? Int)
+            XCTAssertEqual(stillDenied["gid"] as? Int, permission["gid"] as? Int)
+        }
+        let submit = app.buttons["Submit action"]
+        XCTAssertTrue(submit.isEnabled && submit.isHittable)
+        submit.tap()
+
+        let recovery = app.staticTexts.matching(identifier: "action-recovery-status").firstMatch
+        XCTAssertTrue(recovery.waitForLabelContaining("No action was sent", timeout: 10), "A real AsyncStorage manifest write error must stop before POST")
+        XCTAssertFalse(submit.isEnabled, "Unavailable device storage must block resubmission until recovery")
+        let diagnostics = try await observer.responseLossDiagnostics(at: api)
+        XCTAssertEqual(diagnostics.actionPosts, 0)
+        XCTAssertEqual(diagnostics.lostResponse, false)
+        let actionsBeforeStorageRecovery = try await observer.actions(at: api)
+        XCTAssertFalse(actionsBeforeStorageRecovery.contains { $0.action == action })
+        let restored = try await setManifestPermissions("restore", using: observer)
+        XCTAssertEqual(restored["restored"] as? Bool, true)
+        XCTAssertEqual(restored["mode"] as? Int, permission["originalMode"] as? Int)
+        XCTAssertEqual(restored["uid"] as? Int, permission["originalUid"] as? Int)
+        XCTAssertEqual(restored["gid"] as? Int, permission["originalGid"] as? Int)
+        if specialBitEnabled {
+            let specialBitRestored = try await setManifestPermissions("restore-special-bit", using: observer)
+            XCTAssertEqual(specialBitRestored["mode"] as? Int, originalMode)
+            XCTAssertEqual(specialBitRestored["uid"] as? Int, specialMode["originalUid"] as? Int)
+            XCTAssertEqual(specialBitRestored["gid"] as? Int, specialMode["originalGid"] as? Int)
+        }
+        app.terminate()
+        var logout = URLRequest(url: URL(string: "/api/auth/logout", relativeTo: api)!)
+        logout.httpMethod = "POST"
+        logout.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        logout.httpBody = Data("{}".utf8)
+        let (_, logoutResponse) = try await observer.data(for: logout)
+        XCTAssertEqual((logoutResponse as? HTTPURLResponse)?.statusCode, 204)
+        let revoked = try await observer.get(URL(string: "/api/auth/session", relativeTo: api)!)
+        XCTAssertEqual(revoked.statusCode, 401)
+    }
+
+    @MainActor
+    func testPendingActionZReceiptClearFailureRecoversOriginalReceiptAfterRelaunchWithoutReplay() async throws {
+        let app = XCUIApplication(bundleIdentifier: "com.remotecode.mobileproof")
+        let observer = URLSession(configuration: .ephemeral)
+        app.launch()
+        signIn(app)
+        try await observer.signIn(at: api, password: password)
+        let (specialBitEnabled, specialMode) = try await probeSpecialManifestMode(using: observer)
+        let originalMode = try XCTUnwrap(specialMode["originalMode"] as? Int)
+        let specialDirectoryMode = try XCTUnwrap(specialMode["mode"] as? Int)
+        XCTAssertEqual(specialDirectoryMode, specialBitEnabled ? originalMode | 0o2000 : originalMode)
+        XCTAssertEqual(specialMode["uid"] as? Int, specialMode["originalUid"] as? Int)
+        XCTAssertEqual(specialMode["gid"] as? Int, specialMode["originalGid"] as? Int)
+        var arm = URLRequest(url: URL(string: "/__test__/lose-action-response", relativeTo: api)!)
+        arm.httpMethod = "POST"
+        arm.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        arm.httpBody = try JSONSerialization.data(withJSONObject: ["receiptFault": "stall"])
+        let (_, armedResponse) = try await observer.data(for: arm)
+        XCTAssertEqual((armedResponse as? HTTPURLResponse)?.statusCode, 200)
+
+        let action = "native-storage-after-receipt-\(UUID().uuidString)"
+        let input = app.textFields["Action"]
+        input.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        for character in action { input.typeText(String(character)) }
+        app.keyboards.buttons["Return"].tap()
+        app.staticTexts["Host connection"].firstMatch.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+        XCTAssertEqual(input.value as? String, action, "The actual input must match the recorded action before testing receipt cleanup")
+        app.buttons["Submit action"].tap()
+        let pending = app.staticTexts.matching(identifier: "action-recovery-status").firstMatch
+        guard pending.waitForLabelContaining("unknown", timeout: 12) else {
+            let failedDiagnostics = try await observer.responseLossDiagnostics(at: api)
+            let failedHistory = try await observer.actions(at: api)
+            let connection = app.staticTexts.matching(identifier: "connection-status").firstMatch
+            let error = app.staticTexts.matching(identifier: "connection-error").firstMatch
+            let connectionLabel = connection.exists ? connection.label : "missing"
+            let errorLabel = error.exists ? error.label : "none"
+            let recoveryLabel = pending.exists ? pending.label : "missing"
+            let submitEnabled = app.buttons["Submit action"].isEnabled
+            XCTFail("The stalled first receipt did not leave the actual action pending: posts=\(failedDiagnostics.actionPosts), receiptReads=\(failedDiagnostics.receiptReads), requestId=\(failedDiagnostics.requestId), actions=\(failedHistory.map(\.action)), connection=\(connectionLabel), error=\(errorLabel), recovery=\(recoveryLabel), submitEnabled=\(submitEnabled)")
+            return
+        }
+        var diagnostics = try await observer.responseLossDiagnostics(at: api)
+        XCTAssertEqual(diagnostics.actionPosts, 1)
+        XCTAssertEqual(diagnostics.receiptReads, 1)
+        XCTAssertNotNil(UUID(uuidString: diagnostics.requestId))
+        let permission = try await setManifestPermissions("deny-write", using: observer)
+        XCTAssertEqual(permission["denied"] as? Bool, true)
+        let deniedMode = try XCTUnwrap(permission["mode"] as? Int)
+        let permissionOriginalMode = try XCTUnwrap(permission["originalMode"] as? Int)
+        XCTAssertEqual(deniedMode, permissionOriginalMode & ~0o222)
+        XCTAssertEqual(deniedMode & 0o2000, specialBitEnabled ? 0o2000 : originalMode & 0o2000, "The native removal failure must preserve every special permission bit")
+        XCTAssertEqual(permission["uid"] as? Int, permission["originalUid"] as? Int)
+        XCTAssertEqual(permission["gid"] as? Int, permission["originalGid"] as? Int)
+
+        app.buttons["Check action receipt"].tap()
+        XCTAssertTrue(pending.waitForLabelContaining("Confirmed receipt", timeout: 15))
+        XCTAssertTrue(pending.label.contains("Device storage could not clear the pending identity"), "The confirmed receipt must remain visibly pending when manifest removal fails")
+        XCTAssertFalse(app.buttons["Submit action"].isEnabled, "A confirmed receipt with a durable pending ID must not permit a second POST")
+        let history = try await observer.actions(at: api)
+        let receipts = history.filter { $0.action == action }
+        XCTAssertEqual(receipts.count, 1)
+        let original = try XCTUnwrap(receipts.first)
+        XCTAssertTrue(pending.label.contains(original.id))
+        diagnostics = try await observer.responseLossDiagnostics(at: api)
+        XCTAssertEqual(diagnostics.actionPosts, 1)
+        XCTAssertEqual(diagnostics.receiptReads, 2)
+        XCTAssertEqual(UUID(uuidString: diagnostics.requestId)?.uuidString.lowercased(), diagnostics.requestId)
+        let (canonicalData, canonicalResponse) = try await observer.data(from: URL(string: "/api/actions/receipts/\(diagnostics.requestId)", relativeTo: api)!)
+        XCTAssertEqual((canonicalResponse as? HTTPURLResponse)?.statusCode, 200)
+        let canonicalReceipt = try JSONDecoder().decode(ActionReceipt.self, from: canonicalData)
+        XCTAssertEqual(canonicalReceipt.id, original.id)
+        XCTAssertEqual(canonicalReceipt.action, action)
+
+        let restored = try await setManifestPermissions("restore", using: observer)
+        XCTAssertEqual(restored["restored"] as? Bool, true)
+        XCTAssertEqual(restored["mode"] as? Int, permission["originalMode"] as? Int)
+        XCTAssertEqual(restored["uid"] as? Int, permission["originalUid"] as? Int)
+        XCTAssertEqual(restored["gid"] as? Int, permission["originalGid"] as? Int)
+        app.terminate()
+        app.launch()
+        signIn(app)
+        let check = app.buttons["Check action receipt"]
+        XCTAssertTrue(check.waitForExistence(timeout: 10), "The persisted original request ID must return after process restart")
+        check.tap()
+        XCTAssertTrue(pending.waitForLabelContaining("Confirmed receipt", timeout: 15))
+        XCTAssertTrue(pending.label.contains(original.id), "Manual recovery must reconcile the same canonical receipt")
+        XCTAssertTrue(app.staticTexts["Receipt \(original.id)"].exists)
+        XCTAssertTrue(check.waitForNonExistence(timeout: 5), "Successful post-restart receipt reconciliation must clear the original pending ID")
+        diagnostics = try await observer.responseLossDiagnostics(at: api)
+        XCTAssertEqual(diagnostics.actionPosts, 1, "Restored permissions and manual receipt recovery must not replay the action")
+        XCTAssertEqual(diagnostics.receiptReads, 4, "The two app checks and one independent canonical API read must preserve one POST")
+        XCTAssertEqual(UUID(uuidString: diagnostics.requestId)?.uuidString.lowercased(), diagnostics.requestId)
+        let finalHistory = try await observer.actions(at: api)
+        XCTAssertEqual(finalHistory.filter { $0.action == action }.map(\.id), [original.id])
+        if specialBitEnabled {
+            let specialBitRestored = try await setManifestPermissions("restore-special-bit", using: observer)
+            XCTAssertEqual(specialBitRestored["mode"] as? Int, originalMode)
+            XCTAssertEqual(specialBitRestored["uid"] as? Int, specialMode["originalUid"] as? Int)
+            XCTAssertEqual(specialBitRestored["gid"] as? Int, specialMode["originalGid"] as? Int)
+        }
+
+        let cleanupPermission = try await setManifestPermissions("deny-write", using: observer)
+        XCTAssertEqual(cleanupPermission["denied"] as? Bool, true)
+        let cleanupOriginalMode = try XCTUnwrap(cleanupPermission["originalMode"] as? Int)
+        XCTAssertEqual(cleanupPermission["mode"] as? Int, cleanupOriginalMode & ~0o222)
+        XCTAssertEqual(cleanupPermission["uid"] as? Int, cleanupPermission["originalUid"] as? Int)
+        XCTAssertEqual(cleanupPermission["gid"] as? Int, cleanupPermission["originalGid"] as? Int)
+        var logout = URLRequest(url: URL(string: "/api/auth/logout", relativeTo: api)!)
+        logout.httpMethod = "POST"
+        logout.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        logout.httpBody = Data("{}".utf8)
+        let (_, logoutResponse) = try await observer.data(for: logout)
+        XCTAssertEqual((logoutResponse as? HTTPURLResponse)?.statusCode, 204)
+        let expiredSession = try await observer.get(URL(string: "/api/auth/session", relativeTo: api)!)
+        XCTAssertEqual(expiredSession.statusCode, 401)
+        XCTAssertTrue(app.staticTexts.matching(identifier: "connection-status").firstMatch.waitForLabel("signed out", timeout: 15))
+        let (unauthenticatedRestore, _) = try await requestManifestPermissions("restore", using: observer)
+        XCTAssertEqual(unauthenticatedRestore, 401, "The process-owned cleanup must restore without an authenticated HTTP backdoor")
+    }
+
     @MainActor
     func testPendingActionRecoversAfterLostResponseAndAppRestartWithoutReplay() async throws {
         let app = XCUIApplication(bundleIdentifier: "com.remotecode.mobileproof")

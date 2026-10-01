@@ -4,6 +4,7 @@ import { actionsFeature } from "./features/actions";
 import { authFeature, sessionToken } from "./features/auth";
 import { compatibilityFeature } from "./features/compatibility";
 import { storageFeature } from "./features/storage";
+import { workspaceFolderSchemaReady, workspaceFoldersFeature } from "./features/workspace-folders";
 import { checkDatabase, healthFeature, initializeDatabase, type ReadinessCheck } from "./features/health";
 
 const databasePath = process.env.DATABASE_PATH ?? "/tmp/remotecode.sqlite";
@@ -39,13 +40,16 @@ export function createApi(
 ) {
   initializeDatabase(configuredDatabasePath);
   const actions = actionsFeature(configuredDatabasePath, authConfig.webOrigin ?? "http://localhost:5173");
-  let storageUnavailable = corruptAtStartup(configuredDatabasePath);
+  const workspaceFolders = workspaceFoldersFeature(configuredDatabasePath);
+  let storageUnavailable = corruptAtStartup(configuredDatabasePath) || !workspaceFolders.isReady();
   let probe: Promise<boolean> | null = null;
   const observeReadiness = () => {
     if (probe) return probe;
     let timer: ReturnType<typeof setTimeout> | undefined;
     probe = Promise.race([
-      Promise.resolve().then(readinessCheck).catch(() => false),
+      Promise.resolve().then(readinessCheck)
+        .then((ready) => ready && workspaceFolders.isReady() && workspaceFolderSchemaReady(configuredDatabasePath))
+        .catch(() => false),
       new Promise<boolean>((resolve) => { timer = setTimeout(() => resolve(false), 400); }),
     ]).then((ready) => { storageUnavailable = !ready; return ready; })
       .finally(() => { if (timer) clearTimeout(timer); probe = null; });
@@ -76,7 +80,8 @@ export function createApi(
     .use(healthFeature(observeReadiness))
     .use(authFeature(configuredDatabasePath, authConfig, actions.revokeSessions))
     .use(actions.routes)
-    .use(storageFeature(configuredDatabasePath));
+    .use(storageFeature(configuredDatabasePath))
+    .use(workspaceFolders.routes);
 }
 
 export const app = createApi();
