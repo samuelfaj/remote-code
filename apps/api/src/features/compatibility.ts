@@ -25,7 +25,8 @@ export function compatibilityFeature() {
     .get("/api/version", () => ({
       apiVersion: currentApiVersion,
       supportedClientVersions,
-      capabilities: ["action-receipts", "event-snapshots-v1", "action-request-recovery-v1", "auth-request-recovery-v1", "workspace-metadata-v1"],
+      capabilities: ["action-receipts", "event-snapshots-v1", "action-request-recovery-v1", "auth-request-recovery-v1", "workspace-metadata-v1",
+        ...(process.platform === "linux" ? ["workspace-files-v1"] : [])],
     }))
     .onBeforeHandle({ as: "global" }, ({ request, set }) => {
       const url = new URL(request.url);

@@ -969,7 +969,8 @@ describe("Elysia action receipt", () => {
         hosted: { minimum: 0, maximum: 1 },
         selfManaged: { minimum: 0, maximum: 1 },
       },
-      capabilities: ["action-receipts", "event-snapshots-v1", "action-request-recovery-v1", "auth-request-recovery-v1", "workspace-metadata-v1"],
+      capabilities: ["action-receipts", "event-snapshots-v1", "action-request-recovery-v1", "auth-request-recovery-v1", "workspace-metadata-v1",
+        ...(process.platform === "linux" ? ["workspace-files-v1"] : [])],
     });
 
     const login = await app.handle(new Request("https://localhost/api/auth/login", {

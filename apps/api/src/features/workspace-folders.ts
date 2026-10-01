@@ -317,7 +317,59 @@ export function workspaceFoldersFeature(databasePath: string, syncDirectory: Syn
   const isReady = () => (schemaReady || workspaceFolderSchemaReady(databasePath)) &&
     workspaceRootCurrent(databasePath, workspaceRootFd);
 
-  const routes = new Elysia().post("/api/workspaces/:workspaceId/folder", ({ body, params, request, set }) => {
+  const routes = new Elysia().get("/api/workspaces/:workspaceId/folder", ({ params, request, set }) => {
+    const userId = sessionUserId(databasePath, request);
+    if (!userId) { set.status = 401; return { error: "unauthorized" as const }; }
+    let database: Database | undefined;
+    try {
+      database = new Database(databasePath, { readonly: true, create: false });
+      const result = database.transaction(() => {
+        const workspace = database!.query<{ id: string; archived: number }, [string, string]>(
+          "SELECT id, archived FROM workspaces WHERE id = ? AND user_id = ?",
+        ).get(params.workspaceId, userId);
+        if (!workspace) return { error: "not_found" as const };
+        if (process.platform !== "linux") return { error: "workspace_folders_require_linux" as const };
+        if (!isReady() || !workspaceFolderSchemaReady(databasePath)) throw new Error("storage_unavailable");
+        const current = database!.query<{
+          userId: string; requestId: string; state: string; device: string | null; inode: string | null;
+        }, [string]>(`
+          SELECT user_id AS userId, request_id AS requestId, state, folder_device AS device, folder_inode AS inode
+          FROM workspace_folder_requests WHERE workspace_id = ?
+        `).get(params.workspaceId);
+        if (current) {
+          if (current.userId !== userId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(current.requestId)) {
+            throw new Error("workspace_folder_identity_unavailable");
+          }
+          if (current.state === "pending") return { workspaceId: params.workspaceId, state: "unknown" as const, requestId: current.requestId };
+          if (current.state !== "provisioned") throw new Error("workspace_folder_state_unavailable");
+          provisionFolder(workspaceRootFd, params.workspaceId, current.requestId, "provisioned", current.device, current.inode, syncDirectory);
+          return { workspaceId: params.workspaceId, state: "provisioned" as const, requestId: current.requestId };
+        }
+        if (workspace.archived) return { error: "workspace_archived" as const };
+        if (readdirSync(`/proc/self/fd/${workspaceRootFd}`).includes("workspaces")) {
+          const libc = openNativeLibrary();
+          let parentFd = -1;
+          try {
+            parentFd = ffiOpenAt(libc, workspaceRootFd, "workspaces", constants.O_DIRECTORY | constants.O_NOFOLLOW | 0x80000);
+            if (parentFd < 0) throw new Error("workspace_root_unavailable");
+            validateDirectory(parentFd, 0o700);
+            if (readdirSync(`/proc/self/fd/${parentFd}`).includes(params.workspaceId)) throw new Error("workspace_folder_identity_unavailable");
+          } finally {
+            if (parentFd >= 0) libc.symbols.close(parentFd);
+            libc.close();
+          }
+        }
+        return { workspaceId: params.workspaceId, state: "not_provisioned" as const };
+      }).deferred();
+      if ("error" in result) set.status = result.error === "not_found" ? 404 : result.error === "workspace_archived" ? 409 : 501;
+      return result;
+    } catch {
+      set.status = 503;
+      return { error: "workspace_folder_unavailable" as const };
+    } finally { database?.close(); }
+  }, {
+    params: t.Object({ workspaceId: t.String({ format: "uuid", minLength: 36, maxLength: 36 }) }),
+  }).post("/api/workspaces/:workspaceId/folder", ({ body, params, request, set }) => {
     const userId = sessionUserId(databasePath, request);
     if (!userId) {
       set.status = 401;

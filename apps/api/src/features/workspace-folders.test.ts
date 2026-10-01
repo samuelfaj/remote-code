@@ -2,7 +2,7 @@ import { Database } from "bun:sqlite";
 import { afterEach, expect, it } from "bun:test";
 import { Elysia } from "elysia";
 import { createHash } from "node:crypto";
-import { chmodSync, chownSync, existsSync, fsyncSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync } from "node:fs";
+import { chmodSync, chownSync, existsSync, fsyncSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { createApi } from "../app";
@@ -184,6 +184,8 @@ it.skipIf(process.platform !== "linux")("never recreates an accepted folder whos
   rmSync(folderPath, { recursive: true });
 
   const restarted = createApi(path);
+  expect((await restarted.handle(request("GET", `/${workspaceId}/folder`))).status).toBe(503);
+  expect(existsSync(folderPath)).toBe(false);
   const response = await restarted.handle(request("POST", `/${workspaceId}/folder`, { requestId }));
   expect(response.status).toBe(503);
   expect((await import("node:fs")).existsSync(folderPath)).toBe(false);
@@ -315,4 +317,119 @@ it("keeps liveness available and does not repair a missing folder schema", async
   expect((await restarted.handle(new Request("http://localhost/api/health/ready"))).status).toBe(503);
   expect((await restarted.handle(request("POST", `/${workspaceId}/folder`, { requestId: crypto.randomUUID() }))).status).toBe(503);
   expect(existsSync(join(dirname(path), "workspaces"))).toBe(false);
+});
+
+
+it("keeps folder status owner-scoped and unsupported off Linux without allocating or inserting intents", async () => {
+  const { app, path } = setup();
+  const workspaceId = crypto.randomUUID();
+  const foreignId = crypto.randomUUID();
+  const archivedId = crypto.randomUUID();
+  insertWorkspace(path, workspaceId);
+  insertWorkspace(path, foreignId, "bob");
+  insertWorkspace(path, archivedId, "alice", 1);
+  const foreign = await app.handle(request("GET", `/${foreignId}/folder`));
+  const missing = await app.handle(request("GET", `/${crypto.randomUUID()}/folder`));
+  expect(foreign.status).toBe(404);
+  expect(missing.status).toBe(404);
+  expect(await foreign.json()).toEqual(await missing.json());
+  expect((await app.handle(new Request(`http://localhost/api/workspaces/${workspaceId}/folder`))).status).toBe(401);
+  const before = readFileSync(path);
+  expect((await app.handle(request("GET", `/${archivedId}/folder`))).status).toBe(process.platform === "linux" ? 409 : 501);
+  const current = await app.handle(request("GET", `/${workspaceId}/folder`));
+  expect(current.status).toBe(process.platform === "linux" ? 200 : 501);
+  expect(await current.json()).toEqual(process.platform === "linux" ? { workspaceId, state: "not_provisioned" } : { error: "workspace_folders_require_linux" });
+  expect(readFileSync(path)).toEqual(before);
+  expect(existsSync(join(dirname(path), "workspaces"))).toBe(false);
+});
+
+it.skipIf(process.platform !== "linux")("checks unallocated leaves and confirms only the canonical accepted folder ID, including archived reads", async () => {
+  const { app, path } = setup();
+  const workspaceId = crypto.randomUUID();
+  const otherId = crypto.randomUUID();
+  insertWorkspace(path, workspaceId);
+  insertWorkspace(path, otherId);
+  const requestId = crypto.randomUUID();
+  const feature = workspaceFoldersFeature(path, () => { throw new Error("GET must not sync directories"); });
+  const reads = new Elysia().use(feature.routes);
+  expect((await app.handle(request("POST", `/${workspaceId}/folder`, { requestId: requestId.toUpperCase() }))).status).toBe(200);
+  const folderPath = join(dirname(path), "workspaces", workspaceId);
+  const marker = readFileSync(join(folderPath, ".remotecode-workspace"));
+  const info = lstatSync(folderPath);
+  const before = readFileSync(path);
+  const current = await reads.handle(request("GET", `/${workspaceId}/folder`));
+  expect(current.status).toBe(200);
+  expect(await current.json()).toEqual({ workspaceId, state: "provisioned", requestId });
+  expect(readFileSync(path)).toEqual(before);
+  expect(readFileSync(join(folderPath, ".remotecode-workspace"))).toEqual(marker);
+  expect(lstatSync(folderPath).ino).toBe(info.ino);
+  const unallocated = await reads.handle(request("GET", `/${otherId}/folder`));
+  expect(await unallocated.json()).toEqual({ workspaceId: otherId, state: "not_provisioned" });
+  expect(existsSync(join(dirname(path), "workspaces", otherId))).toBe(false);
+  expect((await app.handle(request("PATCH", `/${workspaceId}`, { requestId: crypto.randomUUID(), archived: true }))).status).toBe(200);
+  expect(await (await reads.handle(request("GET", `/${workspaceId}/folder`))).json()).toEqual({ workspaceId, state: "provisioned", requestId });
+  expect((await reads.handle(request("GET", `/${workspaceId}/folder`, undefined, "b"))).status).toBe(404);
+});
+
+it.skipIf(process.platform !== "linux")("never reconciles pending folder markers or inserts writes during a current-state read", async () => {
+  const { app, path } = setup();
+  const workspaceId = crypto.randomUUID();
+  const requestId = crypto.randomUUID();
+  insertWorkspace(path, workspaceId);
+  const database = new Database(path);
+  database.exec(`CREATE TRIGGER reject_folder_finalization BEFORE UPDATE ON workspace_folder_requests
+    BEGIN SELECT RAISE(ABORT, 'read must not finalize'); END`);
+  database.close();
+  expect((await app.handle(request("POST", `/${workspaceId}/folder`, { requestId }))).status).toBe(503);
+  const folderPath = join(dirname(path), "workspaces", workspaceId);
+  const marker = readFileSync(join(folderPath, ".remotecode-workspace"));
+  const before = readFileSync(path);
+  for (const markerPresent of [true, false]) {
+    if (!markerPresent) rmSync(folderPath, { recursive: true });
+    const current = await app.handle(request("GET", `/${workspaceId}/folder`));
+    expect(current.status).toBe(200);
+    expect(await current.json()).toEqual({ workspaceId, state: "unknown", requestId });
+    expect(readFileSync(path)).toEqual(before);
+    if (markerPresent) expect(readFileSync(join(folderPath, ".remotecode-workspace"))).toEqual(marker);
+    else expect(existsSync(folderPath)).toBe(false);
+  }
+  const after = new Database(path, { readonly: true, create: false });
+  try {
+    expect(after.query("SELECT request_id AS requestId, state, folder_device AS device, folder_inode AS inode FROM workspace_folder_requests WHERE workspace_id = ?").get(workspaceId))
+      .toEqual({ requestId, state: "pending", device: null, inode: null });
+  } finally { after.close(); }
+});
+
+it.skipIf(process.platform !== "linux")("fails closed on orphaned physical leaves and broken accepted marker or inode identity", async () => {
+  const { app, path } = setup();
+  const workspaceId = crypto.randomUUID();
+  const requestId = crypto.randomUUID();
+  insertWorkspace(path, workspaceId);
+  expect((await app.handle(request("POST", `/${workspaceId}/folder`, { requestId }))).status).toBe(200);
+  const folderPath = join(dirname(path), "workspaces", workspaceId);
+  const markerPath = join(folderPath, ".remotecode-workspace");
+  const marker = readFileSync(markerPath);
+  rmSync(markerPath);
+  expect((await app.handle(request("GET", `/${workspaceId}/folder`))).status).toBe(503);
+  expect(existsSync(markerPath)).toBe(false);
+  const wrongMarker = `${crypto.randomUUID()}\n`;
+  writeFileSync(markerPath, wrongMarker, { mode: 0o600 });
+  expect((await app.handle(request("GET", `/${workspaceId}/folder`))).status).toBe(503);
+  expect(readFileSync(markerPath, "utf8")).toBe(wrongMarker);
+  writeFileSync(markerPath, marker);
+  const database = new Database(path);
+  database.query("UPDATE workspace_folder_requests SET folder_inode = '0' WHERE workspace_id = ?").run(workspaceId);
+  database.close();
+  expect((await app.handle(request("GET", `/${workspaceId}/folder`))).status).toBe(503);
+  const remove = new Database(path);
+  remove.query("DELETE FROM workspace_folder_requests WHERE workspace_id = ?").run(workspaceId);
+  remove.close();
+  const before = readFileSync(path);
+  expect((await app.handle(request("GET", `/${workspaceId}/folder`))).status).toBe(503);
+  expect(readFileSync(path)).toEqual(before);
+  expect(lstatSync(folderPath).isDirectory()).toBe(true);
+  rmSync(folderPath, { recursive: true });
+  symlinkSync(join(dirname(path), "missing-target"), folderPath);
+  expect((await app.handle(request("GET", `/${workspaceId}/folder`))).status).toBe(503);
+  expect(lstatSync(folderPath).isSymbolicLink()).toBe(true);
 });
