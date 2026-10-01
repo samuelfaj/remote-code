@@ -17,7 +17,7 @@ export function validText(value: string) {
     new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes) === value;
 }
 
-function validPath(path: unknown, root = false): path is string {
+export function validPath(path: unknown, root = false): path is string {
   return typeof path === "string" && (root && path === "" ||
     path.length > 0 && path.length <= 4096 && validText(path) &&
     path.split("/").every((part) => part && part !== "." && part !== ".." &&
@@ -90,6 +90,20 @@ export function clearPendingFile(storage: Storage, key: string, pending: Pending
   if (!pendingFileValueMatches(storage.getItem(key), pending)) throw new Error("Pending file identity changed");
   storage.removeItem(key);
   if (storage.getItem(key) !== null) throw new Error("Pending file identity not cleared");
+}
+
+export function isTargetExists(error: unknown) {
+  const data = row(error);
+  const value = row(data?.value);
+  return data?.status === 409 && value?.error === "target_exists" && Object.keys(value).join(",") === "error";
+}
+
+export function isMissingFilePath(error: unknown, kind: "create" | "move") {
+  const data = row(error);
+  const value = row(data?.value);
+  const codes = kind === "create" ? ["parent_directory_not_found"]
+    : ["source_parent_not_found", "destination_parent_not_found", "file_not_found"];
+  return data?.status === 404 && typeof value?.error === "string" && codes.includes(value.error) && Object.keys(value).join(",") === "error";
 }
 
 export function isVersionConflict(error: unknown) {

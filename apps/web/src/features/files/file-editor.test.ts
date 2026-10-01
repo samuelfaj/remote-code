@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { createApiClient, fileReceiptFromValue, workspaceErrorStatus, type FileReceipt, type PendingFile } from "@remotecode/client";
-import { clearPendingFile, directoryFromValue, fileStorageKey, folderStateFromValue, isVersionConflict, openFileFromValue, persistPendingFile, readPendingFile, textSha256, validText, type FileEntry } from "./file-editor";
+import { clearPendingFile, directoryFromValue, fileStorageKey, folderStateFromValue, isMissingFilePath, isTargetExists, isVersionConflict, openFileFromValue, persistPendingFile, readPendingFile, textSha256, validPath, validText, type FileEntry } from "./file-editor";
 
 const workspaceId = "123e4567-e89b-42d3-a456-426614174001";
 const requestId = "123e4567-e89b-42d3-a456-426614174002";
@@ -121,6 +121,51 @@ describe("content-free pending SAVE storage", () => {
   });
 });
 
+describe("CREATE and MOVE input and refusal rules", () => {
+  it("accepts exact relative paths without trimming and rejects traversal, reserved names and invalid Unicode", () => {
+    for (const path of ["src/new.txt", "nested/🌍.txt", " spaced name.txt ", ".hidden", "a".repeat(4096)]) expect(validPath(path)).toBe(true);
+    for (const path of ["", "/absolute", "a//b", "a/../b", "./a", "a/", "a\0b", "\ud800", "\udfff", "a".repeat(4097),
+      ".remotecode-workspace", "dir/.remotecode-stage-private"]) expect(validPath(path)).toBe(false);
+  });
+
+  it("recognizes only exact preflight target refusal, not an uncertain staged-operation error or request ID conflict", () => {
+    expect(isTargetExists({ status: 409, value: { error: "target_exists" } })).toBe(true);
+    for (const error of [
+      { status: 400, value: { error: "target_exists" } }, { status: 503, value: { error: "target_exists" } },
+      { status: 409, value: { error: "file_operation_unavailable" } }, { status: 409, value: { error: "request_id_conflict" } },
+      { status: 409, value: { error: "target_exists", requestId } }, { status: 409, value: { error: "target_exists", currentVersion: version } },
+      { status: 409, value: "target_exists" }, null,
+    ]) expect(isTargetExists(error)).toBe(false);
+  });
+
+  it("persists content-free CREATE/MOVE identities and binds receipts to original bytes or source/destination/version", () => {
+    const storage = memoryStorage();
+    const create: PendingFile = { ...pending, kind: "create" };
+    const created: FileReceipt = { ...receipt, kind: "create" };
+    persistPendingFile(storage, key, create);
+    expect(readPendingFile(storage, key)).toEqual(create);
+    expect(fileReceiptFromValue(created, readPendingFile(storage, key)!, workspaceId)).toEqual(created);
+    expect(fileReceiptFromValue({ ...created, path: "newer-input.txt" }, create, workspaceId)).toBeNull();
+    expect(fileReceiptFromValue({ ...created, version: "0".repeat(64) }, create, workspaceId)).toBeNull();
+    clearPendingFile(storage, key, create);
+    const move: PendingFile = { kind: "move", requestId: crypto.randomUUID(), workspaceId, sourcePath: pending.path,
+      destinationPath: "nested/moved.txt", expectedVersion: version };
+    const moved: FileReceipt = { kind: "move", requestId: move.requestId, workspaceId, sourcePath: move.sourcePath,
+      path: move.destinationPath, version, createdAt: receipt.createdAt };
+    persistPendingFile(storage, key, move);
+    expect(Object.keys(JSON.parse(storage.getItem(key)!)).sort()).toEqual(["destinationPath", "expectedVersion", "kind", "requestId", "sourcePath", "workspaceId"]);
+    expect(fileReceiptFromValue(moved, readPendingFile(storage, key)!, workspaceId)).toEqual(moved);
+    for (const changed of [{ sourcePath: "other.txt" }, { path: "newer-destination.txt" }, { version: "0".repeat(64) }, { workspaceId: requestId }]) {
+      expect(fileReceiptFromValue({ ...moved, ...changed }, move, workspaceId)).toBeNull();
+    }
+    expect(() => clearPendingFile(storage, key, { ...move, destinationPath: "newer-destination.txt" })).toThrow();
+    expect(readPendingFile(storage, key)).toEqual(move);
+    clearPendingFile(storage, key, move);
+    expect(() => persistPendingFile(storage, key, { ...move, destinationPath: move.sourcePath })).toThrow();
+    expect(storage.getItem(key)).toBeNull();
+  });
+});
+
 it("exercises Eden SAVE/receipt HTTP boundaries without transport retries after lost or malformed responses", async () => {
   const storage = memoryStorage();
   const requests: { method: string; path: string; body: unknown }[] = [];
@@ -159,4 +204,22 @@ it("exercises Eden SAVE/receipt HTTP boundaries without transport retries after 
     expect(readPendingFile(storage, key)).toEqual(next);
     expect(requests.filter((request) => request.method === "PUT")).toHaveLength(2);
   } finally { server.stop(true); }
+});
+
+
+it("recognizes only exact synchronous CREATE/MOVE missing-path refusals, never receipt absence or unknown status bodies", () => {
+  for (const kind of ["create", "move"] as const) {
+    const codes = kind === "create" ? ["parent_directory_not_found"] : ["source_parent_not_found", "destination_parent_not_found", "file_not_found"];
+    for (const error of codes) {
+      expect(isMissingFilePath({ status: 404, value: { error } }, kind)).toBe(true);
+      expect(isMissingFilePath({ status: 503, value: { error } }, kind)).toBe(false);
+      expect(isMissingFilePath({ status: 404, value: { error, extra: true } }, kind)).toBe(false);
+    }
+    for (const error of ["not_found", "receipt_not_found", "outcome_unknown", "request_id_conflict", "file_operation_unavailable"]) {
+      expect(isMissingFilePath({ status: 404, value: { error } }, kind)).toBe(false);
+    }
+    expect(isMissingFilePath(null, kind)).toBe(false);
+  }
+  expect(isMissingFilePath({ status: 404, value: { error: "parent_directory_not_found" } }, "move")).toBe(false);
+  expect(isMissingFilePath({ status: 404, value: { error: "destination_parent_not_found" } }, "create")).toBe(false);
 });

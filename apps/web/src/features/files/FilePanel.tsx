@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native-web";
 import { createApiClient, fileReceiptFromValue, workspaceErrorStatus, workspaceFromValue, type PendingFile, type Workspace } from "@remotecode/client";
-import { clearPendingFile, directoryFromValue, fileStorageKey, folderStateFromValue, isVersionConflict, openFileFromValue, persistPendingFile, readPendingFile, textSha256, validText, type FileEntry, type FolderState, type OpenFile } from "./file-editor";
+import { clearPendingFile, directoryFromValue, fileStorageKey, folderStateFromValue, isMissingFilePath, isTargetExists, isVersionConflict, openFileFromValue, persistPendingFile, readPendingFile, textSha256, validPath, validText, type FileEntry, type FolderState, type OpenFile } from "./file-editor";
 
 const deadlineMs = 10_000;
 type Props = { userId: string; workspace: Workspace | null; blocked: boolean; onUnauthorized: () => void };
@@ -25,10 +25,14 @@ export function FilePanel({ userId, workspace, blocked, onUnauthorized }: Props)
   const [editor, setEditor] = useState<Editor | null>(null);
   const editorRef = useRef(editor);
   editorRef.current = editor;
+  const [creation, setCreation] = useState<Record<string, { path: string; content: string }>>({});
+  const [move, setMove] = useState<{ workspaceId: string; sourcePath: string; destinationPath: string } | null>(null);
   const [message, setMessage] = useState("");
   const currentInspection = inspection?.workspaceId === workspace?.id ? inspection : null;
   const currentListing = listing?.workspaceId === workspace?.id ? listing : null;
   const currentEditor = editor?.host.workspaceId === workspace?.id ? editor : null;
+  const currentCreation = workspace ? creation[workspace.id] ?? null : null;
+  const destination = move && currentEditor && move.workspaceId === workspace?.id && move.sourcePath === currentEditor.host.path ? move.destinationPath : "";
 
   function requestClient(end: number) {
     if (Date.now() >= end) throw new Error("File operation deadline expired");
@@ -177,6 +181,8 @@ export function FilePanel({ userId, workspace, blocked, onUnauthorized }: Props)
     active.current = true;
     editorRef.current = null;
     setEditor(null);
+    setCreation({});
+    setMove(null);
     pendingRef.current = null;
     setPending(null);
     setStorageReady(false);
@@ -194,27 +200,42 @@ export function FilePanel({ userId, workspace, blocked, onUnauthorized }: Props)
     if (workspace && !blocked) void read("");
   }, [userId, workspace?.id, workspace?.archived, blocked]);
 
-  async function save() {
+  async function mutate(kind: PendingFile["kind"]) {
     const value = editorRef.current;
-    if (!workspace || !value || value.host.workspaceId !== workspace.id || working.current || blocked ||
-      workspace.archived || value.needsRead || value.draft === value.host.content || !validText(value.draft) ||
-      !storageReady || pendingRef.current || currentInspection?.folder !== "provisioned" || currentInspection.archived) return;
+    if (!workspace || working.current || blocked || workspace.archived || !storageReady || pendingRef.current ||
+      currentInspection?.capability !== "supported" || currentInspection.folder !== "provisioned" || currentInspection.archived) return;
+    if (kind === "create") {
+      if (!currentCreation || !validPath(currentCreation.path) || !validText(currentCreation.content)) return;
+    } else {
+      if (!value || value.host.workspaceId !== workspace.id || value.needsRead || !validText(value.draft)) return;
+      if (kind === "save" ? value.draft === value.host.content
+        : value.draft !== value.host.content || !validPath(destination) || destination === value.host.path) return;
+    }
+    const content = kind === "create" ? currentCreation!.content : value!.draft;
+    const label = kind.toUpperCase();
     const current = currentCheck();
     const end = Date.now() + deadlineMs;
     working.current = true;
     setBusy(true);
-    setMessage("Checking SAVE authority…");
+    setMessage(`Checking ${label} authority…`);
     let sent = false;
     try {
       const state = await inspect(end, current);
       if (!current() || state?.folder !== "provisioned" || state.archived || Date.now() >= end) {
-        if (current() && state?.archived) setMessage("Workspace is archived. No SAVE request was sent.");
+        if (current() && state?.archived) setMessage(`Workspace is archived. No ${label} request was sent.`);
         return;
       }
-      const resultSha256 = await textSha256(value.draft);
+      const latest = editorRef.current;
+      if (kind === "move" && (!latest || latest.host !== value!.host || latest.needsRead || latest.draft !== latest.host.content)) {
+        setMessage("MOVE requires the current verified open file with a clean draft. No MOVE request was sent; your draft was kept.");
+        return;
+      }
+      const requestId = crypto.randomUUID();
+      const operation: PendingFile = kind === "move"
+        ? { kind, requestId, workspaceId: workspace.id, sourcePath: value!.host.path, destinationPath: destination, expectedVersion: value!.host.version }
+        : { kind, requestId, workspaceId: workspace.id, path: kind === "create" ? currentCreation!.path : value!.host.path, resultSha256: await textSha256(content) };
       if (!current()) return;
       if (Date.now() >= end) throw new Error("File operation deadline expired");
-      const operation: PendingFile = { kind: "save", requestId: crypto.randomUUID(), workspaceId: workspace.id, path: value.host.path, resultSha256 };
       try {
         persistPendingFile(sessionStorage, key, operation);
         pendingRef.current = operation;
@@ -222,36 +243,41 @@ export function FilePanel({ userId, workspace, blocked, onUnauthorized }: Props)
       } catch {
         restorePending();
         setStorageReady(false);
-        setMessage("Could not persist and read back the pending SAVE identity. No SAVE request was sent; repair browser storage and reload.");
+        setMessage(`Could not persist and read back the pending ${label} identity. No ${label} request was sent; repair browser storage and reload.`);
         return;
       }
       if (!current()) return;
       if (Date.now() >= end) {
-        if (clearMatching(operation)) setMessage("Deadline expired before SAVE submission. No SAVE request was sent.");
+        if (clearMatching(operation)) setMessage(`Deadline expired before ${label} submission. No ${label} request was sent.`);
         return;
       }
-      setEditor((item) => item ? { ...item, needsRead: true } : item);
+      setEditor((item) => item?.host.workspaceId === workspace.id ? { ...item, needsRead: true } : item);
       sent = true;
-      const response = await requestClient(end).api.workspaces({ workspaceId: workspace.id }).files.content.put({
-        requestId: operation.requestId, path: operation.path, content: value.draft, expectedVersion: value.host.version,
-      });
+      const files = requestClient(end).api.workspaces({ workspaceId: workspace.id }).files;
+      const response = operation.kind === "move"
+        ? await files.move.post({ requestId, sourcePath: operation.sourcePath, destinationPath: operation.destinationPath, expectedVersion: operation.expectedVersion })
+        : operation.kind === "create"
+          ? await files.post({ requestId, path: operation.path, content })
+          : await files.content.put({ requestId, path: operation.path, content, expectedVersion: value!.host.version });
       if (!current()) return;
-      if (Date.now() >= end) { setMessage("SAVE response arrived after the deadline. Outcome is unknown; check its receipt manually. Draft kept."); return; }
+      if (Date.now() >= end) { setMessage(`${label} response arrived after the deadline. Outcome is unknown; check its receipt manually. Draft and inputs kept.`); return; }
       if (response.error) {
         unauthorized(response.error);
-        if (isVersionConflict(response.error)) {
-          if (clearMatching(operation)) setMessage("Version conflict: SAVE was refused. Draft kept. Read current host text and compare before another explicit SAVE.");
-        } else setMessage("SAVE was not confirmed. Keep the draft and check its receipt manually; SAVE will never be resent automatically.");
+        if (operation.kind !== "create" && isVersionConflict(response.error)) {
+          if (clearMatching(operation)) setMessage(`Version conflict: ${label} was refused. Draft kept. Read current host text and compare before another explicit ${label}.`);
+        } else if (operation.kind !== "save" && (isTargetExists(response.error) || isMissingFilePath(response.error, operation.kind))) {
+          if (clearMatching(operation)) setMessage(`${label} was refused: ${isTargetExists(response.error) ? "target already exists" : "source or parent directory is unavailable"}. No file change occurred. Inputs and draft kept; choose an existing parent and current source explicitly.`);
+        } else setMessage(`${label} was not confirmed. Keep the draft and inputs and check its receipt manually; no write will be resent automatically.`);
         return;
       }
       const receipt = fileReceiptFromValue(response.data, operation, workspace.id);
-      if (!receipt) { setMessage("SAVE response did not match the pending identity. Outcome is unknown; check its receipt manually. Draft kept."); return; }
-      if (clearMatching(operation)) setMessage("SAVE receipt confirmed. Draft kept. This historical receipt is not current file content; read current host text before saving again.");
+      if (!receipt) { setMessage(`${label} response did not match the pending identity. Outcome is unknown; check its receipt manually. Draft and inputs kept.`); return; }
+      if (clearMatching(operation)) setMessage(`${label} receipt confirmed for ${receipt.path}. Draft and inputs kept. This historical receipt is not current file content or path; refresh files and open the desired path to read its current text and version before writing again.`);
     } catch {
       if (current()) {
         setInspection(null);
-        setMessage(sent ? "SAVE outcome is unknown. Draft and pending identity are kept; check its receipt manually. No automatic SAVE retry."
-          : "SAVE preflight failed. No SAVE request was sent; refresh folder inspection manually.");
+        setMessage(sent ? `${label} outcome is unknown. Draft, inputs and pending identity are kept; check its receipt manually. No automatic write retry.`
+          : `${label} preflight failed. No ${label} request was sent; refresh folder inspection manually.`);
       }
     } finally {
       if (current()) { working.current = false; setBusy(false); }
@@ -265,7 +291,7 @@ export function FilePanel({ userId, workspace, blocked, onUnauthorized }: Props)
     const end = Date.now() + deadlineMs;
     working.current = true;
     setBusy(true);
-    setMessage("Checking file receipt. No SAVE will be resent.");
+    setMessage("Checking file receipt. No write will be resent.");
     try {
       if (!await sessionIsCurrent(end, current)) return;
       // Persisted identity, not the editable draft, binds historical receipts.
@@ -282,7 +308,7 @@ export function FilePanel({ userId, workspace, blocked, onUnauthorized }: Props)
       if (result.error) {
         unauthorized(result.error);
         setMessage(workspaceErrorStatus(result.error) === 404 ? "No matching receipt is available. Outcome remains unknown; pending identity and draft are kept."
-          : "Receipt lookup failed. Outcome remains unknown; no SAVE was resent.");
+          : "Receipt lookup failed. Outcome remains unknown; no write was resent.");
         return;
       }
       if (!fileReceiptFromValue(result.data, operation, workspace.id)) {
@@ -290,19 +316,23 @@ export function FilePanel({ userId, workspace, blocked, onUnauthorized }: Props)
         return;
       }
       if (clearMatching(operation)) {
-        setEditor((item) => item ? { ...item, needsRead: true } : item);
-        setMessage("Historical file receipt confirmed. Draft kept; read current host text separately before saving again.");
+        setEditor((item) => item?.host.workspaceId === operation.workspaceId ? { ...item, needsRead: true } : item);
+        setMessage("Historical file receipt confirmed. Draft and inputs kept; refresh files and open the desired path to read its current text and version before writing again.");
       }
     } catch {
-      if (current()) setMessage("Receipt or pending identity could not be checked. Outcome remains unknown; no SAVE was resent.");
+      if (current()) setMessage("Receipt or pending identity could not be checked. Outcome remains unknown; no write was resent.");
     } finally {
       if (current()) { working.current = false; setBusy(false); }
     }
   }
 
-  const saveDisabled = busy || blocked || !workspace || workspace.archived || !storageReady || Boolean(pending) ||
-    !currentEditor || currentEditor.needsRead || currentEditor.draft === currentEditor.host.content || !validText(currentEditor.draft) ||
+  const writesDisabled = busy || blocked || !workspace || workspace.archived || !storageReady || Boolean(pending) ||
     currentInspection?.capability !== "supported" || currentInspection.folder !== "provisioned" || currentInspection.archived;
+  const saveDisabled = writesDisabled || !currentEditor || currentEditor.needsRead ||
+    currentEditor.draft === currentEditor.host.content || !validText(currentEditor.draft);
+  const createDisabled = writesDisabled || !currentCreation || !validPath(currentCreation.path) || !validText(currentCreation.content);
+  const moveDisabled = writesDisabled || !currentEditor || currentEditor.needsRead || currentEditor.draft !== currentEditor.host.content ||
+    !validPath(destination) || destination === currentEditor.host.path;
 
   return (
     <View style={styles.panel} testID="file-panel">
@@ -328,11 +358,43 @@ export function FilePanel({ userId, workspace, blocked, onUnauthorized }: Props)
             </Pressable>
           ))}
         </View> : null}
+        <View style={styles.section}>
+          <Text accessibilityRole="header">Create text file</Text>
+          <Text>Paths are relative to the workspace root. The parent directory must already exist.</Text>
+          <label htmlFor="workspace-create-path">New file path</label>
+          <input id="workspace-create-path" aria-label="New file path" value={currentCreation?.path ?? ""}
+            readOnly={workspace.archived || currentInspection?.archived === true}
+            onChange={(event) => {
+              if (live.current.workspace?.id !== workspace.id) return;
+              const path = event.target.value;
+              setCreation((values) => ({ ...values, [workspace.id]: { path, content: values[workspace.id]?.content ?? "" } }));
+            }}
+            style={{ minHeight: 42, padding: 12, border: "1px solid #c9d9d2", borderRadius: 9 }} />
+          <label htmlFor="workspace-create-content">New file text</label>
+          <textarea id="workspace-create-content" aria-label="New file text" value={currentCreation?.content ?? ""} spellCheck={false}
+            readOnly={workspace.archived || currentInspection?.archived === true}
+            onChange={(event) => {
+              if (live.current.workspace?.id !== workspace.id) return;
+              const content = event.target.value;
+              setCreation((values) => ({ ...values, [workspace.id]: { path: values[workspace.id]?.path ?? "", content } }));
+            }}
+            style={{ width: "100%", boxSizing: "border-box", minHeight: 100, resize: "vertical", padding: 12, border: "1px solid #c9d9d2", borderRadius: 9, fontFamily: "monospace", color: "#183337", background: "#fbfdfc" }} />
+          {currentCreation && (!validPath(currentCreation.path) || !validText(currentCreation.content))
+            ? <Text>Use a non-empty relative file path without reserved or traversal segments, and valid UTF-8 text without NUL, at most 1 MiB.</Text> : null}
+          <Pressable accessibilityRole="button" accessibilityLabel="Create file" disabled={createDisabled} accessibilityState={{ disabled: createDisabled }}
+            onPress={() => void mutate("create")} style={[styles.button, createDisabled && styles.disabled]}><Text style={styles.buttonText}>Create file</Text></Pressable>
+        </View>
         {currentEditor ? <View style={styles.section}>
           <Text>{currentEditor.host.path} · {currentEditor.needsRead ? "current version must be read" : "last read version available"}</Text>
           <label htmlFor="workspace-file-draft">Editable draft</label>
           <textarea id="workspace-file-draft" aria-label="File draft" value={currentEditor.draft} readOnly={workspace.archived || currentInspection?.archived === true}
-            spellCheck={false} onChange={(event) => setEditor((item) => item ? { ...item, draft: event.target.value } : item)}
+            spellCheck={false} onChange={(event) => {
+              const item = editorRef.current;
+              if (live.current.workspace?.id !== workspace.id || !item || item.host !== currentEditor.host) return;
+              const draft = event.target.value;
+              editorRef.current = { ...item, draft };
+              setEditor((value) => value?.host === item.host ? { ...value, draft } : value);
+            }}
             style={{ width: "100%", boxSizing: "border-box", minHeight: 220, resize: "vertical", padding: 12, border: "1px solid #c9d9d2", borderRadius: 9, fontFamily: "monospace", color: "#183337", background: "#fbfdfc" }} />
           {currentEditor.draft !== currentEditor.host.content ? <>
             <Text>Draft differs from last read host text. Reading does not replace your draft.</Text>
@@ -344,11 +406,24 @@ export function FilePanel({ userId, workspace, blocked, onUnauthorized }: Props)
           <Pressable accessibilityRole="button" accessibilityLabel="Read current file" disabled={busy || blocked}
             onPress={() => void read(currentEditor.host.path, true)} style={styles.secondary}><Text>Read current file (keep draft)</Text></Pressable>
           <Pressable accessibilityRole="button" accessibilityLabel="Save file" disabled={saveDisabled} accessibilityState={{ disabled: saveDisabled }}
-            onPress={() => void save()} style={[styles.button, saveDisabled && styles.disabled]}><Text style={styles.buttonText}>Save file</Text></Pressable>
+            onPress={() => void mutate("save")} style={[styles.button, saveDisabled && styles.disabled]}><Text style={styles.buttonText}>Save file</Text></Pressable>
+          <label htmlFor="workspace-move-destination">Move destination path</label>
+          <input id="workspace-move-destination" aria-label="Move destination path" value={destination}
+            readOnly={workspace.archived || currentInspection?.archived === true}
+            onChange={(event) => {
+              if (live.current.workspace?.id !== workspace.id || editorRef.current?.host !== currentEditor.host) return;
+              setMove({ workspaceId: workspace.id, sourcePath: currentEditor.host.path, destinationPath: event.target.value });
+            }}
+            style={{ minHeight: 42, padding: 12, border: "1px solid #c9d9d2", borderRadius: 9 }} />
+          <Text>MOVE uses the current verified open version, never the unsaved draft. Destination is relative to the workspace root; its parent directory must exist.</Text>
+          {currentEditor.draft !== currentEditor.host.content ? <Text>Save or explicitly discard the dirty draft before moving. No draft will be saved by MOVE.</Text> : null}
+          <Pressable accessibilityRole="button" accessibilityLabel="Move file" disabled={moveDisabled} accessibilityState={{ disabled: moveDisabled }}
+            onPress={() => void mutate("move")} style={[styles.button, moveDisabled && styles.disabled]}><Text style={styles.buttonText}>Move file</Text></Pressable>
         </View> : null}
       </>}
       {pending ? <View style={styles.pending} testID="pending-file">
         <Text>File operation awaits confirmation. Pending identity stays in this tab; no write will be replayed.</Text>
+        <Text>{pending.kind === "move" ? `MOVE: ${pending.sourcePath} to ${pending.destinationPath}` : `${pending.kind.toUpperCase()}: ${pending.path}`}</Text>
         <Text selectable>Request ID: {pending.requestId}</Text>
         <Text>{pending.workspaceId === workspace?.id ? "Check its receipt manually." : "Select the original workspace to check this file receipt."}</Text>
         <Pressable accessibilityRole="button" accessibilityLabel="Check file receipt" disabled={busy || pending.workspaceId !== workspace?.id}
