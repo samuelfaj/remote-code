@@ -1,10 +1,11 @@
 import { Database } from "bun:sqlite";
-import { closeSync, copyFileSync, mkdirSync, openSync, readFileSync, rmSync, writeSync } from "node:fs";
+import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "bun:test";
 import { getHealth } from "../../../packages/client/src/index";
 import { createApi } from "./app";
+import { sessionExpiresAt } from "./features/auth";
 
 const root = process.env.RC020_TEST_WORK_DIR ?? tmpdir();
 
@@ -246,10 +247,232 @@ it("does not start integrity probes for anonymous, unmatched, or read-only reque
       headers: { cookie: cookie! },
     }));
     expect(cookieSession.status).toBe(401);
+    const cleanedSessionDb = new SessionDatabase(path, { readonly: true, create: false });
+    try { expect(cleanedSessionDb.query("SELECT COUNT(*) AS count FROM sessions").get()).toEqual({ count: 0 }); }
+    finally { cleanedSessionDb.close(); }
     expect(readinessCalls).toBe(4);
     const anonymousSession = await app.handle(new Request("http://localhost/api/auth/session"));
     expect(anonymousSession.status).toBe(401);
     expect(readinessCalls).toBe(4);
+  } finally {
+    removeDatabase(path);
+  }
+});
+
+it("gates file receipt recovery on readiness without probing anonymous or unmatched GETs", async () => {
+  mkdirSync(root, { recursive: true });
+  const path = join(root, `receipt-readiness-${crypto.randomUUID()}.sqlite`);
+  let readinessCalls = 0;
+  let readinessReady = true;
+  try {
+    const app = createApi(path, async () => { readinessCalls++; return readinessReady; }, { password: "test-storage-password" });
+    const login = await app.handle(new Request("https://localhost/api/auth/login", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ password: "test-storage-password" }),
+    }));
+    expect(login.status).toBe(200);
+    const cookie = login.headers.get("set-cookie")?.split(";")[0];
+    expect(cookie).toBeTruthy();
+    readinessCalls = 0;
+    readinessReady = false;
+
+    const workspaceId = crypto.randomUUID();
+    const requestId = crypto.randomUUID();
+    const anonymous = await app.handle(new Request(`http://localhost/api/workspaces/${workspaceId}/files/receipts/${requestId}`));
+    const unmatched = await app.handle(new Request("http://localhost/api/not-a-receipt"));
+    expect({ anonymous: anonymous.status, unmatched: unmatched.status, readinessCalls })
+      .toEqual({ anonymous: 401, unmatched: 404, readinessCalls: 0 });
+
+    const receiptUrl = `http://localhost/api/workspaces/${workspaceId}/files/receipts/${requestId}`;
+    const blocked = await app.handle(new Request(receiptUrl, { headers: { cookie: cookie! } }));
+    expect(blocked.status).toBe(503);
+    expect(await blocked.json()).toEqual({ error: "storage_unavailable" });
+    expect(readinessCalls).toBe(1);
+
+    const trailingSlash = await app.handle(new Request(`${receiptUrl}/`, { headers: { cookie: cookie! } }));
+    expect(trailingSlash.status).toBe(503);
+    expect(await trailingSlash.json()).toEqual({ error: "storage_unavailable" });
+    expect(readinessCalls).toBe(2);
+
+    const sessionAlias = await app.handle(new Request("https://localhost/api/auth/session/", { headers: { cookie: cookie! } }));
+    expect(sessionAlias.status).toBe(503);
+    expect(readinessCalls).toBe(3);
+    const loginAlias = await app.handle(new Request("https://localhost/api/auth/login/", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ password: "test-storage-password" }),
+    }));
+    expect(loginAlias.status).toBe(503);
+    expect(readinessCalls).toBe(4);
+    const state = new Database(path, { readonly: true });
+    try { expect(state.query("SELECT COUNT(*) AS count FROM sessions").get()).toEqual({ count: 1 }); }
+    finally { state.close(); }
+  } finally {
+    removeDatabase(path);
+  }
+});
+
+it("never creates a missing database from private GET authority or session-expiry reads", async () => {
+  mkdirSync(root, { recursive: true });
+  const path = join(root, `missing-authority-${crypto.randomUUID()}.sqlite`);
+  try {
+    const app = createApi(path, undefined, { password: "test-storage-password" });
+    removeDatabase(path);
+    const request = new Request("http://localhost/api/profile", { headers: { cookie: `remotecode_session=${"a".repeat(64)}` } });
+    expect((await app.handle(request)).status).toBe(401);
+    expect(existsSync(path)).toBe(false);
+    expect(sessionExpiresAt(path, request)).toBeUndefined();
+    expect(existsSync(path)).toBe(false);
+  } finally { removeDatabase(path); }
+});
+
+it.skipIf(process.platform !== "linux")("blocks corrupted prepared file receipts before SQL recovery and recovers once after repair", async () => {
+  mkdirSync(root, { recursive: true });
+  const path = join(root, `receipt-runtime-corrupt-${crypto.randomUUID()}.sqlite`);
+  const healthyPath = join(root, `receipt-runtime-healthy-${crypto.randomUUID()}.sqlite`);
+  let workspaceId: string | undefined;
+  try {
+    const app = createApi(path, undefined, { password: "test-storage-password" });
+    const login = await app.handle(new Request("https://localhost/api/auth/login", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ password: "test-storage-password" }),
+    }));
+    expect(login.status).toBe(200);
+    const cookie = login.headers.get("set-cookie")?.split(";")[0];
+    expect(cookie).toBeTruthy();
+    const createWorkspace = await app.handle(new Request("http://localhost/api/workspaces", {
+      method: "POST", headers: { "content-type": "application/json", cookie: cookie! },
+      body: JSON.stringify({ name: "receipt recovery" }),
+    }));
+    expect(createWorkspace.status).toBe(201);
+    const workspace = await createWorkspace.json() as { id: string };
+    workspaceId = workspace.id;
+    const folder = await app.handle(new Request(`http://localhost/api/workspaces/${workspace.id}/folder`, {
+      method: "POST", headers: { "content-type": "application/json", cookie: cookie! },
+      body: JSON.stringify({ requestId: crypto.randomUUID() }),
+    }));
+    expect(folder.status).toBe(200);
+    const folderPath = join(root, `workspaces/${workspace.id}`);
+
+    for (const kind of ["create", "save"] as const) {
+      const requestId = crypto.randomUUID();
+      const filePath = "witness.txt";
+      if (kind === "save") {
+        const db = new Database(path);
+        try { db.exec("DROP TRIGGER IF EXISTS fail_file_outcome"); } finally { db.close(); }
+      }
+      const db = new Database(path);
+      try {
+        db.exec("CREATE TRIGGER fail_file_outcome BEFORE INSERT ON file_operation_outcomes BEGIN SELECT RAISE(ABORT, 'injected outcome failure'); END");
+      } finally { db.close(); }
+
+      if (kind === "create") {
+        const write = await app.handle(new Request(`http://localhost/api/workspaces/${workspace.id}/files`, {
+          method: "POST", headers: { "content-type": "application/json", cookie: cookie! },
+          body: JSON.stringify({ requestId, path: filePath, content: "original bytes" }),
+        }));
+        expect(write.status).toBe(503);
+      } else {
+        const current = await app.handle(new Request(`http://localhost/api/workspaces/${workspace.id}/files/content?path=${filePath}`, { headers: { cookie: cookie! } }));
+        expect(current.status).toBe(200);
+        const version = (await current.json() as { version: string }).version;
+        const write = await app.handle(new Request(`http://localhost/api/workspaces/${workspace.id}/files/content`, {
+          method: "PUT", headers: { "content-type": "application/json", cookie: cookie! },
+          body: JSON.stringify({ requestId, path: filePath, content: "saved bytes", expectedVersion: version }),
+        }));
+        expect(write.status).toBe(503);
+      }
+      const preparedDb = new Database(path);
+      let prepared: { state: string } | null;
+      try {
+        prepared = preparedDb.query<{ state: string }, [string]>("SELECT state FROM file_operation_intents WHERE request_id = ?").get(requestId) ?? null;
+        expect(prepared).toEqual({ state: "prepared" });
+        expect(preparedDb.query("SELECT COUNT(*) AS count FROM file_operation_outcomes WHERE request_id = ?").get(requestId))
+          .toEqual({ count: 0 });
+        preparedDb.exec("DROP TRIGGER fail_file_outcome");
+        preparedDb.exec("CREATE TABLE IF NOT EXISTS corruption_probe (payload BLOB NOT NULL)");
+        preparedDb.query("DELETE FROM corruption_probe").run();
+        preparedDb.query("INSERT INTO corruption_probe (payload) VALUES (?)").run(Buffer.alloc(16384, 42));
+        preparedDb.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+      } finally { preparedDb.close(); }
+
+      const healthyBytes = readFileSync(path);
+      copyFileSync(path, healthyPath);
+      const fd = openSync(path, "r+");
+      try { writeSync(fd, Buffer.alloc(512, 0xff), 0, 512, healthyBytes.length - 4096); }
+      finally { closeSync(fd); }
+      const corruptedBytes = readFileSync(path);
+      const target = join(folderPath, filePath);
+      const targetBefore = statSync(target);
+      const receiptUrl = `http://localhost/api/workspaces/${workspace.id}/files/receipts/${requestId}`;
+      for (const suffix of ["", "/"] as const) {
+        const blocked = await app.handle(new Request(`${receiptUrl}${suffix}`, { headers: { cookie: cookie! } }));
+        expect(blocked.status).toBe(503);
+        expect(await blocked.json()).toEqual({ error: "storage_unavailable" });
+        expect(readFileSync(path)).toEqual(corruptedBytes);
+        expect(statSync(target).ino).toBe(targetBefore.ino);
+        expect(readFileSync(target, "utf8")).toBe(kind === "create" ? "original bytes" : "saved bytes");
+      }
+
+      copyFileSync(healthyPath, path);
+      rmSync(`${path}-wal`, { force: true });
+      rmSync(`${path}-shm`, { force: true });
+      const state = new Database(path, { readonly: true, create: false });
+      try {
+        expect(state.query("SELECT state FROM file_operation_intents WHERE request_id = ?").get(requestId))
+          .toEqual({ state: "prepared" });
+        expect(state.query("SELECT COUNT(*) AS count FROM file_operation_outcomes WHERE request_id = ?").get(requestId))
+          .toEqual({ count: 0 });
+        expect(state.query("SELECT COUNT(*) AS count FROM sessions").get()).toEqual({ count: 1 });
+      } finally { state.close(); }
+      const recovered = await app.handle(new Request(receiptUrl, { headers: { cookie: cookie! } }));
+      expect(recovered.status).toBe(200);
+      const receipt = await recovered.json() as { requestId: string; path: string };
+      expect(receipt).toMatchObject({ requestId, path: filePath });
+      expect(statSync(target).ino).toBe(targetBefore.ino);
+      const outcomeState = new Database(path, { readonly: true, create: false });
+      try {
+        expect(outcomeState.query("SELECT state FROM file_operation_intents WHERE request_id = ?").get(requestId))
+          .toEqual({ state: "completed" });
+        expect(outcomeState.query("SELECT COUNT(*) AS count FROM file_operation_outcomes WHERE request_id = ?").get(requestId))
+          .toEqual({ count: 1 });
+      } finally { outcomeState.close(); }
+    }
+  } finally {
+    if (workspaceId) rmSync(join(root, "workspaces", workspaceId), { recursive: true, force: true });
+    removeDatabase(path);
+    removeDatabase(healthyPath);
+  }
+});
+
+it.skipIf(process.platform !== "linux")("does not delete expired sessions during private GET authority checks after corruption", async () => {
+  mkdirSync(root, { recursive: true });
+  const path = join(root, `expired-session-corrupt-${crypto.randomUUID()}.sqlite`);
+  try {
+    const app = createApi(path, undefined, { password: "test-storage-password" });
+    const login = await app.handle(new Request("https://localhost/api/auth/login", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ password: "test-storage-password" }),
+    }));
+    const cookie = login.headers.get("set-cookie")?.split(";")[0];
+    expect(cookie).toBeTruthy();
+    const db = new Database(path);
+    try {
+      db.exec("UPDATE sessions SET expires_at = 1");
+      db.exec("CREATE TABLE corruption_probe (payload BLOB NOT NULL)");
+      db.query("INSERT INTO corruption_probe (payload) VALUES (?)").run(Buffer.alloc(16384, 42));
+      db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+    } finally { db.close(); }
+    const healthyBytes = readFileSync(path);
+    const fd = openSync(path, "r+");
+    try { writeSync(fd, Buffer.alloc(512, 0xff), 0, 512, healthyBytes.length - 4096); }
+    finally { closeSync(fd); }
+    const corruptedBytes = readFileSync(path);
+    const response = await app.handle(new Request("http://localhost/api/workspaces", { headers: { cookie: cookie! } }));
+    expect(response.status).toBe(401);
+    expect(readFileSync(path)).toEqual(corruptedBytes);
+    const state = new Database(path, { readonly: true, create: false });
+    try { expect(state.query("SELECT COUNT(*) AS count FROM sessions").get()).toEqual({ count: 1 }); }
+    finally { state.close(); }
   } finally {
     removeDatabase(path);
   }

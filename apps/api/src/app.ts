@@ -60,17 +60,18 @@ export function createApi(
     return probe;
   };
   return new Elysia()
-    .onBeforeHandle({ as: "global" }, async ({ request, set }) => {
-      const path = new URL(request.url).pathname;
+    .onBeforeHandle({ as: "global" }, async ({ request, set, route }) => {
+      const path = route;
       const receiptLookup = request.method === "POST" && /^\/api\/auth\/receipts\/[^/]+\/lookup$/.test(path);
       // Password-only receipt lookup is read-only; a cookie-carrying lookup
       // may delete an expired session row, so it still probes storage below.
       if (receiptLookup && !sessionToken(request)) return;
-      // GET /api/auth/session deletes an expired session row via readSession,
-      // so a cookie-carrying session check probes storage; other GETs are reads.
+      // GET /api/auth/session and file receipts may write during recovery; other GETs are reads.
       const sessionCheck = request.method === "GET" && path === "/api/auth/session";
-      if (sessionCheck && !sessionToken(request)) return;
-      if (sessionCheck || request.method !== "GET") {
+      const fileReceiptLookup = request.method === "GET" &&
+        /^\/api\/workspaces\/[^/]+\/files\/receipts\/[^/]+\/?$/.test(path);
+      if ((sessionCheck || fileReceiptLookup) && !sessionToken(request)) return;
+      if (sessionCheck || fileReceiptLookup || request.method !== "GET") {
         const publicCredentialMutation = path === "/api/auth/login" || /^\/api\/auth\/login\/[^/]+\/revoke$/.test(path);
         if (!publicCredentialMutation && !sessionToken(request)) return;
         await observeReadiness();

@@ -14,9 +14,9 @@ type AuthConfig = {
 
 type Session = { userId: string; expiresAt: number };
 
-function openDatabase(path: string) {
-  mkdirSync(dirname(path), { recursive: true });
-  return new Database(path, { create: true });
+function openDatabase(path: string, readonly = false) {
+  if (!readonly) mkdirSync(dirname(path), { recursive: true });
+  return new Database(path, { create: !readonly, readonly });
 }
 
 function tokenHash(token: string) {
@@ -50,14 +50,14 @@ export function sessionTokenHash(request: Request) {
   return token ? tokenHash(token) : undefined;
 }
 
-function readSession(database: Database, token: string | undefined): Session | undefined {
+function readSession(database: Database, token: string | undefined, cleanupExpired = true): Session | undefined {
   if (!token) return undefined;
   const row = database.query<{ userId: string; expiresAt: number }, [string]>(
     "SELECT user_id AS userId, expires_at AS expiresAt FROM sessions WHERE token_hash = ?",
   ).get(tokenHash(token));
   if (!row) return undefined;
   if (row.expiresAt <= Date.now()) {
-    database.query("DELETE FROM sessions WHERE token_hash = ?").run(tokenHash(token));
+    if (cleanupExpired) database.query("DELETE FROM sessions WHERE token_hash = ?").run(tokenHash(token));
     return undefined;
   }
   return { userId: row.userId, expiresAt: row.expiresAt };
@@ -66,8 +66,8 @@ function readSession(database: Database, token: string | undefined): Session | u
 export function sessionExpiresAt(databasePath: string, request: Request) {
   let database: Database | undefined;
   try {
-    database = openDatabase(databasePath);
-    return readSession(database, sessionToken(request))?.expiresAt;
+    database = openDatabase(databasePath, true);
+    return readSession(database, sessionToken(request), false)?.expiresAt;
   } catch {
     return undefined;
   } finally {
@@ -78,8 +78,8 @@ export function sessionExpiresAt(databasePath: string, request: Request) {
 export function sessionUserId(databasePath: string, request: Request) {
   let database: Database | undefined;
   try {
-    database = openDatabase(databasePath);
-    return readSession(database, sessionToken(request))?.userId;
+    database = openDatabase(databasePath, true);
+    return readSession(database, sessionToken(request), false)?.userId;
   } catch {
     return undefined;
   } finally {

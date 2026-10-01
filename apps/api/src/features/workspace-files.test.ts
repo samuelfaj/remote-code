@@ -625,6 +625,300 @@ it.skipIf(process.platform !== "linux")("refuses publication when prepared inten
   } finally { verify.close(); }
 });
 
+it.skipIf(process.platform !== "linux")("saves with two real Eden clients, rejects stale versions, and preserves exact bytes and mode", async () => {
+  const { app, databasePath, workspaceId, folderPath } = setup();
+  await provision(app, workspaceId);
+  mkdirSync(join(folderPath, "src"));
+  const path = "src/script.sh";
+  const target = join(folderPath, path);
+  writeFileSync(target, "#!/bin/sh\nprintf 'before'\n");
+  chmodSync(target, 0o751);
+  const initialInode = lstatSync(target).ino;
+  app.listen({ hostname: "127.0.0.1", port: 0 });
+  const port = app.server?.port;
+  if (!port) throw new Error("File API did not bind");
+  try {
+    const clientOne = createApiClient(`http://127.0.0.1:${port}`, { headers: { cookie: `remotecode_session=${ownerToken}` } });
+    const clientTwo = createApiClient(`http://127.0.0.1:${port}`, { headers: { cookie: `remotecode_session=${ownerToken}` } });
+    const openedOne = await clientOne.api.workspaces({ workspaceId }).files.content.get({ query: { path } });
+    const openedTwo = await clientTwo.api.workspaces({ workspaceId }).files.content.get({ query: { path } });
+    if (openedOne.error || !openedOne.data || !("version" in openedOne.data) || openedTwo.error || !openedTwo.data || !("version" in openedTwo.data)) {
+      throw new Error("Both clients must read the current file version");
+    }
+    expect(openedOne.data.version).toBe(openedTwo.data.version);
+    const firstId = crypto.randomUUID();
+    const firstBody = { requestId: firstId.toUpperCase(), path, expectedVersion: openedOne.data.version, content: "#!/bin/sh\nprintf 'first save'\n" };
+    const firstSave = await clientOne.api.workspaces({ workspaceId }).files.content.put(firstBody);
+    expect(firstSave.error).toBeNull();
+    expect(firstSave.data).toMatchObject({ requestId: firstId, workspaceId, kind: "save", path });
+    const firstBytes = Buffer.from(firstBody.content, "utf8");
+    const firstVersion = createHash("sha256").update(firstBytes).digest("hex");
+    expect(readFileSync(target)).toEqual(firstBytes);
+    expect(lstatSync(target).mode & 0o777).toBe(0o751);
+    const firstInode = lstatSync(target).ino;
+    expect(firstInode).not.toBe(initialInode);
+    const staleId = crypto.randomUUID();
+    const stale = await clientTwo.api.workspaces({ workspaceId }).files.content.put({
+      requestId: staleId, path, expectedVersion: openedTwo.data.version, content: "stale overwrite",
+    });
+    expect(stale.error?.status as number).toBe(409);
+    expect(readFileSync(target)).toEqual(firstBytes);
+    const secondId = crypto.randomUUID();
+    const secondBody = { requestId: secondId, path, expectedVersion: firstVersion, content: "#!/bin/sh\nprintf 'second save'\n" };
+    const secondSave = await clientTwo.api.workspaces({ workspaceId }).files.content.put(secondBody);
+    expect(secondSave.error).toBeNull();
+    expect(secondSave.data).toMatchObject({ requestId: secondId, kind: "save", path });
+    const secondBytes = Buffer.from(secondBody.content, "utf8");
+    expect(readFileSync(target)).toEqual(secondBytes);
+    expect(lstatSync(target).mode & 0o777).toBe(0o751);
+    const secondInode = lstatSync(target).ino;
+    expect(secondInode).not.toBe(firstInode);
+    const replay = await clientOne.api.workspaces({ workspaceId }).files.content.put(firstBody);
+    expect(replay.data).toEqual(firstSave.data);
+    expect(lstatSync(target).ino).toBe(secondInode);
+    const changedReplay = await clientOne.api.workspaces({ workspaceId }).files.content.put({ ...firstBody, content: "different" });
+    expect(changedReplay.error?.status as number).toBe(409);
+    expect(readFileSync(target)).toEqual(secondBytes);
+    expect(lstatSync(target).ino).toBe(secondInode);
+    expect((await request(app, `/${workspaceId}/files`, ownerToken, "POST", { requestId: firstId, path, content: firstBody.content })).status).toBe(409);
+    const receipt = await clientTwo.api.workspaces({ workspaceId }).files.receipts({ requestId: secondId.toUpperCase() }).get();
+    expect(receipt.data as unknown).toEqual(secondSave.data as unknown);
+    const verify = new Database(databasePath, { readonly: true });
+    try {
+      expect(verify.query("SELECT kind, state, expected_sha256 FROM file_operation_intents WHERE request_id = ?").get(firstId))
+        .toEqual({ kind: "save", state: "completed", expected_sha256: openedOne.data.version });
+      expect(verify.query("SELECT kind, result_sha256 FROM file_operation_outcomes WHERE request_id = ?").get(firstId))
+        .toEqual({ kind: "save", result_sha256: firstVersion });
+      expect(verify.query("SELECT COUNT(*) AS count FROM file_operation_intents WHERE request_id = ?").get(staleId)).toEqual({ count: 0 });
+      expect(verify.query("SELECT kind, state, expected_sha256 FROM file_operation_intents WHERE request_id = ?").get(secondId))
+        .toEqual({ kind: "save", state: "completed", expected_sha256: firstVersion });
+      expect(verify.query("SELECT kind, result_sha256 FROM file_operation_outcomes WHERE request_id = ?").get(secondId))
+        .toEqual({ kind: "save", result_sha256: createHash("sha256").update(secondBytes).digest("hex") });
+    } finally { verify.close(); }
+  } finally { await app.stop(true); }
+});
+
+it.skipIf(process.platform !== "linux")("recovers a published SAVE witness after outcome SQL failure and process restart", async () => {
+  const { app, databasePath, workspaceId, folderPath } = setup();
+  await provision(app, workspaceId);
+  const path = "recover-save.txt";
+  const target = join(folderPath, path);
+  writeFileSync(target, "before");
+  const previousVersion = createHash("sha256").update("before").digest("hex");
+  const requestId = crypto.randomUUID();
+  const body = { requestId, path, expectedVersion: previousVersion, content: "after restart recovery" };
+  const trigger = new Database(databasePath);
+  trigger.exec("CREATE TRIGGER fail_save_outcome BEFORE INSERT ON file_operation_outcomes WHEN NEW.kind = 'save' BEGIN SELECT RAISE(ABORT, 'injected SAVE outcome failure'); END");
+  trigger.close();
+  expect((await request(app, `/${workspaceId}/files/content`, ownerToken, "PUT", body)).status).toBe(503);
+  const publishedInode = lstatSync(target).ino;
+  expect(readFileSync(target, "utf8")).toBe(body.content);
+  const reserved = new Database(databasePath, { readonly: true });
+  try {
+    expect(reserved.query("SELECT kind, state, expected_sha256 FROM file_operation_intents WHERE request_id = ?").get(requestId))
+      .toEqual({ kind: "save", state: "prepared", expected_sha256: previousVersion });
+    expect(reserved.query("SELECT COUNT(*) AS count FROM file_operation_outcomes WHERE request_id = ?").get(requestId)).toEqual({ count: 0 });
+  } finally { reserved.close(); }
+  const repair = new Database(databasePath);
+  repair.exec("DROP TRIGGER fail_save_outcome");
+  repair.close();
+  const child = Bun.spawnSync(["bun", "-e", `
+    import { createApi } from "./apps/api/src/app.ts";
+    const app = createApi(process.env.DATABASE_PATH);
+    const response = await app.handle(new Request("http://localhost/api/workspaces/" + process.env.RC029_WORKSPACE_ID + "/files/receipts/" + process.env.RC029_REQUEST_ID,
+      { headers: { cookie: "remotecode_session=" + "a".repeat(64) } }));
+    console.log(JSON.stringify({ status: response.status, body: await response.json() }));
+  `], { cwd: process.cwd(), env: { ...process.env, DATABASE_PATH: databasePath, RC029_WORKSPACE_ID: workspaceId, RC029_REQUEST_ID: requestId } });
+  expect(child.exitCode).toBe(0);
+  expect(JSON.parse(child.stdout.toString()).status).toBe(200);
+  expect(lstatSync(target).ino).toBe(publishedInode);
+  expect(readFileSync(target, "utf8")).toBe(body.content);
+  const completed = new Database(databasePath, { readonly: true });
+  try {
+    expect(completed.query("SELECT state FROM file_operation_intents WHERE request_id = ?").get(requestId)).toEqual({ state: "completed" });
+    expect(completed.query("SELECT kind, result_sha256 FROM file_operation_outcomes WHERE request_id = ?").get(requestId))
+      .toEqual({ kind: "save", result_sha256: createHash("sha256").update(body.content).digest("hex") });
+  } finally { completed.close(); }
+});
+
+it.skipIf(process.platform !== "linux")("persists SAVE intent before creating a stage and leaves file bytes unchanged on intent failure", async () => {
+  const { app, databasePath, workspaceId, folderPath } = setup();
+  await provision(app, workspaceId);
+  const path = "intent-save.txt";
+  const target = join(folderPath, path);
+  const original = Buffer.from("original save bytes");
+  writeFileSync(target, original);
+  const requestId = crypto.randomUUID();
+  const database = new Database(databasePath);
+  database.exec("CREATE TRIGGER fail_save_intent BEFORE INSERT ON file_operation_intents WHEN NEW.kind = 'save' BEGIN SELECT RAISE(ABORT, 'injected SAVE intent failure'); END");
+  database.close();
+  const response = await request(app, `/${workspaceId}/files/content`, ownerToken, "PUT", {
+    requestId, path, expectedVersion: createHash("sha256").update(original).digest("hex"), content: "should not be staged",
+  });
+  expect(response.status).toBe(503);
+  expect(readFileSync(target)).toEqual(original);
+  expect(existsSync(join(folderPath, `.remotecode-stage-${requestId}`))).toBe(false);
+  const verify = new Database(databasePath, { readonly: true });
+  try {
+    expect(verify.query("SELECT COUNT(*) AS count FROM file_operation_intents WHERE request_id = ?").get(requestId)).toEqual({ count: 0 });
+    expect(verify.query("SELECT COUNT(*) AS count FROM file_operation_outcomes WHERE request_id = ?").get(requestId)).toEqual({ count: 0 });
+  } finally { verify.close(); }
+});
+
+it.skipIf(process.platform !== "linux")("does not replay a prepared SAVE stage when the publication witness is absent", async () => {
+  const { app, databasePath, workspaceId, folderPath } = setup();
+  await provision(app, workspaceId);
+  const path = "prepared-save.txt";
+  const target = join(folderPath, path);
+  writeFileSync(target, "before");
+  const requestId = crypto.randomUUID();
+  const body = { requestId, path, expectedVersion: createHash("sha256").update("before").digest("hex"), content: "staged but not published" };
+  let changed = false;
+  const files = new Elysia().use(workspaceFilesFeature(databasePath, (fd) => {
+    fsyncSync(fd);
+    if (changed) return;
+    const state = new Database(databasePath, { readonly: true });
+    let prepared = false;
+    try { prepared = state.query<{ state: string }, [string]>("SELECT state FROM file_operation_intents WHERE request_id = ?").get(requestId)?.state === "prepared"; }
+    finally { state.close(); }
+    if (prepared) { changed = true; writeFileSync(target, "concurrent external edit"); }
+  }));
+  expect((await request(files, `/${workspaceId}/files/content`, ownerToken, "PUT", body)).status).toBe(409);
+  expect(changed).toBe(true);
+  expect(readFileSync(target, "utf8")).toBe("concurrent external edit");
+  expect(readFileSync(join(folderPath, `.remotecode-stage-${requestId}`), "utf8")).toBe(body.content);
+  expect(existsSync(join(folderPath, `.remotecode-stage-${requestId}-publish`))).toBe(false);
+  expect((await request(files, `/${workspaceId}/files/content`, ownerToken, "PUT", body)).status).toBe(503);
+  expect(readFileSync(target, "utf8")).toBe("concurrent external edit");
+  const verify = new Database(databasePath, { readonly: true });
+  try {
+    expect(verify.query("SELECT kind, state FROM file_operation_intents WHERE request_id = ?").get(requestId)).toEqual({ kind: "save", state: "prepared" });
+    expect(verify.query("SELECT COUNT(*) AS count FROM file_operation_outcomes WHERE request_id = ?").get(requestId)).toEqual({ count: 0 });
+  } finally { verify.close(); }
+});
+
+it.skipIf(process.platform !== "linux")("refuses SAVE for stale, foreign, archived, symlink, and FIFO targets without overwriting", async () => {
+  const { app, databasePath, workspaceId, folderPath } = setup();
+  await provision(app, workspaceId);
+  const stalePath = join(folderPath, "stale-save.txt");
+  writeFileSync(stalePath, "current");
+  const stale = await request(app, `/${workspaceId}/files/content`, ownerToken, "PUT", {
+    requestId: crypto.randomUUID(), path: "stale-save.txt", expectedVersion: "0".repeat(64), content: "must not replace",
+  });
+  expect(stale.status).toBe(409);
+  expect(await stale.json()).toMatchObject({ error: "version_conflict" });
+  expect(readFileSync(stalePath, "utf8")).toBe("current");
+  expect((await request(app, `/${workspaceId}/files/content`, foreignToken, "PUT", {
+    requestId: crypto.randomUUID(), path: "stale-save.txt", expectedVersion: createHash("sha256").update("current").digest("hex"), content: "foreign",
+  })).status).toBe(404);
+  writeFileSync(join(folderPath, "target.txt"), "target");
+  symlinkSync("target.txt", join(folderPath, "link.txt"));
+  expect((await request(app, `/${workspaceId}/files/content`, ownerToken, "PUT", {
+    requestId: crypto.randomUUID(), path: "link.txt", expectedVersion: createHash("sha256").update("target").digest("hex"), content: "no follow",
+  })).status).toBe(404);
+  expect(readFileSync(join(folderPath, "target.txt"), "utf8")).toBe("target");
+  const fifoPath = join(folderPath, "pipe");
+  expect(Bun.spawnSync(["mkfifo", fifoPath]).exitCode).toBe(0);
+  expect((await request(app, `/${workspaceId}/files/content`, ownerToken, "PUT", {
+    requestId: crypto.randomUUID(), path: "pipe", expectedVersion: "0".repeat(64), content: "no block",
+  })).status).toBe(415);
+  const archived = await app.handle(new Request(`http://localhost/api/workspaces/${workspaceId}`, {
+    method: "PATCH", headers: { cookie: `remotecode_session=${ownerToken}`, "content-type": "application/json" },
+    body: JSON.stringify({ archived: true, requestId: crypto.randomUUID() }),
+  }));
+  expect(archived.status).toBe(200);
+  expect((await request(app, `/${workspaceId}/files/content`, ownerToken, "PUT", {
+    requestId: crypto.randomUUID(), path: "stale-save.txt", expectedVersion: createHash("sha256").update("current").digest("hex"), content: "after archive",
+  })).status).toBe(409);
+  expect(readFileSync(stalePath, "utf8")).toBe("current");
+  const verify = new Database(databasePath, { readonly: true });
+  try { expect(verify.query("SELECT COUNT(*) AS count FROM file_operation_intents WHERE kind = 'save'").get()).toEqual({ count: 0 }); }
+  finally { verify.close(); }
+});
+
+for (const kind of ["create", "save"] as const) {
+  it.skipIf(process.platform !== "linux")(`keeps ${kind} unknown when SQLite silently ignores its outcome insertion`, async () => {
+    const { app, databasePath, workspaceId, folderPath } = setup();
+    await provision(app, workspaceId);
+    const requestId = crypto.randomUUID();
+    const path = `${kind}-ignored.txt`;
+    const target = join(folderPath, path);
+    if (kind === "save") writeFileSync(target, "before");
+    const database = new Database(databasePath);
+    database.exec("CREATE TRIGGER ignore_file_outcome BEFORE INSERT ON file_operation_outcomes BEGIN SELECT RAISE(IGNORE); END");
+    database.close();
+    const body = { requestId, path, content: "published", ...(kind === "save" ? { expectedVersion: createHash("sha256").update("before").digest("hex") } : {}) };
+    const response = await request(app, `/${workspaceId}/files${kind === "save" ? "/content" : ""}`, ownerToken, kind === "save" ? "PUT" : "POST", body);
+    expect(response.status).toBe(503);
+    expect(readFileSync(target, "utf8")).toBe("published");
+    const inode = lstatSync(target).ino;
+    expect((await request(app, `/${workspaceId}/files/receipts/${requestId}`, ownerToken)).status).toBe(503);
+    const verify = new Database(databasePath);
+    try {
+      expect(verify.query("SELECT state FROM file_operation_intents WHERE request_id = ?").get(requestId)).toEqual({ state: "prepared" });
+      expect(verify.query("SELECT COUNT(*) AS count FROM file_operation_outcomes WHERE request_id = ?").get(requestId)).toEqual({ count: 0 });
+      verify.exec("DROP TRIGGER ignore_file_outcome");
+    } finally { verify.close(); }
+    expect((await request(app, `/${workspaceId}/files/receipts/${requestId}`, ownerToken)).status).toBe(200);
+    expect(lstatSync(target).ino).toBe(inode);
+    expect(readFileSync(target, "utf8")).toBe("published");
+  });
+}
+
+it.skipIf(process.platform !== "linux")("rechecks SAVE version after publishing the exchange link and preserves a concurrent file edit", async () => {
+  const { app, databasePath, workspaceId, folderPath } = setup();
+  await provision(app, workspaceId);
+  const path = "sync-window-save.txt";
+  const target = join(folderPath, path);
+  writeFileSync(target, "before sync window");
+  const oldBytes = readFileSync(target);
+  const requestId = crypto.randomUUID();
+  const body = { requestId, path, expectedVersion: createHash("sha256").update(oldBytes).digest("hex"), content: "remote SAVE bytes" };
+  const publishName = join(folderPath, `.remotecode-stage-${requestId}-publish`);
+  let editedAfterLink = false;
+  const files = new Elysia().use(workspaceFilesFeature(databasePath, (fd) => {
+    fsyncSync(fd);
+    if (!editedAfterLink && existsSync(publishName)) {
+      editedAfterLink = true;
+      writeFileSync(target, "concurrent editor bytes");
+    }
+  }));
+  const response = await request(files, `/${workspaceId}/files/content`, ownerToken, "PUT", body);
+  expect(editedAfterLink).toBe(true);
+  expect(readFileSync(target, "utf8")).toBe("concurrent editor bytes");
+  expect(response.status).toBe(409);
+  expect(existsSync(publishName)).toBe(false);
+  expect(readFileSync(join(folderPath, `.remotecode-stage-${requestId}`), "utf8")).toBe(body.content);
+  const prepared = new Database(databasePath, { readonly: true });
+  try {
+    expect(prepared.query("SELECT kind, state FROM file_operation_intents WHERE request_id = ?").get(requestId)).toEqual({ kind: "save", state: "prepared" });
+    expect(prepared.query("SELECT COUNT(*) AS count FROM file_operation_outcomes WHERE request_id = ?").get(requestId)).toEqual({ count: 0 });
+  } finally { prepared.close(); }
+  expect((await request(files, `/${workspaceId}/files/content`, ownerToken, "PUT", body)).status).toBe(503);
+  expect(readFileSync(target, "utf8")).toBe("concurrent editor bytes");
+});
+
+for (const kind of ["create", "save"] as const) {
+  it.skipIf(process.platform !== "linux")(`rejects malformed Unicode ${kind} paths before persisting intent or touching files`, async () => {
+    const { app, databasePath, workspaceId, folderPath } = setup();
+    await provision(app, workspaceId);
+    const target = join(folderPath, "\uFFFD.txt");
+    if (kind === "save") writeFileSync(target, "original");
+    const response = await request(app, `/${workspaceId}/files${kind === "save" ? "/content" : ""}`, ownerToken, kind === "save" ? "PUT" : "POST", {
+      requestId: crypto.randomUUID(), path: "\uD800.txt", content: "replacement",
+      ...(kind === "save" ? { expectedVersion: createHash("sha256").update("original").digest("hex") } : {}),
+    });
+    expect(response.status).toBe(400);
+    expect(readdirSync(folderPath).filter((name) => name !== ".remotecode-workspace")).toEqual(kind === "save" ? ["\uFFFD.txt"] : []);
+    if (kind === "save") expect(readFileSync(target, "utf8")).toBe("original");
+    const verify = new Database(databasePath, { readonly: true });
+    try {
+      expect(verify.query("SELECT COUNT(*) AS count FROM file_operation_intents").get()).toEqual({ count: 0 });
+      expect(verify.query("SELECT COUNT(*) AS count FROM file_operation_outcomes").get()).toEqual({ count: 0 });
+    } finally { verify.close(); }
+  });
+}
+
 it.skipIf(process.platform === "linux")("reports Linux-only folder boundary as unsupported on other platforms", async () => {
   const { app, workspaceId } = setup();
   expect((await request(app, `/${workspaceId}/files`, ownerToken)).status).toBe(501);
