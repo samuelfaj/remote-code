@@ -1,11 +1,13 @@
 import { Database } from "bun:sqlite";
 import { afterEach, expect, it } from "bun:test";
+import { Elysia } from "elysia";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, fsyncSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { createApi } from "../app";
 import { createApiClient } from "../../../../packages/client/src";
+import { workspaceFilesFeature } from "./workspace-files";
 
 const workDirectories: string[] = [];
 const ownerToken = "a".repeat(64);
@@ -30,9 +32,11 @@ function setup() {
 
 afterEach(() => { for (const directory of workDirectories.splice(0)) rmSync(directory, { recursive: true, force: true }); });
 
-function request(app: ReturnType<typeof createApi>, route: string, token?: string) {
+function request(app: { handle: (request: Request) => Promise<Response> }, route: string, token?: string, method = "GET", body?: unknown) {
   return app.handle(new Request(`http://localhost/api/workspaces${route}`, {
-    headers: token ? { cookie: `remotecode_session=${token}` } : {},
+    method,
+    headers: { ...(token ? { cookie: `remotecode_session=${token}` } : {}), ...(body === undefined ? {} : { "content-type": "application/json" }) },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   }));
 }
 
@@ -43,6 +47,19 @@ async function provision(app: ReturnType<typeof createApi>, workspaceId: string)
     body: JSON.stringify({ requestId: crypto.randomUUID() }),
   }));
   expect(response.status).toBe(200);
+}
+
+function archiveInChild(databasePath: string, workspaceId: string, requestId: string) {
+  const child = Bun.spawnSync(["bun", "-e", `
+    import { createApi } from "./apps/api/src/app.ts";
+    const app = createApi(process.env.DATABASE_PATH);
+    const response = await app.handle(new Request("http://localhost/api/workspaces/" + process.env.RC029_WORKSPACE_ID,
+      { method: "PATCH", headers: { cookie: "remotecode_session=" + "a".repeat(64), "content-type": "application/json" },
+        body: JSON.stringify({ requestId: process.env.RC029_REQUEST_ID, archived: true }) }));
+    console.log(JSON.stringify({ status: response.status, body: await response.json() }));
+  `], { cwd: process.cwd(), env: { ...process.env, DATABASE_PATH: databasePath, RC029_WORKSPACE_ID: workspaceId, RC029_REQUEST_ID: requestId } });
+  if (child.exitCode !== 0) throw new Error(child.stderr.toString());
+  return JSON.parse(child.stdout.toString()) as { status: number; body: unknown };
 }
 
 it.skipIf(process.platform !== "linux")("lists and opens real nested workspace files, hashes literal bytes, and never creates directories on reads", async () => {
@@ -175,6 +192,437 @@ it.skipIf(process.platform !== "linux")("fails unavailable when a previously acc
   const response = await request(app, `/${workspaceId}/files`, ownerToken);
   expect(response.status).toBe(503);
   expect(existsSync(folderPath)).toBe(false);
+});
+
+it.skipIf(process.platform !== "linux")("returns 503 without archiving when PATCH races CREATE under its SQLite writer lock", async () => {
+  const { app, databasePath, workspaceId, folderPath } = setup();
+  await provision(app, workspaceId);
+  const requestId = crypto.randomUUID();
+  const archiveId = crypto.randomUUID();
+  let archive: { status: number; body: unknown } | undefined;
+  let attempted = false;
+  const files = new Elysia().use(workspaceFilesFeature(databasePath, (fd) => {
+    fsyncSync(fd);
+    if (!attempted) {
+      attempted = true;
+      archive = archiveInChild(databasePath, workspaceId, archiveId);
+    }
+  }));
+  const response = await request(files, `/${workspaceId}/files`, ownerToken, "POST", {
+    requestId, path: "locked.txt", content: "created",
+  });
+  expect(response.status).toBe(201);
+  expect(attempted).toBe(true);
+  expect(archive).toMatchObject({ status: 503 });
+  const database = new Database(databasePath, { readonly: true });
+  try {
+    expect(database.query("SELECT archived FROM workspaces WHERE id = ?").get(workspaceId)).toEqual({ archived: 0 });
+    expect(database.query("SELECT COUNT(*) AS count FROM workspace_change_requests WHERE request_id = ?").get(archiveId)).toEqual({ count: 0 });
+    expect(database.query("SELECT state FROM file_operation_intents WHERE request_id = ?").get(requestId)).toEqual({ state: "completed" });
+    expect(database.query("SELECT COUNT(*) AS count FROM file_operation_outcomes WHERE request_id = ?").get(requestId)).toEqual({ count: 1 });
+  } finally { database.close(); }
+  expect(readFileSync(join(folderPath, "locked.txt"), "utf8")).toBe("created");
+});
+
+it.skipIf(process.platform !== "linux")("returns 409 when archive wins after CREATE is prepared and retains its stage without replay", async () => {
+  const { app, databasePath, workspaceId, folderPath } = setup();
+  await provision(app, workspaceId);
+  const requestId = crypto.randomUUID();
+  const archiveId = crypto.randomUUID();
+  let archive: { status: number; body: unknown } | undefined;
+  let preparedBoundary = false;
+  const files = new Elysia().use(workspaceFilesFeature(databasePath, (fd) => {
+    fsyncSync(fd);
+    if (preparedBoundary) return;
+    const database = new Database(databasePath, { readonly: true });
+    let prepared = false;
+    try { prepared = database.query<{ state: string }, [string]>("SELECT state FROM file_operation_intents WHERE request_id = ?").get(requestId)?.state === "prepared"; }
+    finally { database.close(); }
+    if (prepared) {
+      preparedBoundary = true;
+      archive = archiveInChild(databasePath, workspaceId, archiveId);
+    }
+  }));
+  const body = { requestId, path: "prepared.txt", content: "staged" };
+  const response = await request(files, `/${workspaceId}/files`, ownerToken, "POST", body);
+  expect(response.status).toBe(409);
+  expect(preparedBoundary).toBe(true);
+  expect(archive).toMatchObject({ status: 200 });
+  const stage = join(folderPath, `.remotecode-stage-${requestId}`);
+  expect(existsSync(stage)).toBe(true);
+  expect(existsSync(join(folderPath, body.path))).toBe(false);
+  const database = new Database(databasePath, { readonly: true });
+  try {
+    expect(database.query("SELECT archived FROM workspaces WHERE id = ?").get(workspaceId)).toEqual({ archived: 1 });
+    expect(database.query("SELECT state, stage_digest FROM file_operation_intents WHERE request_id = ?").get(requestId))
+      .toEqual({ state: "prepared", stage_digest: createHash("sha256").update(body.content).digest("hex") });
+    expect(database.query("SELECT COUNT(*) AS count FROM file_operation_outcomes WHERE request_id = ?").get(requestId)).toEqual({ count: 0 });
+    expect(database.query("SELECT COUNT(*) AS count FROM workspace_change_requests WHERE request_id = ?").get(archiveId)).toEqual({ count: 1 });
+  } finally { database.close(); }
+  expect((await request(files, `/${workspaceId}/files`, ownerToken, "POST", body)).status).toBe(503);
+  expect(existsSync(stage)).toBe(true);
+  expect(existsSync(join(folderPath, body.path))).toBe(false);
+  const verify = new Database(databasePath, { readonly: true });
+  try {
+    expect(verify.query("SELECT state FROM file_operation_intents WHERE request_id = ?").get(requestId)).toEqual({ state: "prepared" });
+    expect(verify.query("SELECT COUNT(*) AS count FROM file_operation_outcomes WHERE request_id = ?").get(requestId)).toEqual({ count: 0 });
+  } finally { verify.close(); }
+});
+
+it.skipIf(process.platform !== "linux")("creates exact UTF-8 bytes once and returns the immutable canonical receipt through Elysia and Eden", async () => {
+  const { app, databasePath, workspaceId, folderPath } = setup();
+  await provision(app, workspaceId);
+  app.listen({ hostname: "127.0.0.1", port: 0 });
+  const port = app.server?.port;
+  if (!port) throw new Error("File API did not bind");
+  const requestId = crypto.randomUUID();
+  const body = { requestId: requestId.toUpperCase(), path: "drafts/note.txt", content: "\uFEFFhello\n" };
+  mkdirSync(join(folderPath, "drafts"));
+  try {
+    const client = createApiClient(`http://127.0.0.1:${port}`, { headers: { cookie: `remotecode_session=${ownerToken}` } });
+    const first = await client.api.workspaces({ workspaceId }).files.post(body);
+    expect(first.error).toBeNull();
+    expect(first.data).toMatchObject({ requestId, workspaceId, kind: "create", path: body.path });
+    const bytes = Buffer.from(body.content, "utf8");
+    const target = join(folderPath, body.path);
+    expect(readFileSync(target)).toEqual(bytes);
+    expect(lstatSync(target).mode & 0o777).toBe(0o600);
+    const inode = lstatSync(target).ino;
+    const again = await client.api.workspaces({ workspaceId }).files.post(body);
+    expect(again.data).toEqual(first.data);
+    expect(lstatSync(target).ino).toBe(inode);
+    const changed = await request(app, `/${workspaceId}/files`, ownerToken, "POST", { ...body, content: "changed" });
+    expect(changed.status).toBe(409);
+    expect((await request(app, `/${workspaceId}/files`, ownerToken, "POST", { ...body, path: "other.txt" })).status).toBe(409);
+    const receipt = await client.api.workspaces({ workspaceId }).files.receipts({ requestId: body.requestId }).get();
+    expect(JSON.stringify(receipt.data)).toBe(JSON.stringify(first.data));
+    expect((await request(app, `/${crypto.randomUUID()}/files/receipts/${requestId}`, ownerToken)).status).toBe(404);
+    const read = await client.api.workspaces({ workspaceId }).files.content.get({ query: { path: body.path } });
+    expect(read.data).toMatchObject({ path: body.path, content: body.content, version: createHash("sha256").update(bytes).digest("hex") });
+  } finally { await app.stop(true); }
+  const database = new Database(databasePath, { readonly: true });
+  try {
+    expect(database.query("SELECT state FROM file_operation_intents WHERE request_id = ?").get(requestId)).toEqual({ state: "completed" });
+    expect(database.query("SELECT COUNT(*) AS count FROM file_operation_outcomes WHERE request_id = ?").get(requestId)).toEqual({ count: 1 });
+  } finally { database.close(); }
+});
+
+it.skipIf(process.platform !== "linux")("publishes the witnessed stage inode by FD and preserves a replaced stage pathname", async () => {
+  const { app, databasePath, workspaceId, folderPath } = setup();
+  await provision(app, workspaceId);
+  const requestId = crypto.randomUUID();
+  const stage = join(folderPath, `.remotecode-stage-${requestId}`);
+  const parked = `${stage}.parked`;
+  const target = join(folderPath, "fd-published.txt");
+  let swapped = false;
+  let stageInode = 0;
+  const files = new Elysia().use(workspaceFilesFeature(databasePath, (fd) => {
+    fsyncSync(fd);
+    if (swapped) return;
+    const database = new Database(databasePath, { readonly: true });
+    let prepared = false;
+    try { prepared = database.query<{ state: string }, [string]>("SELECT state FROM file_operation_intents WHERE request_id = ?").get(requestId)?.state === "prepared"; }
+    finally { database.close(); }
+    if (prepared) {
+      swapped = true;
+      stageInode = lstatSync(stage).ino;
+      renameSync(stage, parked);
+      writeFileSync(stage, "replacement stage path");
+    }
+  }));
+  const response = await request(files, `/${workspaceId}/files`, ownerToken, "POST", { requestId, path: "fd-published.txt", content: "original staged bytes" });
+  expect(response.status).toBe(201);
+  expect(swapped).toBe(true);
+  expect(lstatSync(target).ino).toBe(stageInode);
+  expect(readFileSync(target, "utf8")).toBe("original staged bytes");
+  expect(readFileSync(stage, "utf8")).toBe("replacement stage path");
+  expect(JSON.parse(await response.text())).toMatchObject({ version: createHash("sha256").update("original staged bytes").digest("hex") });
+  unlinkSync(parked);
+});
+
+it.skipIf(process.platform !== "linux")("does not recreate a file when an accepted outcome survives a missing intent", async () => {
+  const { app, databasePath, workspaceId, folderPath } = setup();
+  await provision(app, workspaceId);
+  const requestId = crypto.randomUUID();
+  const body = { requestId, path: "accepted-then-missing.txt", content: "accepted" };
+  expect((await request(app, `/${workspaceId}/files`, ownerToken, "POST", body)).status).toBe(201);
+  const target = join(folderPath, body.path);
+  rmSync(target);
+  const damage = new Database(databasePath);
+  damage.exec("PRAGMA foreign_keys = OFF");
+  damage.query("DELETE FROM file_operation_intents WHERE request_id = ?").run(requestId);
+  damage.close();
+  expect((await request(app, `/${workspaceId}/files/receipts/${requestId}`, ownerToken)).status).toBe(503);
+  expect((await request(app, `/${workspaceId}/files`, ownerToken, "POST", body)).status).toBe(503);
+  expect(existsSync(target)).toBe(false);
+  const verify = new Database(databasePath, { readonly: true });
+  try {
+    expect(verify.query("SELECT COUNT(*) AS count FROM file_operation_intents WHERE request_id = ?").get(requestId)).toEqual({ count: 0 });
+    expect(verify.query("SELECT COUNT(*) AS count FROM file_operation_outcomes WHERE request_id = ?").get(requestId)).toEqual({ count: 1 });
+  } finally { verify.close(); }
+});
+
+it.skipIf(process.platform !== "linux")("validates receipt intent and owner while keeping receipt historical", async () => {
+  const { app, databasePath, workspaceId, folderPath } = setup();
+  await provision(app, workspaceId);
+  const requestId = crypto.randomUUID();
+  const target = join(folderPath, "historical.txt");
+  const body = { requestId, path: "historical.txt", content: "original" };
+  expect((await request(app, `/${workspaceId}/files`, ownerToken, "POST", body)).status).toBe(201);
+  writeFileSync(target, "edited outside the API");
+  expect((await request(app, `/${workspaceId}/files/receipts/${requestId}`, ownerToken)).status).toBe(200);
+  writeFileSync(target, "original");
+  const database = new Database(databasePath);
+  database.query("UPDATE file_operation_intents SET destination_path = 'mismatched.txt' WHERE request_id = ?").run(requestId);
+  database.close();
+  expect((await request(app, `/${workspaceId}/files/receipts/${requestId}`, ownerToken)).status).toBe(503);
+  const restore = new Database(databasePath);
+  restore.query("UPDATE file_operation_intents SET destination_path = ? WHERE request_id = ?").run(body.path, requestId);
+  restore.query("UPDATE workspaces SET user_id = 'bob' WHERE id = ?").run(workspaceId);
+  restore.close();
+  expect((await request(app, `/${workspaceId}/files/receipts/${requestId}`, ownerToken)).status).toBe(404);
+  expect((await request(app, `/${workspaceId}/files/receipts/${requestId}`, foreignToken)).status).toBe(404);
+  const ownerAgain = new Database(databasePath);
+  ownerAgain.query("UPDATE workspaces SET user_id = 'alice' WHERE id = ?").run(workspaceId);
+  ownerAgain.close();
+  rmSync(target);
+  expect((await request(app, `/${workspaceId}/files/receipts/${requestId}`, ownerToken)).status).toBe(200);
+});
+
+it.skipIf(process.platform !== "linux")("keeps oversized, changed-mode, and FIFO recovery witnesses unknown without blocking", async () => {
+  for (const damage of ["oversized", "mode", "fifo"] as const) {
+    const { app, databasePath, workspaceId, folderPath } = setup();
+    await provision(app, workspaceId);
+    const requestId = crypto.randomUUID();
+    const target = join(folderPath, `${damage}-witness.txt`);
+    const failOutcome = new Database(databasePath);
+    failOutcome.exec("CREATE TRIGGER fail_file_outcome BEFORE INSERT ON file_operation_outcomes BEGIN SELECT RAISE(ABORT, 'injected outcome failure'); END");
+    failOutcome.close();
+    expect((await request(app, `/${workspaceId}/files`, ownerToken, "POST", { requestId, path: `${damage}-witness.txt`, content: "witness" })).status).toBe(503);
+    if (damage === "oversized") {
+      const originalInode = lstatSync(target).ino;
+      writeFileSync(target, Buffer.alloc(1024 * 1024 + 1, 65));
+      expect(lstatSync(target).ino).toBe(originalInode);
+    } else if (damage === "mode") chmodSync(target, 0o644);
+    else { rmSync(target); expect(Bun.spawnSync(["mkfifo", target]).exitCode).toBe(0); }
+    const removeTrigger = new Database(databasePath);
+    removeTrigger.exec("DROP TRIGGER fail_file_outcome");
+    removeTrigger.close();
+    expect((await request(app, `/${workspaceId}/files/receipts/${requestId}`, ownerToken)).status).toBe(503);
+    const verify = new Database(databasePath, { readonly: true });
+    try {
+      expect(verify.query("SELECT state FROM file_operation_intents WHERE request_id = ?").get(requestId)).toEqual({ state: "prepared" });
+      expect(verify.query("SELECT COUNT(*) AS count FROM file_operation_outcomes WHERE request_id = ?").get(requestId)).toEqual({ count: 0 });
+    } finally { verify.close(); }
+  }
+});
+
+it.skipIf(process.platform !== "linux")("leaves a preexisting destination untouched and rejects foreign owners and archived workspaces", async () => {
+  const { app, workspaceId, folderPath } = setup();
+  await provision(app, workspaceId);
+  const target = join(folderPath, "existing.txt");
+  writeFileSync(target, "original");
+  symlinkSync("existing.txt", join(folderPath, "link.txt"));
+  expect(Bun.spawnSync(["mkfifo", join(folderPath, "pipe")]).exitCode).toBe(0);
+  const requestId = crypto.randomUUID();
+  expect((await request(app, `/${workspaceId}/files`, ownerToken, "POST", { requestId, path: "existing.txt", content: "replacement" })).status).toBe(409);
+  expect((await request(app, `/${workspaceId}/files`, ownerToken, "POST", { requestId: crypto.randomUUID(), path: "link.txt", content: "replacement" })).status).toBe(409);
+  expect((await request(app, `/${workspaceId}/files`, ownerToken, "POST", { requestId: crypto.randomUUID(), path: "pipe", content: "replacement" })).status).toBe(409);
+  expect(readFileSync(target, "utf8")).toBe("original");
+  expect((await request(app, `/${workspaceId}/files`, foreignToken, "POST", { requestId: crypto.randomUUID(), path: "other.txt", content: "x" })).status).toBe(404);
+  const archived = await app.handle(new Request(`http://localhost/api/workspaces/${workspaceId}`, {
+    method: "PATCH", headers: { cookie: `remotecode_session=${ownerToken}`, "content-type": "application/json" },
+    body: JSON.stringify({ archived: true, requestId: crypto.randomUUID() }),
+  }));
+  expect(archived.status).toBe(200);
+  expect((await request(app, `/${workspaceId}/files`, ownerToken, "POST", { requestId: crypto.randomUUID(), path: "later.txt", content: "x" })).status).toBe(409);
+  expect(existsSync(join(folderPath, "later.txt"))).toBe(false);
+});
+
+it.skipIf(process.platform !== "linux")("recovers one published inode after SQL outcome failure without repeating publication", async () => {
+  const { app, databasePath, workspaceId, folderPath } = setup();
+  await provision(app, workspaceId);
+  const requestId = crypto.randomUUID();
+  const target = join(folderPath, "after-crash.txt");
+  const database = new Database(databasePath);
+  database.exec(`CREATE TRIGGER fail_file_outcome BEFORE INSERT ON file_operation_outcomes BEGIN SELECT RAISE(ABORT, 'injected outcome failure'); END`);
+  database.close();
+  const response = await request(app, `/${workspaceId}/files`, ownerToken, "POST", { requestId, path: "after-crash.txt", content: "durable" });
+  expect(response.status).toBe(503);
+  expect(existsSync(target)).toBe(true);
+  expect(existsSync(join(folderPath, `.remotecode-stage-${requestId}`))).toBe(true);
+  const inode = lstatSync(target).ino;
+  const repair = new Database(databasePath);
+  repair.exec("DROP TRIGGER fail_file_outcome");
+  repair.close();
+  const child = Bun.spawnSync(["bun", "-e", `
+    import { createApi } from "./apps/api/src/app.ts";
+    const app = createApi(process.env.DATABASE_PATH);
+    const response = await app.handle(new Request("http://localhost/api/workspaces/" + process.env.RC029_WORKSPACE_ID + "/files/receipts/" + process.env.RC029_REQUEST_ID,
+      { headers: { cookie: "remotecode_session=" + "a".repeat(64) } }));
+    console.log(JSON.stringify({ status: response.status, body: await response.json() }));
+  `], { cwd: process.cwd(), env: { ...process.env, DATABASE_PATH: databasePath, RC029_WORKSPACE_ID: workspaceId, RC029_REQUEST_ID: requestId } });
+  expect(child.exitCode).toBe(0);
+  expect(JSON.parse(child.stdout.toString()).status).toBe(200);
+  expect(lstatSync(target).ino).toBe(inode);
+  expect(existsSync(join(folderPath, `.remotecode-stage-${requestId}`))).toBe(true);
+  const restarted = createApi(databasePath);
+  const replay = await request(restarted, `/${workspaceId}/files`, ownerToken, "POST", { requestId, path: "after-crash.txt", content: "durable" });
+  expect(replay.status).toBe(200);
+  expect(lstatSync(target).ino).toBe(inode);
+});
+
+it.skipIf(process.platform !== "linux")("keeps missing or mismatched publication witnesses unknown and reserved", async () => {
+  for (const damaged of ["missing", "mismatched"] as const) {
+    const { app, databasePath, workspaceId, folderPath } = setup();
+    await provision(app, workspaceId);
+    const requestId = crypto.randomUUID();
+    const target = join(folderPath, "witness.txt");
+    const triggerDb = new Database(databasePath);
+    triggerDb.exec(`CREATE TRIGGER fail_file_outcome BEFORE INSERT ON file_operation_outcomes BEGIN SELECT RAISE(ABORT, 'injected outcome failure'); END`);
+    triggerDb.close();
+    expect((await request(app, `/${workspaceId}/files`, ownerToken, "POST", { requestId, path: "witness.txt", content: "witness" })).status).toBe(503);
+    expect(existsSync(target)).toBe(true);
+    const inode = lstatSync(target).ino;
+    const removeTrigger = new Database(databasePath);
+    removeTrigger.exec("DROP TRIGGER fail_file_outcome");
+    removeTrigger.close();
+    if (damaged === "missing") rmSync(target);
+    else { rmSync(target); writeFileSync(target, "witness"); expect(lstatSync(target).ino).not.toBe(inode); }
+    expect((await request(app, `/${workspaceId}/files/receipts/${requestId}`, ownerToken)).status).toBe(503);
+    expect((await request(app, `/${workspaceId}/files`, ownerToken, "POST", { requestId, path: "witness.txt", content: "witness" })).status).toBe(503);
+    expect((await request(app, `/${workspaceId}/files`, ownerToken, "POST", { requestId: crypto.randomUUID(), path: "other.txt", content: "new" })).status).toBe(503);
+    const verify = new Database(databasePath, { readonly: true });
+    try {
+      expect(verify.query("SELECT state FROM file_operation_intents WHERE request_id = ?").get(requestId)).toEqual({ state: "prepared" });
+      expect(verify.query("SELECT COUNT(*) AS count FROM file_operation_outcomes WHERE request_id = ?").get(requestId)).toEqual({ count: 0 });
+    } finally { verify.close(); }
+    expect(damaged === "missing" ? existsSync(target) : readFileSync(target, "utf8") === "witness").toBe(damaged === "mismatched");
+  }
+});
+
+it.skipIf(process.platform !== "linux")("keeps a failed stage preparation unknown and never retries its stage or publication", async () => {
+  const { app, databasePath, workspaceId, folderPath } = setup();
+  await provision(app, workspaceId);
+  const requestId = crypto.randomUUID();
+  const target = join(folderPath, "failed-stage.txt");
+  const stage = join(folderPath, `.remotecode-stage-${requestId}`);
+  const triggerDb = new Database(databasePath);
+  triggerDb.exec(`CREATE TRIGGER fail_file_stage BEFORE UPDATE OF state ON file_operation_intents WHEN NEW.state = 'prepared' BEGIN SELECT RAISE(ABORT, 'injected stage metadata failure'); END`);
+  triggerDb.close();
+  const body = { requestId, path: "failed-stage.txt", content: "staged" };
+  expect((await request(app, `/${workspaceId}/files`, ownerToken, "POST", body)).status).toBe(503);
+  expect(existsSync(stage)).toBe(true);
+  expect(existsSync(target)).toBe(false);
+  expect(JSON.stringify(await (await request(app, `/${workspaceId}/files`, ownerToken)).json())).not.toContain(`.remotecode-stage-${requestId}`);
+  const removeTrigger = new Database(databasePath);
+  removeTrigger.exec("DROP TRIGGER fail_file_stage");
+  removeTrigger.close();
+  expect((await request(app, `/${workspaceId}/files`, ownerToken, "POST", body)).status).toBe(503);
+  expect(existsSync(stage)).toBe(true);
+  expect(existsSync(target)).toBe(false);
+  expect((await request(app, `/${workspaceId}/files/receipts/${requestId}`, ownerToken)).status).toBe(503);
+});
+
+it.skipIf(process.platform !== "linux")("persists no user-file effect when durable intent insertion fails", async () => {
+  const { app, databasePath, workspaceId, folderPath } = setup();
+  await provision(app, workspaceId);
+  const database = new Database(databasePath);
+  database.exec(`CREATE TRIGGER fail_file_intent BEFORE INSERT ON file_operation_intents BEGIN SELECT RAISE(ABORT, 'injected intent failure'); END`);
+  database.close();
+  const path = join(folderPath, "never-created.txt");
+  const response = await request(app, `/${workspaceId}/files`, ownerToken, "POST", { requestId: crypto.randomUUID(), path: "never-created.txt", content: "x" });
+  expect(response.status).toBe(503);
+  expect(existsSync(path)).toBe(false);
+  const verify = new Database(databasePath, { readonly: true });
+  try { expect(verify.query("SELECT COUNT(*) AS count FROM file_operation_intents").get()).toEqual({ count: 0 }); }
+  finally { verify.close(); }
+});
+
+it.skipIf(process.platform !== "linux")("keeps unmatched receipts private and rejects malformed create inputs without a filesystem effect", async () => {
+  const { app, workspaceId, folderPath } = setup();
+  await provision(app, workspaceId);
+  const id = crypto.randomUUID();
+  expect((await request(app, `/${workspaceId}/files/receipts/${id}`, ownerToken)).status).toBe(404);
+  expect((await request(app, `/${workspaceId}/files/receipts/${id}`, foreignToken)).status).toBe(404);
+  expect((await request(app, `/${workspaceId}/files`, ownerToken, "POST", { requestId: `urn:uuid:${id}`, path: "urn.txt", content: "x" })).status).toBe(422);
+  expect((await request(app, `/${workspaceId}/files/receipts/urn%3Auuid%3A${id}`, ownerToken)).status).toBe(422);
+  for (const [path, content] of [["../outside", "x"], [".remotecode-workspace", "x"], [".remotecode-stage-secret", "x"], ["n\u0000ul", "x"], ["invalid.txt", "\uD800"]]) {
+    expect((await request(app, `/${workspaceId}/files`, ownerToken, "POST", { requestId: crypto.randomUUID(), path, content })).status).toBe(400);
+  }
+  expect((await request(app, `/${workspaceId}/files`, ownerToken, "POST", { requestId: crypto.randomUUID(), path: "large.txt", content: "x".repeat(1024 * 1024 + 1) })).status).toBe(413);
+  expect(readdirSync(folderPath).filter((entry) => entry !== ".remotecode-workspace")).toEqual([]);
+});
+
+it.skipIf(process.platform !== "linux")("rolls back recovery when the outcome write still fails and later recovers the same inode", async () => {
+  const { app, databasePath, workspaceId, folderPath } = setup();
+  await provision(app, workspaceId);
+  const requestId = crypto.randomUUID();
+  const target = join(folderPath, "recovery-rollback.txt");
+  const database = new Database(databasePath);
+  database.exec("CREATE TRIGGER fail_recovery_outcome BEFORE INSERT ON file_operation_outcomes BEGIN SELECT RAISE(ABORT, 'injected outcome failure'); END");
+  database.close();
+  expect((await request(app, `/${workspaceId}/files`, ownerToken, "POST", { requestId, path: "recovery-rollback.txt", content: "durable" })).status).toBe(503);
+  const inode = lstatSync(target).ino;
+  expect((await request(app, `/${workspaceId}/files/receipts/${requestId}`, ownerToken)).status).toBe(503);
+  const verify = new Database(databasePath);
+  try {
+    expect(verify.query("SELECT state FROM file_operation_intents WHERE request_id = ?").get(requestId)).toEqual({ state: "prepared" });
+    expect(verify.query("SELECT COUNT(*) AS count FROM file_operation_outcomes WHERE request_id = ?").get(requestId)).toEqual({ count: 0 });
+    verify.exec("DROP TRIGGER fail_recovery_outcome");
+  } finally { verify.close(); }
+  expect((await request(app, `/${workspaceId}/files/receipts/${requestId}`, ownerToken)).status).toBe(200);
+  expect(lstatSync(target).ino).toBe(inode);
+  expect(readFileSync(target, "utf8")).toBe("durable");
+});
+
+it.skipIf(process.platform !== "linux")("keeps a corrupt prepared input digest unknown instead of confirming unrelated bytes", async () => {
+  const { app, databasePath, workspaceId, folderPath } = setup();
+  await provision(app, workspaceId);
+  const requestId = crypto.randomUUID();
+  const database = new Database(databasePath);
+  database.exec("CREATE TRIGGER fail_prepared_outcome BEFORE INSERT ON file_operation_outcomes BEGIN SELECT RAISE(ABORT, 'injected outcome failure'); END");
+  database.close();
+  expect((await request(app, `/${workspaceId}/files`, ownerToken, "POST", { requestId, path: "digest.txt", content: "original" })).status).toBe(503);
+  const corrupt = new Database(databasePath);
+  corrupt.exec("DROP TRIGGER fail_prepared_outcome");
+  corrupt.query("UPDATE file_operation_intents SET input_digest = ? WHERE request_id = ?").run("0".repeat(64), requestId);
+  corrupt.close();
+  expect((await request(app, `/${workspaceId}/files/receipts/${requestId}`, ownerToken)).status).toBe(503);
+  const verify = new Database(databasePath, { readonly: true });
+  try {
+    expect(verify.query("SELECT state FROM file_operation_intents WHERE request_id = ?").get(requestId)).toEqual({ state: "prepared" });
+    expect(verify.query("SELECT COUNT(*) AS count FROM file_operation_outcomes WHERE request_id = ?").get(requestId)).toEqual({ count: 0 });
+  } finally { verify.close(); }
+  expect(readFileSync(join(folderPath, "digest.txt"), "utf8")).toBe("original");
+});
+
+it.skipIf(process.platform !== "linux")("refuses publication when prepared intent no longer binds the requested destination", async () => {
+  const { app, databasePath, workspaceId, folderPath } = setup();
+  await provision(app, workspaceId);
+  const requestId = crypto.randomUUID();
+  let changed = false;
+  const files = new Elysia().use(workspaceFilesFeature(databasePath, (fd) => {
+    fsyncSync(fd);
+    if (changed) return;
+    const database = new Database(databasePath);
+    try {
+      if (database.query<{ state: string }, [string]>("SELECT state FROM file_operation_intents WHERE request_id = ?").get(requestId)?.state === "prepared") {
+        database.query("UPDATE file_operation_intents SET destination_path = 'different.txt' WHERE request_id = ?").run(requestId);
+        changed = true;
+      }
+    } finally { database.close(); }
+  }));
+  expect((await request(files, `/${workspaceId}/files`, ownerToken, "POST", { requestId, path: "bound.txt", content: "staged" })).status).toBe(503);
+  expect(changed).toBe(true);
+  expect(existsSync(join(folderPath, "bound.txt"))).toBe(false);
+  expect(existsSync(join(folderPath, "different.txt"))).toBe(false);
+  expect(readFileSync(join(folderPath, `.remotecode-stage-${requestId}`), "utf8")).toBe("staged");
+  const verify = new Database(databasePath, { readonly: true });
+  try {
+    expect(verify.query("SELECT state FROM file_operation_intents WHERE request_id = ?").get(requestId)).toEqual({ state: "prepared" });
+    expect(verify.query("SELECT COUNT(*) AS count FROM file_operation_outcomes WHERE request_id = ?").get(requestId)).toEqual({ count: 0 });
+  } finally { verify.close(); }
 });
 
 it.skipIf(process.platform === "linux")("reports Linux-only folder boundary as unsupported on other platforms", async () => {

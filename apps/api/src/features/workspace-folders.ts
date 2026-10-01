@@ -262,7 +262,7 @@ export function withProvisionedWorkspaceFolder<T>(
   databasePath: string,
   userId: string,
   workspaceId: string,
-  callback: (folderFd: number, openAt: (parentFd: number, name: string, flags: number) => number, close: (fd: number) => void) => T,
+  callback: (folderFd: number, openAt: (parentFd: number, name: string, flags: number, mode?: number) => number, close: (fd: number) => void) => T,
 ): { kind: "not_found" } | { kind: "unavailable" } | { kind: "opened"; value: T } {
   if (process.platform !== "linux") return { kind: "unavailable" };
   let database: Database | undefined;
@@ -293,7 +293,7 @@ export function withProvisionedWorkspaceFolder<T>(
     const info = validateDirectory(workspaceFd, 0o700);
     if (String(info.dev) !== accepted.device || String(info.ino) !== accepted.inode) return { kind: "unavailable" };
     validateMarker(libc, workspaceFd, accepted.requestId);
-    const value = callback(workspaceFd, (parentFd, name, flags) => ffiOpenAt(libc!, parentFd, name, flags),
+    const value = callback(workspaceFd, (parentFd, name, flags, mode = 0) => ffiOpenAt(libc!, parentFd, name, flags, mode),
       (fd) => { libc!.symbols.close(fd); });
     return { kind: "opened", value };
   } catch {
