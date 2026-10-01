@@ -161,7 +161,7 @@ function validateDirectory(fd: number, mode: number) {
 }
 
 function validateMarker(libc: NativeLibrary, workspaceFd: number, requestId: string) {
-  const flags = constants.O_NOFOLLOW | 0x80000;
+  const flags = constants.O_NOFOLLOW | constants.O_NONBLOCK | 0x80000;
   const markerFd = ffiOpenAt(libc, workspaceFd, folderMarker, flags);
   if (markerFd < 0) throw new Error("workspace_folder_marker_unavailable");
   try {
@@ -244,6 +244,54 @@ function provisionFolder(
     if (workspaceFd >= 0) libc.symbols.close(workspaceFd);
     if (workspacesFd >= 0) libc.symbols.close(workspacesFd);
     libc.close();
+  }
+}
+
+export function withProvisionedWorkspaceFolder<T>(
+  databasePath: string,
+  userId: string,
+  workspaceId: string,
+  callback: (folderFd: number, openAt: (parentFd: number, name: string, flags: number) => number, close: (fd: number) => void) => T,
+): { kind: "not_found" } | { kind: "unavailable" } | { kind: "opened"; value: T } {
+  if (process.platform !== "linux") return { kind: "unavailable" };
+  let database: Database | undefined;
+  let libc: NativeLibrary | undefined;
+  let workspacesFd = -1;
+  let workspaceFd = -1;
+  try {
+    const rootFd = openWorkspaceRoot(databasePath);
+    if (!workspaceRootCurrent(databasePath, rootFd) || !workspaceFolderSchemaReady(databasePath)) return { kind: "unavailable" };
+    database = new Database(databasePath, { readonly: true, create: false });
+    const accepted = database.query<{
+      requestId: string; state: string; device: string | null; inode: string | null;
+    }, [string, string]>(`
+      SELECT f.request_id AS requestId, f.state, f.folder_device AS device, f.folder_inode AS inode
+      FROM workspaces w JOIN workspace_folder_requests f ON f.workspace_id = w.id
+      WHERE w.id = ? AND w.user_id = ?
+    `).get(workspaceId, userId);
+    if (!accepted) return { kind: "not_found" };
+    if (accepted.state !== "provisioned" || accepted.device === null || accepted.inode === null) return { kind: "unavailable" };
+
+    libc = openNativeLibrary();
+    const directoryFlags = constants.O_DIRECTORY | constants.O_NOFOLLOW | 0x80000;
+    workspacesFd = ffiOpenAt(libc, rootFd, "workspaces", directoryFlags);
+    if (workspacesFd < 0) return { kind: "unavailable" };
+    validateDirectory(workspacesFd, 0o700);
+    workspaceFd = ffiOpenAt(libc, workspacesFd, workspaceId, directoryFlags);
+    if (workspaceFd < 0) return { kind: "unavailable" };
+    const info = validateDirectory(workspaceFd, 0o700);
+    if (String(info.dev) !== accepted.device || String(info.ino) !== accepted.inode) return { kind: "unavailable" };
+    validateMarker(libc, workspaceFd, accepted.requestId);
+    const value = callback(workspaceFd, (parentFd, name, flags) => ffiOpenAt(libc!, parentFd, name, flags),
+      (fd) => { libc!.symbols.close(fd); });
+    return { kind: "opened", value };
+  } catch {
+    return { kind: "unavailable" };
+  } finally {
+    if (workspaceFd >= 0) libc?.symbols.close(workspaceFd);
+    if (workspacesFd >= 0) libc?.symbols.close(workspacesFd);
+    libc?.close();
+    database?.close();
   }
 }
 

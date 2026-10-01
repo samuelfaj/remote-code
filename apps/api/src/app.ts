@@ -4,6 +4,7 @@ import { actionsFeature } from "./features/actions";
 import { authFeature, sessionToken } from "./features/auth";
 import { compatibilityFeature } from "./features/compatibility";
 import { storageFeature } from "./features/storage";
+import { workspaceFilesFeature } from "./features/workspace-files";
 import { workspaceFolderSchemaReady, workspaceFoldersFeature } from "./features/workspace-folders";
 import { checkDatabase, healthFeature, initializeDatabase, type ReadinessCheck } from "./features/health";
 
@@ -81,7 +82,8 @@ export function createApi(
     .use(authFeature(configuredDatabasePath, authConfig, actions.revokeSessions))
     .use(actions.routes)
     .use(storageFeature(configuredDatabasePath))
-    .use(workspaceFolders.routes);
+    .use(workspaceFolders.routes)
+    .use(workspaceFilesFeature(configuredDatabasePath));
 }
 
 export const app = createApi();
