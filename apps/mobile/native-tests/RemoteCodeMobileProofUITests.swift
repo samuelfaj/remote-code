@@ -424,6 +424,34 @@ final class RemoteCodeMobileProofUITests: XCTestCase {
     }
 
     @MainActor
+    func testInstalledAppPreparesLinuxFolderAndCreatesFileFromConfirmedState() async throws {
+        let app = XCUIApplication(bundleIdentifier: "com.remotecode.mobileproof")
+        let observer = URLSession(configuration: .ephemeral)
+        let (api, workspace) = try await fileWorkspace(app, observer: observer, prefix: "native-prepare-", prepareInApp: true)
+        let path = "rc021-prepared-native.txt"
+        let text = "native user-prepared folder"
+        try app.textFields["New file path"].clearAndTypeText(path, in: app)
+        try app.textViews["New file text"].clearAndTypeText(text, in: app)
+        try tapFileControl("Create file", in: app)
+        let status = app.staticTexts.matching(identifier: "file-status").firstMatch
+        guard status.waitForLabelContaining("receipt confirmed", timeout: 12) else { XCTFail("The actual prepared folder must allow native CREATE"); return }
+        try openNativeFile(path, in: app)
+        XCTAssertEqual(app.textViews["File draft"].value as? String, text)
+        let actual = try await observer.openFile(at: api, workspaceId: workspace.id, path: path)
+        XCTAssertEqual(actual.content, text)
+        XCTAssertFalse(app.buttons["Prepare workspace folder"].exists, "Confirmed folder must not offer a fresh preparation ID")
+        XCTAssertFalse(app.staticTexts.matching(identifier: "pending-folder").firstMatch.exists)
+        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Native file in explicitly user-prepared Linux folder"; shot.lifetime = .keepAlways; add(shot)
+        app.terminate(); app.launch(); signIn(app)
+        try selectFileWorkspace(workspace.name, in: app)
+        try openNativeFile(path, in: app)
+        XCTAssertEqual(app.textViews["File draft"].value as? String, text)
+        XCTAssertFalse(app.staticTexts.matching(identifier: "pending-folder").firstMatch.exists)
+        app.buttons["Sign out"].tap()
+        XCTAssertTrue(app.staticTexts.matching(identifier: "connection-status").firstMatch.waitForLabel("signed out", timeout: 10))
+    }
+
+    @MainActor
     func testInstalledAppKeepsDraftChangedDuringMovePreflightWithoutSendingPost() async throws {
         let app = XCUIApplication(bundleIdentifier: "com.remotecode.mobileproof")
         let observer = URLSession(configuration: .ephemeral)
@@ -658,7 +686,7 @@ final class RemoteCodeMobileProofUITests: XCTestCase {
     }
 
     @MainActor
-    private func fileWorkspace(_ app: XCUIApplication, observer: URLSession, prefix: String) async throws -> (URL, WorkspaceMetadata) {
+    private func fileWorkspace(_ app: XCUIApplication, observer: URLSession, prefix: String, prepareInApp: Bool = false) async throws -> (URL, WorkspaceMetadata) {
         app.launch()
         let host = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Host: ")).firstMatch
         XCTAssertTrue(host.waitForExistence(timeout: 15))
@@ -674,8 +702,17 @@ final class RemoteCodeMobileProofUITests: XCTestCase {
         try selectFileWorkspace(name, in: app)
         let rows = try await observer.workspaceList(at: api)
         let workspace = try XCTUnwrap(rows.first { $0.name == name })
-        try await observer.provisionFolder(at: api, workspaceId: workspace.id)
-        try tapFileControl("Refresh files", in: app)
+        if prepareInApp {
+            let status = app.staticTexts.matching(identifier: "file-status").firstMatch
+            guard status.waitForLabelContaining("Folder not provisioned", timeout: 10) else { throw NSError(domain: "NativeFileProof", code: 8) }
+            XCTAssertFalse(app.buttons["Create file"].isEnabled)
+            try tapFileControl("Prepare workspace folder", in: app)
+            guard status.waitForLabelContaining("Workspace folder confirmed", timeout: 12) else { throw NSError(domain: "NativeFileProof", code: 9) }
+            XCTAssertTrue(app.staticTexts["Directory: Workspace root"].waitForExistence(timeout: 10))
+        } else {
+            try await observer.provisionFolder(at: api, workspaceId: workspace.id)
+            try tapFileControl("Refresh files", in: app)
+        }
         return (api, workspace)
     }
 

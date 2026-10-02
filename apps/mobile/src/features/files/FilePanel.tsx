@@ -2,8 +2,8 @@ import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { randomUUID } from "expo-crypto";
-import { createApiClient, fileReceiptFromValue, pendingFileValueMatches, workspaceErrorStatus, workspaceFromValue, type PendingFile, type Workspace } from "@remotecode/client";
-import { beforeFileDeadline, clearStoredFile, directoryFromValue, fileStorageKey, folderStateFromValue, isMissingFilePath, isTargetExists, isVersionConflict, nextFileInputScope, openFileFromValue, persistStoredFile, readPendingFile, textSha256, validPath, validText, type FileEntry, type FileInputScope, type OpenFile } from "./file-editor";
+import { createApiClient, fileReceiptFromValue, pendingFileValueMatches, workspaceErrorStatus, workspaceFromValue, type PendingFile, type PendingFolder, type Workspace } from "@remotecode/client";
+import { beforeFileDeadline, clearPendingFolder, clearStoredFile, directoryFromValue, fileStorageKey, folderStorageKey, folderStateFromValue, isMissingFilePath, isTargetExists, isVersionConflict, nextFileInputScope, openFileFromValue, persistPendingFolder, persistStoredFile, readPendingFile, readPendingFolder, textSha256, validPath, validText, type FileEntry, type FileInputScope, type OpenFile } from "./file-editor";
 
 const deadlineMs = 10_000;
 let storageQueue = Promise.resolve();
@@ -13,11 +13,12 @@ function queued<T>(work: () => Promise<T>) {
   return result;
 }
 type Props = { origin: string; userId: string; workspace: Workspace | null; blocked: boolean; onUnauthorized: () => void };
-type Inspection = { workspaceId: string; supported: boolean; provisioned: boolean; archived: boolean };
+type Inspection = { workspaceId: string; supported: boolean; folder: "provisioned" | "not_provisioned" | "unknown"; archived: boolean };
 type Editor = { host: OpenFile; draft: string; needsRead: boolean };
 
 export function FilePanel({ origin, userId, workspace, blocked, onUnauthorized }: Props) {
   const key = fileStorageKey(origin, userId);
+  const folderKey = folderStorageKey(origin, userId);
   const live = useRef({ origin, userId, workspace, blocked });
   live.current = { origin, userId, workspace, blocked };
   const inputScopeRef = useRef<FileInputScope | null>(null);
@@ -31,6 +32,8 @@ export function FilePanel({ origin, userId, workspace, blocked, onUnauthorized }
   const storageEpoch = useRef(0);
   const working = useRef(false);
   const pendingRef = useRef<PendingFile | null>(null);
+  const [pendingFolder, setPendingFolder] = useState<PendingFolder | null>(null);
+  const pendingFolderRef = useRef<PendingFolder | null>(null);
   const editorRef = useRef<Editor | null>(null);
   const [busy, setBusy] = useState(false);
   const [storageReady, setStorageReady] = useState(false);
@@ -61,6 +64,7 @@ export function FilePanel({ origin, userId, workspace, blocked, onUnauthorized }
   }
   function unauthorized(error: unknown) { if (workspaceErrorStatus(error) === 401) onUnauthorized(); }
   function updatePending(value: PendingFile | null) { pendingRef.current = value; setPending(value); }
+  function updateFolder(value: PendingFolder | null) { pendingFolderRef.current = value; setPendingFolder(value); }
   async function session(end: number, current: () => boolean) {
     const result = await request(end).api.auth.session.get();
     if (!current()) return false;
@@ -69,7 +73,7 @@ export function FilePanel({ origin, userId, workspace, blocked, onUnauthorized }
     if (!result.data || !("userId" in result.data) || result.data.userId !== userId) { onUnauthorized(); return false; }
     return true;
   }
-  async function inspect(end: number, current: () => boolean) {
+  async function inspect(end: number, current: () => boolean, folderOperation: PendingFolder | null = pendingFolderRef.current) {
     if (!workspace) return null;
     setInspection(null);
     const version = await request(end).api.version.get();
@@ -77,7 +81,7 @@ export function FilePanel({ origin, userId, workspace, blocked, onUnauthorized }
     if (Date.now() >= end) throw new Error("File deadline expired");
     if (version.error || !Array.isArray(version.data?.capabilities)) throw new Error("Capabilities unavailable");
     if (!version.data.capabilities.includes("workspace-files-v1")) {
-      setInspection({ workspaceId: workspace.id, supported: false, provisioned: false, archived: workspace.archived });
+      setInspection({ workspaceId: workspace.id, supported: false, folder: "unknown", archived: workspace.archived });
       setMessage("This host does not support workspace-files-v1. No file request was sent.");
       return null;
     }
@@ -92,9 +96,23 @@ export function FilePanel({ origin, userId, workspace, blocked, onUnauthorized }
     if (!current()) return null;
     if (Date.now() >= end) throw new Error("File deadline expired");
     if (folder.error) { unauthorized(folder.error); throw new Error("Folder unavailable"); }
-    const state = folderStateFromValue(folder.data, workspace.id);
-    if (!state) throw new Error("Invalid folder status");
-    const result = { workspaceId: workspace.id, supported: true, provisioned: state === "provisioned", archived: confirmed.archived };
+    const original = folderOperation?.workspaceId === workspace.id ? folderOperation : null;
+    const state = folderStateFromValue(folder.data, workspace.id, original?.requestId);
+    if (!state) throw new Error("Folder status did not match original request");
+    if (original) {
+      const stored = await beforeFileDeadline(queued(() => readPendingFolder(AsyncStorage, folderKey)), end);
+      if (!current() || stored.expired || stored.value?.requestId !== original.requestId || stored.value.workspaceId !== original.workspaceId) throw new Error("Pending folder storage identity unavailable");
+      const file = await beforeFileDeadline(queued(() => AsyncStorage.getItem(key)), end);
+      if (!current() || file.expired) throw new Error("Pending file storage unavailable");
+      updatePending(readPendingFile(file.value));
+      if (state === "provisioned") {
+        const cleared = await beforeFileDeadline(queued(() => clearPendingFolder(AsyncStorage, folderKey, original, () => current() && Date.now() < end)), end);
+        if (!current() || cleared.expired || !cleared.value) throw new Error("Pending folder storage cleanup unavailable");
+        updateFolder(null);
+      }
+      setStorageReady(true);
+    }
+    const result = { workspaceId: workspace.id, supported: true, folder: state, archived: confirmed.archived };
     setInspection(result);
     if (state !== "provisioned") setMessage(state === "not_provisioned" ? "Folder not provisioned. Inspection created no folder." : "Folder status unknown. Writes disabled.");
     return result;
@@ -122,7 +140,7 @@ export function FilePanel({ origin, userId, workspace, blocked, onUnauthorized }
     if (same) setEditor(value => value ? { ...value, needsRead: true } : value);
     try {
       const state = await inspect(end, current);
-      if (!current() || !state?.provisioned) return;
+      if (!current() || state?.folder !== "provisioned") return;
       const files = request(end).api.workspaces({ workspaceId: workspace.id }).files;
       if (content) {
         const response = await files.content.get({ query: { path } });
@@ -167,13 +185,49 @@ export function FilePanel({ origin, userId, workspace, blocked, onUnauthorized }
       if (active.current && storageEpoch.current === storeGeneration) setStorageReady(false);
     });
   }
+  async function prepareFolder() {
+    if (!workspace || working.current || blocked || workspace.archived || !storageReady || pendingRef.current) return;
+    if (pendingFolderRef.current && pendingFolderRef.current.workspaceId !== workspace.id) { setMessage("Select the original workspace to inspect its pending folder request."); return; }
+    const current = begin(); const end = Date.now() + deadlineMs;
+    working.current = true; setBusy(true); setMessage("Checking workspace folder before preparation…");
+    let operation = pendingFolderRef.current;
+    try {
+      const state = await inspect(end, current);
+      if (!current() || !state || state.archived || (state.folder !== "not_provisioned" && !(operation && state.folder === "unknown"))) return;
+      if (!operation) {
+        operation = { workspaceId: workspace.id, requestId: randomUUID() };
+        updateFolder(operation);
+        const saved = await beforeFileDeadline(queued(() => persistPendingFolder(AsyncStorage, folderKey, operation!, () => current() && Date.now() < end)), end);
+        if (!current() || saved.expired || saved.value !== "saved") { setStorageReady(false); setMessage("Folder request ID could not be safely persisted. No request was sent; writes remain disabled."); return; }
+        updateFolder(operation);
+      }
+      const stored = await beforeFileDeadline(queued(() => readPendingFolder(AsyncStorage, folderKey)), end);
+      if (!current() || stored.expired || stored.value?.requestId !== operation.requestId || stored.value.workspaceId !== operation.workspaceId) throw new Error("Original folder identity unavailable before submission");
+      if (!current() || Date.now() >= end) { setMessage("Preparation expired before submission. Original request ID retained."); return; }
+      const response = await request(end).api.workspaces({ workspaceId: operation.workspaceId }).folder.post({ requestId: operation.requestId });
+      if (!current()) return;
+      if (Date.now() >= end || response.error) { unauthorized(response.error); setMessage("Folder preparation was not confirmed. Original request ID retained; no automatic retry."); return; }
+      const confirmed = await inspect(end, current, operation);
+      if (current() && confirmed?.folder === "provisioned") {
+        setMessage("Workspace folder confirmed with the original request ID.");
+        const refreshed = await request(end).api.workspaces({ workspaceId: operation.workspaceId }).files.get();
+        if (current() && !refreshed.error && Date.now() < end) {
+          const entries = directoryFromValue(refreshed.data, "");
+          if (entries) setListing({ workspaceId: operation.workspaceId, path: "", entries });
+        }
+      } else if (current()) setMessage("Folder preparation remains unconfirmed. Original request ID retained; no new ID was created.");
+    } catch {
+      if (current()) { setStorageReady(false); setMessage("Folder preparation outcome or storage is unknown. Original request ID is retained; no automatic retry."); }
+    } finally { if (current()) { working.current = false; setBusy(false); } }
+  }
+
   async function mutate(kind: PendingFile["kind"]) {
     const value = editorRef.current;
     const snapshotText = kind === "create" ? createText : value?.draft;
     const snapshotPath = createPath;
     const snapshotDestination = moveDestination;
-    if (!workspace || working.current || blocked || workspace.archived || !storageReady || pendingRef.current ||
-      !inspected?.provisioned || inspected.archived) return;
+    if (!workspace || working.current || blocked || workspace.archived || !storageReady || pendingRef.current || pendingFolderRef.current ||
+      inspected?.folder !== "provisioned" || inspected.archived) return;
     if (kind === "create") {
       if (!validPath(snapshotPath) || !validText(snapshotText ?? "")) return;
     } else if (!value || value.host.workspaceId !== workspace.id || value.needsRead || !validText(snapshotText ?? "")) return;
@@ -188,7 +242,7 @@ export function FilePanel({ origin, userId, workspace, blocked, onUnauthorized }
     let sent = false;
     try {
       const state = await inspect(end, current);
-      if (!current() || !state?.provisioned || state.archived) return;
+      if (!current() || state?.folder !== "provisioned" || state.archived) return;
       if (kind === "move" && (editorRef.current?.host !== value!.host || editorRef.current.needsRead || editorRef.current.draft !== editorRef.current.host.content)) {
         setMessage("MOVE requires the same current verified OPEN. No MOVE request was sent; draft kept.");
         return;
@@ -268,9 +322,10 @@ export function FilePanel({ origin, userId, workspace, blocked, onUnauthorized }
     const storeGeneration = ++storageEpoch.current;
     epoch.current++;
     updatePending(null); setStorageReady(false); setEditor(null); editorRef.current = null;
-    void queued(() => AsyncStorage.getItem(key)).then(raw => {
+    void queued(() => AsyncStorage.getItem(key)).then(async raw => {
       if (!active.current || storageEpoch.current !== storeGeneration || live.current.origin !== origin || live.current.userId !== userId) return;
-      updatePending(readPendingFile(raw)); setStorageReady(true);
+      const folder = await queued(() => readPendingFolder(AsyncStorage, folderKey));
+      updatePending(readPendingFile(raw)); updateFolder(folder); setStorageReady(true);
     }).catch(() => {
       if (active.current && storageEpoch.current === storeGeneration) { setStorageReady(false); setMessage("Pending file storage unavailable. Writes disabled; repair storage and relaunch."); }
     });
@@ -284,12 +339,15 @@ export function FilePanel({ origin, userId, workspace, blocked, onUnauthorized }
     if (workspace && !blocked) void read("");
   }, [origin, userId, workspace?.id, workspace?.archived, blocked]);
   const dirty = currentEditor !== null && currentEditor.draft !== currentEditor.host.content;
-  const disabled = busy || blocked || !workspace || workspace.archived || !storageReady || Boolean(pending) || !inspected?.supported || !inspected.provisioned || inspected.archived;
+  const disabled = busy || blocked || !workspace || workspace.archived || !storageReady || Boolean(pending) || Boolean(pendingFolder) || !inspected?.supported || inspected.folder !== "provisioned" || inspected.archived;
   return <View style={styles.card} testID="file-panel">
     <Text accessibilityRole="header" style={styles.heading}>Files and editor</Text>
     {!workspace ? <Text>Select a workspace to inspect files.</Text> : <>
       <Text>Files in {workspace.name}{workspace.archived ? " (archived, read-only)" : ""}</Text>
       <Pressable accessibilityRole="button" accessibilityLabel="Refresh files" disabled={busy || blocked} onPress={() => void read(currentListing?.path ?? "")} style={styles.secondary}><Text>Refresh files</Text></Pressable>
+      <Text testID="folder-status">{inspected?.supported === false ? "Files unavailable on this host." : inspected?.folder === "provisioned" ? "Folder provisioned on Linux." : inspected?.folder === "not_provisioned" ? "Folder not provisioned." : "Folder status unknown. Writes disabled."}</Text>
+      {inspected?.supported && (inspected.folder === "not_provisioned" || pendingFolder?.workspaceId === workspace.id && inspected.folder === "unknown") && !workspace.archived && !inspected.archived ? <Pressable accessibilityRole="button" accessibilityLabel="Prepare workspace folder" disabled={busy || blocked || !storageReady || Boolean(pending)} onPress={() => void prepareFolder()} style={styles.secondary}><Text>{pendingFolder ? "Continue folder preparation with same request ID" : "Prepare workspace folder"}</Text></Pressable> : null}
+      {pendingFolder ? <Text testID="pending-folder">Folder request remains unknown. Request ID: {pendingFolder.requestId}</Text> : null}
       {currentListing ? <>
         <Text>Directory: {currentListing.path || "Workspace root"}</Text>
         {currentListing.path ? <Pressable accessibilityRole="button" accessibilityLabel="Open parent directory" disabled={busy || blocked} onPress={() => void read(currentListing.path.split("/").slice(0, -1).join("/"))} style={styles.secondary}><Text>Parent directory</Text></Pressable> : null}

@@ -83,6 +83,21 @@ export function fileReceiptFromValue(value: unknown, pending: PendingFile, expec
 export type FileEntry = { name: string; type: "file" | "directory"; size: number };
 export type FileContent = { path: string; content: string; version: string };
 export type FileFolderState = "provisioned" | "not_provisioned" | "unknown";
+export type PendingFolder = { workspaceId: string; requestId: string };
+
+export function pendingFolderFromValue(value: unknown): PendingFolder | null {
+  const data = fileRow(value);
+  if (!data || Object.keys(data).sort().join(",") !== "requestId,workspaceId" || typeof data.workspaceId !== "string" || !uuid.test(data.workspaceId) || typeof data.requestId !== "string" || !uuid.test(data.requestId)) return null;
+  return { workspaceId: data.workspaceId, requestId: data.requestId };
+}
+
+export function pendingFolderMatches(stored: unknown, expected: PendingFolder): boolean {
+  let value = stored;
+  if (typeof stored === "string") { try { value = JSON.parse(stored); } catch { return false; } }
+  const parsed = pendingFolderFromValue(value);
+  return parsed !== null && parsed.workspaceId === expected.workspaceId && parsed.requestId === expected.requestId;
+}
+
 
 export function validFilePath(value: unknown, root = false): value is string {
   return root && value === "" || filePath(value);
@@ -98,12 +113,15 @@ function fileRow(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
 }
 
-export function fileFolderStateFromValue(value: unknown, workspaceId: string): FileFolderState | null {
+export function fileFolderStateFromValue(value: unknown, workspaceId: string, requestId?: string): FileFolderState | null {
   const data = fileRow(value);
   if (!data || data.workspaceId !== workspaceId) return null;
   const keys = Object.keys(data).sort().join(",");
   if (data.state === "not_provisioned" && keys === "state,workspaceId") return data.state;
-  if ((data.state === "provisioned" || data.state === "unknown") && keys === "requestId,state,workspaceId" && typeof data.requestId === "string" && uuid.test(data.requestId)) return data.state;
+  if ((data.state === "provisioned" || data.state === "unknown") && keys === "requestId,state,workspaceId" && typeof data.requestId === "string" && uuid.test(data.requestId)) {
+    if (requestId !== undefined && data.requestId !== requestId) return null;
+    return data.state;
+  }
   return null;
 }
 

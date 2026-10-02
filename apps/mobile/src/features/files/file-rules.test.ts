@@ -1,6 +1,6 @@
 import { expect, it } from "bun:test";
 import type { PendingFile } from "@remotecode/client";
-import { beforeFileDeadline, clearStoredFile, directoryFromValue, fileStorageKey, folderStateFromValue, nextFileInputScope, persistStoredFile, readPendingFile, validPath, validText, type FileStorage } from "./file-rules";
+import { beforeFileDeadline, clearPendingFolder, clearStoredFile, directoryFromValue, fileStorageKey, folderStorageKey, folderStateFromValue, nextFileInputScope, persistPendingFolder, persistStoredFile, readPendingFile, readPendingFolder, validPath, validText, type FileStorage } from "./file-rules";
 
 const workspaceId = "123e4567-e89b-42d3-a456-426614174001";
 const requestId = "123e4567-e89b-42d3-a456-426614174002";
@@ -51,6 +51,42 @@ it("binds provisioned folder and nested listing to requested workspace/path with
   expect(directoryFromValue({ path: "nested", entries }, "nested")).toEqual(entries);
   expect(directoryFromValue({ path: "", entries }, "nested")).toBeNull();
   expect(directoryFromValue({ path: "nested", entries: [entries[0], entries[0]] }, "nested")).toBeNull();
+});
+
+it("persists the original folder ID and refuses malformed, mismatched, or unsafe storage", async () => {
+  const { values, result } = storage();
+  const folderKey = folderStorageKey("https://host.example", "owner");
+  const identity = { workspaceId, requestId };
+  expect(await persistPendingFolder(result, folderKey, identity, () => true)).toBe("saved");
+  expect(await readPendingFolder(result, folderKey)).toEqual(identity);
+  expect(await persistPendingFolder(result, folderKey, { ...identity, requestId: crypto.randomUUID() }, () => true)).toBe("unsafe");
+  await expect(persistPendingFolder({ ...result, async setItem() { throw new Error("storage unavailable"); } }, folderStorageKey("https://host.example", "other"), identity, () => true)).resolves.toBe("unsafe");
+  values.set(folderKey, "{}");
+  await expect(readPendingFolder(result, folderKey)).rejects.toThrow();
+  values.set(folderKey, JSON.stringify(identity));
+  expect(await clearPendingFolder({ ...result, async removeItem() {} }, folderKey, identity, () => true)).toBe(false);
+  expect(await readPendingFolder(result, folderKey)).toEqual(identity);
+});
+
+it("retains a delayed folder identity after context revocation instead of authorizing another ID", async () => {
+  const { values, result } = storage();
+  const folderKey = folderStorageKey("https://host.example", "owner");
+  const identity = { workspaceId, requestId };
+  let allowed = true;
+  let release: () => void = () => {};
+  let markStarted: () => void = () => {};
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const started = new Promise<void>(resolve => { markStarted = resolve; });
+  const delayed: FileStorage = { ...result, async setItem(key, value) { markStarted(); await gate; values.set(key, value); } };
+  const write = persistPendingFolder(delayed, folderKey, identity, () => allowed);
+  await started;
+  allowed = false;
+  release();
+  expect(await write).toBe("unsafe");
+  expect(await readPendingFolder(result, folderKey)).toEqual(identity);
+  expect(await clearPendingFolder(result, folderKey, identity, () => allowed)).toBe(false);
+  expect(await persistPendingFolder(result, folderKey, { ...identity, requestId: crypto.randomUUID() }, () => true)).toBe("unsafe");
+  expect(await readPendingFolder(result, folderKey)).toEqual(identity);
 });
 
 it("persists content-free CREATE/MOVE identities without draft bytes or substituting MOVE baseline", async () => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { createApiClient, fileReceiptFromValue, workspaceErrorStatus, type FileReceipt, type PendingFile } from "@remotecode/client";
-import { clearPendingFile, directoryFromValue, fileStorageKey, folderStateFromValue, isMissingFilePath, isTargetExists, isVersionConflict, openFileFromValue, persistPendingFile, readPendingFile, textSha256, validPath, validText, type FileEntry } from "./file-editor";
+import { clearPendingFile, clearPendingFolder, directoryFromValue, fileStorageKey, folderStorageKey, folderStateFromValue, isMissingFilePath, isTargetExists, isVersionConflict, openFileFromValue, persistPendingFile, persistPendingFolder, readPendingFile, readPendingFolder, textSha256, validPath, validText, type FileEntry } from "./file-editor";
 
 const workspaceId = "123e4567-e89b-42d3-a456-426614174001";
 const requestId = "123e4567-e89b-42d3-a456-426614174002";
@@ -60,6 +60,22 @@ describe("selected-workspace file boundaries", () => {
       await expect(textSha256(value)).rejects.toThrow();
     }
     expect(validText("x".repeat(1024 * 1024))).toBe(true);
+  });
+});
+
+describe("explicit folder preparation identity", () => {
+  it("persists and clears only the original content-free ID, blocking corrupt or replaced storage", () => {
+    const storage = memoryStorage();
+    const folderKey = folderStorageKey("https://host.example", "owner");
+    const identity = { workspaceId, requestId };
+    persistPendingFolder(storage, folderKey, identity);
+    expect(readPendingFolder(storage, folderKey)).toEqual(identity);
+    expect(storage.getItem(folderKey)).not.toContain("content");
+    expect(() => persistPendingFolder(storage, folderKey, { ...identity, requestId: crypto.randomUUID() })).toThrow();
+    storage.setItem(folderKey, JSON.stringify({ ...identity, requestId: crypto.randomUUID() }));
+    expect(() => clearPendingFolder(storage, folderKey, identity)).toThrow();
+    storage.setItem(folderKey, "{}");
+    expect(() => readPendingFolder(storage, folderKey)).toThrow();
   });
 });
 

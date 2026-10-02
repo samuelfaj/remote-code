@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApi } from "../../../apps/api/src/app";
-import { createApiClient, fileMissingPath, fileReceiptFromValue, fileTargetExists, pendingFileFromValue, pendingFileValueMatches, workspaceErrorStatus, type PendingFile } from "./index";
+import { createApiClient, fileMissingPath, fileReceiptFromValue, fileTargetExists, fileFolderStateFromValue, pendingFolderFromValue, pendingFolderMatches, pendingFileFromValue, pendingFileValueMatches, workspaceErrorStatus, type PendingFile } from "./index";
 
 const requestId = "123e4567-e89b-42d3-a456-426614174000";
 const workspaceId = "123e4567-e89b-42d3-a456-426614174001";
@@ -11,6 +11,19 @@ const version = "ab".repeat(32);
 const createdAt = "2026-10-01T00:00:00.000Z";
 const pending: PendingFile = { kind: "create", requestId, workspaceId, path: createdAt, resultSha256: version };
 const receipt = { kind: "create", requestId, workspaceId, path: createdAt, version, createdAt };
+
+it("binds folder recovery to exact workspace and original request ID and preserves malformed identities as invalid", () => {
+  const folder = { workspaceId, requestId };
+  expect(pendingFolderFromValue(folder)).toEqual(folder);
+  expect(pendingFolderMatches(JSON.stringify(folder), folder)).toBe(true);
+  expect(pendingFolderMatches({ ...folder, requestId: crypto.randomUUID() }, folder)).toBe(false);
+  expect(pendingFolderFromValue({ ...folder, content: "must not be stored" })).toBeNull();
+  expect(pendingFolderFromValue({ workspaceId, requestId: "bad" })).toBeNull();
+  expect(fileFolderStateFromValue({ workspaceId, state: "provisioned", requestId }, workspaceId, requestId)).toBe("provisioned");
+  expect(fileFolderStateFromValue({ workspaceId, state: "provisioned", requestId: crypto.randomUUID() }, workspaceId, requestId)).toBeNull();
+  expect(fileFolderStateFromValue({ workspaceId, state: "unknown", requestId }, workspaceId, requestId)).toBe("unknown");
+  expect(fileFolderStateFromValue({ workspaceId, state: "not_provisioned" }, workspaceId, requestId)).toBe("not_provisioned");
+});
 
 it("clears only exact known no-effect CREATE/MOVE refusals, never generic or enriched errors", () => {
   expect(fileTargetExists({ status: 409, value: { error: "target_exists" } })).toBe(true);

@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native-web";
 import { createApiClient, fileReceiptFromValue, workspaceErrorStatus, workspaceFromValue, type PendingFile, type Workspace } from "@remotecode/client";
-import { clearPendingFile, directoryFromValue, fileStorageKey, folderStateFromValue, isMissingFilePath, isTargetExists, isVersionConflict, openFileFromValue, persistPendingFile, readPendingFile, textSha256, validPath, validText, type FileEntry, type FolderState, type OpenFile } from "./file-editor";
+import { clearPendingFile, clearPendingFolder, directoryFromValue, fileStorageKey, folderStorageKey, folderStateFromValue, isMissingFilePath, isTargetExists, isVersionConflict, openFileFromValue, persistPendingFile, persistPendingFolder, readPendingFile, readPendingFolder, textSha256, validPath, validText, type FileEntry, type FolderState, type OpenFile } from "./file-editor";
 
 const deadlineMs = 10_000;
 type Props = { userId: string; workspace: Workspace | null; blocked: boolean; onUnauthorized: () => void };
@@ -11,6 +11,7 @@ type Editor = { host: OpenFile; draft: string; needsRead: boolean };
 export function FilePanel({ userId, workspace, blocked, onUnauthorized }: Props) {
   const origin = window.location.origin;
   const key = fileStorageKey(origin, userId);
+  const folderKey = folderStorageKey(origin, userId);
   const live = useRef({ userId, workspace, blocked });
   live.current = { userId, workspace, blocked };
   const active = useRef(false);
@@ -20,6 +21,7 @@ export function FilePanel({ userId, workspace, blocked, onUnauthorized }: Props)
   const [storageReady, setStorageReady] = useState(false);
   const [pending, setPending] = useState<PendingFile | null>(null);
   const pendingRef = useRef(pending);
+  const [pendingFolder, setPendingFolder] = useState<{ workspaceId: string; requestId: string } | null>(null);
   const [inspection, setInspection] = useState<Inspection | null>(null);
   const [listing, setListing] = useState<{ workspaceId: string; path: string; entries: FileEntry[] } | null>(null);
   const [editor, setEditor] = useState<Editor | null>(null);
@@ -64,7 +66,7 @@ export function FilePanel({ userId, workspace, blocked, onUnauthorized }: Props)
     return true;
   }
 
-  async function inspect(end: number, current: () => boolean) {
+  async function inspect(end: number, current: () => boolean, folderOperation = pendingFolder) {
     if (!workspace) return null;
     setInspection(null);
     const version = await requestClient(end).api.version.get();
@@ -87,8 +89,18 @@ export function FilePanel({ userId, workspace, blocked, onUnauthorized }: Props)
     if (!current()) return null;
     if (Date.now() >= end) throw new Error("File operation deadline expired");
     if (result.error) { unauthorized(result.error); throw new Error("Folder status unavailable"); }
-    const folder = folderStateFromValue(result.data, workspace.id);
-    if (!folder) throw new Error("Invalid folder status");
+    const originalFolder = folderOperation?.workspaceId === workspace.id ? folderOperation : null;
+    const folder = folderStateFromValue(result.data, workspace.id, originalFolder?.requestId);
+    if (!folder) throw new Error("Folder status did not match the original pending request");
+    if (originalFolder) {
+      const stored = readPendingFolder(sessionStorage, folderKey);
+      if (stored?.requestId !== originalFolder.requestId || stored.workspaceId !== originalFolder.workspaceId) throw new Error("Original folder identity unavailable");
+      if (folder === "provisioned") {
+        clearPendingFolder(sessionStorage, folderKey, originalFolder);
+        setMessage("Workspace folder confirmed with the original request ID.");
+      }
+      restorePending();
+    }
     const state: Inspection = { workspaceId: workspace.id, capability: "supported", folder, archived: confirmed.archived };
     setInspection(state);
     if (folder !== "provisioned") setMessage(folder === "not_provisioned"
@@ -155,8 +167,10 @@ export function FilePanel({ userId, workspace, blocked, onUnauthorized }: Props)
   function restorePending() {
     try {
       const restored = readPendingFile(sessionStorage, key);
+      const folder = readPendingFolder(sessionStorage, folderKey);
       pendingRef.current = restored;
       setPending(restored);
+      setPendingFolder(folder);
       setStorageReady(true);
     } catch {
       setStorageReady(false);
@@ -200,9 +214,44 @@ export function FilePanel({ userId, workspace, blocked, onUnauthorized }: Props)
     if (workspace && !blocked) void read("");
   }, [userId, workspace?.id, workspace?.archived, blocked]);
 
+  async function prepareFolder() {
+    if (!workspace || working.current || blocked || workspace.archived || !storageReady || pendingRef.current) return;
+    if (pendingFolder && pendingFolder.workspaceId !== workspace.id) { setMessage("Select the original workspace to inspect its pending folder request."); return; }
+    const current = currentCheck();
+    const end = Date.now() + deadlineMs;
+    working.current = true; setBusy(true); setMessage("Checking workspace folder before preparation…");
+    let operation = pendingFolder;
+    try {
+      const state = await inspect(end, current);
+      if (!current() || !state || state.archived || (state.folder !== "not_provisioned" && !(operation && state.folder === "unknown"))) return;
+      if (!operation) {
+        operation = { workspaceId: workspace.id, requestId: crypto.randomUUID() };
+        persistPendingFolder(sessionStorage, folderKey, operation);
+        setPendingFolder(operation);
+      }
+      const stored = readPendingFolder(sessionStorage, folderKey);
+      if (stored?.requestId !== operation.requestId || stored.workspaceId !== operation.workspaceId) throw new Error("Original folder identity unavailable before submission");
+      if (!current() || Date.now() >= end) { setMessage("Preparation expired before submission. Original request ID retained."); return; }
+      const response = await requestClient(end).api.workspaces({ workspaceId: operation.workspaceId }).folder.post({ requestId: operation.requestId });
+      if (!current()) return;
+      if (Date.now() >= end) { setMessage("Folder preparation outcome is unknown. Original request ID retained; no automatic retry."); return; }
+      if (response.error) { unauthorized(response.error); setMessage("Folder preparation was not confirmed. Original request ID retained; inspect status before any same-ID continuation."); return; }
+      const confirmed = await inspect(end, current, operation);
+      if (current() && confirmed?.folder === "provisioned") {
+        const listing = await requestClient(end).api.workspaces({ workspaceId: operation.workspaceId }).files.get();
+        if (current() && !listing.error && Date.now() < end) {
+          const entries = directoryFromValue(listing.data, "");
+          if (entries) setListing({ workspaceId: operation.workspaceId, path: "", entries });
+        }
+      } else if (current() && confirmed?.folder !== "provisioned") setMessage("Folder preparation remains unconfirmed. Original request ID retained; no new ID was created.");
+    } catch {
+      if (current()) { setStorageReady(false); setMessage("Folder preparation outcome or storage is unknown. Original request ID is retained; no automatic retry."); }
+    } finally { if (current()) { working.current = false; setBusy(false); } }
+  }
+
   async function mutate(kind: PendingFile["kind"]) {
     const value = editorRef.current;
-    if (!workspace || working.current || blocked || workspace.archived || !storageReady || pendingRef.current ||
+    if (!workspace || working.current || blocked || workspace.archived || !storageReady || pendingRef.current || pendingFolder ||
       currentInspection?.capability !== "supported" || currentInspection.folder !== "provisioned" || currentInspection.archived) return;
     if (kind === "create") {
       if (!currentCreation || !validPath(currentCreation.path) || !validText(currentCreation.content)) return;
@@ -326,7 +375,7 @@ export function FilePanel({ userId, workspace, blocked, onUnauthorized }: Props)
     }
   }
 
-  const writesDisabled = busy || blocked || !workspace || workspace.archived || !storageReady || Boolean(pending) ||
+  const writesDisabled = busy || blocked || !workspace || workspace.archived || !storageReady || Boolean(pending) || Boolean(pendingFolder) ||
     currentInspection?.capability !== "supported" || currentInspection.folder !== "provisioned" || currentInspection.archived;
   const saveDisabled = writesDisabled || !currentEditor || currentEditor.needsRead ||
     currentEditor.draft === currentEditor.host.content || !validText(currentEditor.draft);
@@ -347,6 +396,8 @@ export function FilePanel({ userId, workspace, blocked, onUnauthorized }: Props)
           : currentInspection?.folder === "provisioned" ? "Folder provisioned on Linux."
           : currentInspection?.folder === "not_provisioned" ? "Folder not provisioned."
           : "Folder status unknown. Writes disabled."}</Text>
+        {currentInspection?.capability === "supported" && (currentInspection.folder === "not_provisioned" || pendingFolder?.workspaceId === workspace.id && currentInspection.folder === "unknown") && !workspace.archived && !currentInspection.archived ? <Pressable accessibilityRole="button" accessibilityLabel="Prepare workspace folder" disabled={busy || blocked || !storageReady || Boolean(pending)} onPress={() => void prepareFolder()} style={styles.secondary}><Text>{pendingFolder ? "Continue folder preparation with same request ID" : "Prepare workspace folder"}</Text></Pressable> : null}
+        {pendingFolder ? <Text testID="pending-folder">Folder request remains unknown. Request ID: {pendingFolder.requestId}</Text> : null}
         {currentListing ? <View style={styles.section}>
           <Text>Directory: {currentListing.path || "Workspace root"}</Text>
           {currentListing.path ? <Pressable accessibilityRole="button" accessibilityLabel="Open parent directory" disabled={busy}
