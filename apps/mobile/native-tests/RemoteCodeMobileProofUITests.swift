@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import XCTest
 
@@ -92,6 +93,8 @@ final class RemoteCodeMobileProofUITests: XCTestCase {
         let app = XCUIApplication(bundleIdentifier: "com.remotecode.mobileproof")
         app.launch()
         XCTAssertTrue(app.staticTexts["RemoteCode mobile"].waitForExistence(timeout: 15))
+        let hostLabel = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Host: ")).firstMatch
+        let api = try XCTUnwrap(URL(string: String(hostLabel.label.dropFirst("Host: ".count))))
 
         let passwordInput = app.secureTextFields["Host password"]
         XCTAssertTrue(passwordInput.waitForExistence(timeout: 10))
@@ -418,6 +421,127 @@ final class RemoteCodeMobileProofUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["Workspaces"].exists)
         let revokedObserverSession = try await observer.get(URL(string: "/api/auth/session", relativeTo: api)!)
         XCTAssertEqual(revokedObserverSession.statusCode, 401)
+    }
+
+    @MainActor
+    func testInstalledAppListsOpensSavesLinuxWorkspaceFileAndRejectsStaleClient() async throws {
+        let app = XCUIApplication(bundleIdentifier: "com.remotecode.mobileproof")
+        let observer = URLSession(configuration: .ephemeral)
+        app.launch()
+        let hostLabel = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Host: ")).firstMatch
+        XCTAssertTrue(hostLabel.waitForExistence(timeout: 15))
+        let api = try XCTUnwrap(URL(string: String(hostLabel.label.dropFirst("Host: ".count))))
+        XCTAssertEqual(api.scheme, "https")
+        XCTAssertEqual(api.host, "127.0.0.1")
+        signIn(app)
+        try await observer.signIn(at: api, password: password)
+        for _ in 0..<5 where !app.staticTexts["Workspaces"].exists { app.scrollViews.firstMatch.swipeUp() }
+        XCTAssertTrue(app.staticTexts["Workspaces"].waitForExistence(timeout: 10))
+        let workspaceName = "native-file-workspace-\(UUID().uuidString)"
+        let nameInput = app.textFields["Workspace name"]
+        nameInput.tap(); nameInput.typeText(workspaceName)
+        app.staticTexts["Host connection"].firstMatch.tap()
+        app.buttons["Create workspace"].tap()
+        XCTAssertTrue(app.staticTexts["Workspace change confirmed."].waitForExistence(timeout: 15))
+        app.buttons["Open workspace \(workspaceName)"].tap()
+        XCTAssertTrue(app.staticTexts["Selected: \(workspaceName)"].waitForExistence(timeout: 10))
+        let workspaceRows = try await observer.workspaceList(at: api)
+        let workspace = try XCTUnwrap(workspaceRows.first { $0.name == workspaceName })
+        try await observer.provisionFolder(at: api, workspaceId: workspace.id)
+        let filePath = "native-proof.txt"
+        let original = "first native Linux bytes"
+        let create = try await observer.createFile(at: api, workspaceId: workspace.id, path: filePath, content: original)
+        XCTAssertEqual(create.path, filePath)
+        let originalVersion = try await observer.sha256(original)
+        XCTAssertEqual(create.version, originalVersion)
+        for _ in 0..<5 where !app.staticTexts["Files and editor"].exists { app.scrollViews.firstMatch.swipeUp() }
+        XCTAssertTrue(app.staticTexts["Files and editor"].waitForExistence(timeout: 15))
+        app.buttons["Refresh files"].tap()
+        XCTAssertTrue(app.buttons["Open file \(filePath)"].waitForExistence(timeout: 15))
+        app.buttons["Open file \(filePath)"].tap()
+        let content = app.textViews["File draft"]
+        XCTAssertTrue(content.waitForExistence(timeout: 10))
+        XCTAssertEqual(content.value as? String, original)
+        let opened = try await observer.openFile(at: api, workspaceId: workspace.id, path: filePath)
+        let save = "saved by the installed native client"
+        let savedVersion = try await observer.sha256(save)
+        try content.clearAndTypeText(save, in: app)
+        XCTAssertEqual(content.value as? String, save, "The explicit SAVE proposal must contain only the new draft")
+        app.staticTexts["Files and editor"].firstMatch.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+        for _ in 0..<5 where !app.buttons["Save file"].isHittable { app.scrollViews.firstMatch.swipeUp() }
+        XCTAssertTrue(app.buttons["Save file"].isEnabled && app.buttons["Save file"].isHittable)
+        app.buttons["Save file"].tap()
+        guard app.staticTexts.matching(identifier: "file-status").firstMatch.waitForLabelContaining("SAVE receipt confirmed", timeout: 15) else {
+            XCTFail("The native SAVE receipt must be visible before attempting the stale observer write")
+            return
+        }
+        let staleID = UUID().uuidString
+        let stale = try await observer.saveFileRaw(at: api, workspaceId: workspace.id, path: filePath, content: "stale overwrite", expectedVersion: opened.version, requestId: staleID)
+        XCTAssertEqual(stale.statusCode, 409)
+        XCTAssertEqual(stale.error, "version_conflict")
+        let final = try await observer.openFile(at: api, workspaceId: workspace.id, path: filePath)
+        XCTAssertEqual(final.content, save)
+        XCTAssertEqual(final.version, savedVersion)
+        app.buttons["Sign out"].tap()
+        XCTAssertTrue(app.staticTexts.matching(identifier: "connection-status").firstMatch.waitForLabel("signed out", timeout: 10))
+    }
+
+    @MainActor
+    func testInstalledAppRetainsUnknownCommittedSaveAndRecoversByReceiptWithoutReplay() async throws {
+        let app = XCUIApplication(bundleIdentifier: "com.remotecode.mobileproof")
+        let observer = URLSession(configuration: .ephemeral)
+        app.launch()
+        let hostLabel = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Host: ")).firstMatch
+        XCTAssertTrue(hostLabel.waitForExistence(timeout: 15))
+        let api = try XCTUnwrap(URL(string: String(hostLabel.label.dropFirst("Host: ".count))))
+        XCTAssertEqual(api.scheme, "https")
+        XCTAssertEqual(api.host, "127.0.0.1")
+        signIn(app)
+        try await observer.signIn(at: api, password: password)
+        for _ in 0..<5 where !app.staticTexts["Workspaces"].exists { app.scrollViews.firstMatch.swipeUp() }
+        let workspaceName = "native-file-loss-workspace-\(UUID().uuidString)"
+        let nameInput = app.textFields["Workspace name"]
+        nameInput.tap(); nameInput.typeText(workspaceName); app.staticTexts["Host connection"].firstMatch.tap(); app.buttons["Create workspace"].tap()
+        XCTAssertTrue(app.staticTexts["Workspace change confirmed."].waitForExistence(timeout: 15))
+        app.buttons["Open workspace \(workspaceName)"].tap()
+        XCTAssertTrue(app.staticTexts["Selected: \(workspaceName)"].waitForExistence(timeout: 10))
+        let workspaceRows = try await observer.workspaceList(at: api)
+        let workspace = try XCTUnwrap(workspaceRows.first { $0.name == workspaceName })
+        try await observer.provisionFolder(at: api, workspaceId: workspace.id)
+        let path = "native-loss.txt"; let original = "before committed loss"; let saved = "committed save after response loss"
+        _ = try await observer.createFile(at: api, workspaceId: workspace.id, path: path, content: original)
+        for _ in 0..<5 where !app.staticTexts["Files and editor"].exists { app.scrollViews.firstMatch.swipeUp() }
+        app.buttons["Refresh files"].tap(); XCTAssertTrue(app.buttons["Open file \(path)"].waitForExistence(timeout: 15)); app.buttons["Open file \(path)"].tap()
+        let content = app.textViews["File draft"]; XCTAssertTrue(content.waitForExistence(timeout: 10)); try content.clearAndTypeText(saved, in: app)
+        XCTAssertEqual(content.value as? String, saved, "The response-loss SAVE must send exactly the edited draft")
+        app.staticTexts["Files and editor"].firstMatch.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+        for _ in 0..<5 where !app.buttons["Save file"].isHittable { app.scrollViews.firstMatch.swipeUp() }
+        XCTAssertTrue(app.buttons["Save file"].isEnabled && app.buttons["Save file"].isHittable)
+        try await observer.armFileSaveLoss(at: api, nonce: UUID().uuidString, workspaceId: workspace.id, path: path)
+        app.buttons["Save file"].tap()
+        let status = app.staticTexts.matching(identifier: "file-status").firstMatch
+        XCTAssertTrue(status.waitForLabelContaining("unknown", timeout: 15), "Committed save response loss must leave visible unknown state")
+        var diagnostics = try await observer.fileSaveLossDiagnostics(at: api)
+        XCTAssertTrue(diagnostics.held)
+        let requestId = try XCTUnwrap(diagnostics.requestId)
+        XCTAssertEqual(diagnostics.savePosts, 1)
+        try await observer.releaseFileSaveLoss(at: api)
+        app.terminate(); app.launch(); signIn(app)
+        for _ in 0..<5 where !app.staticTexts[workspaceName].exists { app.scrollViews.firstMatch.swipeUp() }
+        XCTAssertTrue(app.buttons["Open workspace \(workspaceName)"].waitForExistence(timeout: 10)); app.buttons["Open workspace \(workspaceName)"].tap()
+        XCTAssertTrue(app.buttons["Check file receipt"].waitForExistence(timeout: 10)); app.buttons["Check file receipt"].tap()
+        XCTAssertTrue(status.waitForLabelContaining("Historical file receipt confirmed", timeout: 15))
+        diagnostics = try await observer.fileSaveLossDiagnostics(at: api)
+        XCTAssertEqual(diagnostics.requestId, requestId)
+        XCTAssertEqual(diagnostics.savePosts, 1, "Receipt recovery must not replay PUT")
+        XCTAssertGreaterThanOrEqual(diagnostics.receiptGets, 1)
+        let final = try await observer.openFile(at: api, workspaceId: workspace.id, path: path)
+        XCTAssertEqual(final.content, saved)
+        let savedVersion = try await observer.sha256(saved)
+        XCTAssertEqual(final.version, savedVersion)
+        app.buttons["Sign out"].tap(); XCTAssertTrue(app.staticTexts.matching(identifier: "connection-status").firstMatch.waitForLabel("signed out", timeout: 10))
     }
 
     @MainActor
@@ -1542,6 +1666,33 @@ final class RemoteCodeMobileProofUITests: XCTestCase {
     }
 }
 
+private struct FileCreateReceipt: Decodable {
+    let path: String
+    let version: String
+}
+
+private struct FileContent: Decodable {
+    let path: String
+    let content: String
+    let version: String
+}
+
+private struct FileSaveResult: Decodable {
+    let path: String
+    let version: String
+}
+
+private struct FileSaveError: Decodable {
+    let error: String
+}
+
+private struct FileLossDiagnostics: Decodable {
+    let held: Bool
+    let requestId: String?
+    let savePosts: Int
+    let receiptGets: Int
+}
+
 private struct WorkspaceMetadata: Decodable {
     let id: String
     let name: String
@@ -1565,6 +1716,25 @@ private struct NativeFailureDiagnostics: Decodable {
 }
 
 private extension XCUIElement {
+    func clearAndTypeText(_ text: String, in app: XCUIApplication) throws {
+        tap()
+        press(forDuration: 1.2)
+        if app.staticTexts["Type English and Portuguese"].waitForExistence(timeout: 2) {
+            app.buttons["Continue"].tap()
+            press(forDuration: 1.2)
+        }
+        let selectAll = app.descendants(matching: .any).matching(identifier: "Select All").firstMatch
+        guard selectAll.waitForExistence(timeout: 5) else {
+            throw NSError(domain: "NativeFileProof", code: 1, userInfo: [NSLocalizedDescriptionKey: "The native text selection menu must offer Select All"])
+        }
+        selectAll.tap()
+        typeText(XCUIKeyboardKey.delete.rawValue)
+        guard (value as? String) == "" else {
+            throw NSError(domain: "NativeFileProof", code: 2, userInfo: [NSLocalizedDescriptionKey: "Text selection must clear the old draft before typing"])
+        }
+        for character in text { typeText(String(character)) }
+    }
+
     func waitForLabelContaining(_ expected: String, timeout: TimeInterval) -> Bool {
         let predicate = NSPredicate(format: "label CONTAINS %@", expected)
         let expectation = XCTNSPredicateExpectation(predicate: predicate, object: self)
@@ -1598,7 +1768,7 @@ private extension URLSession {
         var request = URLRequest(url: URL(string: "/api/auth/login", relativeTo: baseURL)!)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("http://localhost:5173", forHTTPHeaderField: "Origin")
+        request.setValue(baseURL.scheme == "https" ? "https://localhost" : "http://localhost:5173", forHTTPHeaderField: "Origin")
         request.httpBody = try JSONSerialization.data(withJSONObject: ["password": password])
         let (_, response) = try await data(for: request)
         XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
@@ -1624,6 +1794,73 @@ private extension URLSession {
         let (data, response) = try await data(from: URL(string: "/api/workspaces/\(id)", relativeTo: baseURL)!)
         XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
         return try JSONDecoder().decode(WorkspaceMetadata.self, from: data)
+    }
+
+    func armFileSaveLoss(at baseURL: URL, nonce: String, workspaceId: String, path: String) async throws {
+        var request = URLRequest(url: URL(string: "/__test__/file-save-loss-arm", relativeTo: baseURL)!)
+        request.httpMethod = "POST"; request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["nonce": nonce, "workspaceId": workspaceId, "path": path])
+        let (_, response) = try await data(for: request)
+        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
+    }
+
+    func fileSaveLossDiagnostics(at baseURL: URL) async throws -> FileLossDiagnostics {
+        let (data, response) = try await data(from: URL(string: "/__test__/file-save-loss-diagnostics", relativeTo: baseURL)!)
+        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
+        return try JSONDecoder().decode(FileLossDiagnostics.self, from: data)
+    }
+
+    func releaseFileSaveLoss(at baseURL: URL) async throws {
+        var request = URLRequest(url: URL(string: "/__test__/file-save-loss-release", relativeTo: baseURL)!)
+        request.httpMethod = "POST"
+        let (_, response) = try await data(for: request)
+        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
+    }
+
+    func provisionFolder(at baseURL: URL, workspaceId: String) async throws {
+        var request = URLRequest(url: URL(string: "/api/workspaces/\(workspaceId)/folder", relativeTo: baseURL)!)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["requestId": UUID().uuidString])
+        let (_, response) = try await data(for: request)
+        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
+        let (_, ready) = try await data(from: URL(string: "/api/workspaces/\(workspaceId)/folder", relativeTo: baseURL)!)
+        XCTAssertEqual((ready as? HTTPURLResponse)?.statusCode, 200)
+    }
+
+    func createFile(at baseURL: URL, workspaceId: String, path: String, content: String) async throws -> FileCreateReceipt {
+        var request = URLRequest(url: URL(string: "/api/workspaces/\(workspaceId)/files", relativeTo: baseURL)!)
+        request.httpMethod = "POST"; request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["requestId": UUID().uuidString, "path": path, "content": content])
+        let (data, response) = try await data(for: request)
+        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 201)
+        return try JSONDecoder().decode(FileCreateReceipt.self, from: data)
+    }
+
+    func openFile(at baseURL: URL, workspaceId: String, path: String) async throws -> FileContent {
+        let (data, response) = try await data(from: URL(string: "/api/workspaces/\(workspaceId)/files/content?path=\(path)", relativeTo: baseURL)!)
+        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
+        return try JSONDecoder().decode(FileContent.self, from: data)
+    }
+
+    func saveFile(at baseURL: URL, workspaceId: String, path: String, content: String, expectedVersion: String, requestId: String) async throws -> FileSaveResult {
+        let result = try await saveFileRaw(at: baseURL, workspaceId: workspaceId, path: path, content: content, expectedVersion: expectedVersion, requestId: requestId)
+        XCTAssertEqual(result.statusCode, 201)
+        return try JSONDecoder().decode(FileSaveResult.self, from: result.data)
+    }
+
+    func saveFileRaw(at baseURL: URL, workspaceId: String, path: String, content: String, expectedVersion: String, requestId: String) async throws -> (statusCode: Int, error: String?, data: Data) {
+        var request = URLRequest(url: URL(string: "/api/workspaces/\(workspaceId)/files/content", relativeTo: baseURL)!)
+        request.httpMethod = "PUT"; request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["requestId": requestId, "path": path, "content": content, "expectedVersion": expectedVersion])
+        let (data, response) = try await data(for: request)
+        let status = try XCTUnwrap((response as? HTTPURLResponse)?.statusCode)
+        let error = (try? JSONDecoder().decode(FileSaveError.self, from: data))?.error
+        return (status, error, data)
+    }
+
+    func sha256(_ content: String) async throws -> String {
+        SHA256.hash(data: Data(content.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 
     func actions(at baseURL: URL) async throws -> [ActionReceipt] {

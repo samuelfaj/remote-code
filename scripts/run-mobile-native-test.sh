@@ -30,9 +30,16 @@ API_PASSWORD="remote-code-native-test-passphrase"
 DATABASE_PATH="$WORK_DIR/remotecode-native.sqlite"
 DEVICE_ID="${RC_NATIVE_TEST_DEVICE:-}"
 API_PID=""
+DOCKER_ID=""
+API_DATABASE_PATH="$DATABASE_PATH"
+API_TLS_CERT=""
+API_TLS_KEY=""
+TLS_CERT=""
+TLS_KEY=""
 OWNED_DEVICE_ID=""
 OWNED_DEVICE_NAME=""
 DERIVED_DATA_PATH="${RC_NATIVE_TEST_DERIVED_DATA:-$WORK_DIR/DerivedData}"
+DERIVED_ARGS=("-derivedDataPath" "$DERIVED_DATA_PATH")
 
 cleanup() {
   local status="$1"
@@ -43,6 +50,19 @@ cleanup() {
       xcrun simctl bootstatus "$OWNED_DEVICE_ID" -b || status=1
     fi
   fi
+  if [[ -n "$DOCKER_ID" ]]; then
+    local identity
+    identity="$(docker inspect --format '{{.Id}} {{.Name}} {{index .Config.Labels "remotecode.rc029.native"}}' "$DOCKER_ID")" || status=1
+    if [[ "$identity" == "$DOCKER_ID /$DOCKER_NAME $OWNED_DEVICE_ID" ]]; then
+      docker exec "$DOCKER_ID" bun -e 'import{Database}from"bun:sqlite";import{existsSync,readFileSync}from"node:fs";import{createHash}from"node:crypto";if(!existsSync(process.env.DATABASE_PATH)){console.log(JSON.stringify({databasePresent:false}));process.exit(0)}const d=new Database(process.env.DATABASE_PATH,{readonly:true,create:false});const outcomes=d.query("select request_id,workspace_id,kind,result_path,result_sha256 from file_operation_outcomes").all();const files=outcomes.map(r=>{const path="/var/lib/remotecode/workspaces/"+r.workspace_id+"/"+r.result_path;if(!existsSync(path))return{path,exists:false};const b=readFileSync(path);return{path,exists:true,sha256:createHash("sha256").update(b).digest("hex")}});console.log(JSON.stringify({databasePresent:true,outcomes,intents:d.query("select request_id,workspace_id,state from file_operation_intents").all(),files,quickCheck:d.query("pragma quick_check").all()}));d.close()' > "$WORK_DIR/linux-state-on-exit.json" 2> "$WORK_DIR/linux-state-on-exit-error.log" || { echo "Final Linux state unavailable; retain unknown effects." >&2; status=1; }
+      docker rm -f "$DOCKER_ID" >/dev/null 2>&1 || status=1
+      if docker ps -a --no-trunc --format '{{.ID}}' | grep -Fqx "$DOCKER_ID"; then echo "Task-owned Linux container remains: $DOCKER_ID" >&2; status=1; fi
+    else
+      echo "Container ownership mismatch; refusing removal." >&2
+      status=1
+    fi
+  fi
+  if [[ -n "$TLS_CERT" ]]; then rm -f "$TLS_CERT" "$TLS_KEY"; fi
   if [[ -n "$API_PID" ]] && kill -0 "$API_PID" 2>/dev/null; then
     kill -TERM "$API_PID" || status=1
     wait "$API_PID" 2>/dev/null || true
@@ -166,6 +186,9 @@ if [[ "${RC_NATIVE_TEST_RECOVERY:-0}" == "1" ]]; then
   SKIP_TEST_ARG="-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testReadinessShowsRealSQLiteLockAndRecoversWithoutBlockingLogin"
   EXTRA_SKIP_ARGS=("-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testAutomaticActionReceiptAfterLostBody" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testAutomaticActionReceiptStallEndsUnknownWithoutReplay" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testAutomaticActionMalformedTimestampStaysUnknownWithoutReplay" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testActionDeadlineStartsAtTapAndIgnoresLateReceiptWithoutReplay" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testActionPostAcceptedAfterTapDeadlineStaysUnknownUntilManualReceipt" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testNativeLoginDeadlineStartsAtTapAndNeverReplays" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testNativeLoginPreflightDeadlineSendsNoRequestAndAllowsManualRetry" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testInstalledAppCreatesAndMutatesTwoWorkspaceMetadataRecords" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testActionReceiptUnauthorizedClearsPrivateWorkspaceState" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testWorkspaceUnauthorizedClearsBusyActionAndIgnoresOldReceiptAfterRelogin" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testPendingActionAPrePostWriteFailureSendsNoActionAndBlocksSubmission" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testPendingActionZReceiptClearFailureRecoversOriginalReceiptAfterRelaunchWithoutReplay")
 fi
+if [[ "${RC_NATIVE_TEST_RECOVERY:-0}" == "1" ]]; then
+  EXTRA_SKIP_ARGS+=("-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testInstalledAppListsOpensSavesLinuxWorkspaceFileAndRejectsStaleClient" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testInstalledAppRetainsUnknownCommittedSaveAndRecoversByReceiptWithoutReplay")
+fi
 if [[ "${RC_NATIVE_TEST_AUTO_ACTION:-0}" == "1" ]]; then
   API_ENTRY="apps/api/test-support/native-recovery.ts"
   TEST_SELECTION="RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testAutomaticActionReceiptAfterLostBody"
@@ -270,6 +293,32 @@ PY
   EXTRA_SKIP_ARGS=()
 fi
 
+
+if [[ "${RC_NATIVE_TEST_FILES:-0}" == "1" ]]; then
+  for mode in RC_NATIVE_TEST_RECOVERY RC_NATIVE_TEST_AUTO_ACTION RC_NATIVE_TEST_HEALTH RC_NATIVE_TEST_DEADLINE RC_NATIVE_TEST_POST_DELAY RC_NATIVE_TEST_LOGIN_DEADLINE RC_NATIVE_TEST_LOGIN_PREFLIGHT_DEADLINE RC_NATIVE_TEST_WORKSPACES RC_NATIVE_TEST_PRIVACY_EXPIRY RC_NATIVE_TEST_PRIVACY_BUSY RC_NATIVE_TEST_STORAGE_FAILURE; do
+    if [[ "${!mode:-0}" == "1" ]]; then echo "RC_NATIVE_TEST_FILES cannot be combined with $mode." >&2; exit 2; fi
+  done
+  if [[ -n "$DEVICE_ID" ]]; then echo "RC_NATIVE_TEST_FILES creates and owns its simulator; RC_NATIVE_TEST_DEVICE is forbidden." >&2; exit 2; fi
+  if [[ "${RC_NATIVE_TEST_REUSE_IOS_PROJECT:-0}" != "1" ]]; then echo "RC_NATIVE_TEST_FILES requires RC_NATIVE_TEST_REUSE_IOS_PROJECT=1; no project generation or dependency install is allowed." >&2; exit 2; fi
+  LINUX_IMAGE="sha256:87416c977a612a204eb54ab9f3927023c2a3c971f4f345a01da08ea6262ae30e"
+  API_ENTRY="apps/api/test-support/native-file-api.ts"
+  API_ORIGIN="https://127.0.0.1:$API_PORT"
+  API_DATABASE_PATH="/var/lib/remotecode/remotecode-native.sqlite"
+  TEST_SELECTION="RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testInstalledAppListsOpensSavesLinuxWorkspaceFileAndRejectsStaleClient"
+  ONLY_TEST_ARGS=("-only-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testInstalledAppRetainsUnknownCommittedSaveAndRecoversByReceiptWithoutReplay" "-only-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testInstalledAppUsesAuthenticatedSnapshotEventsAndReceipts")
+  xcrun simctl list devices booted --json | python3 -c 'import json,sys; data=json.load(sys.stdin); devices={x["udid"]:{"runtime":r,"name":x["name"],"deviceTypeIdentifier":x["deviceTypeIdentifier"],"state":x["state"],"dataPath":x["dataPath"],"lastBootedAt":x.get("lastBootedAt")} for r,v in data["devices"].items() for x in v if x["state"]=="Booted"}; print(json.dumps(devices,sort_keys=True))' > "$WORK_DIR/preexisting-booted-devices.json"
+  simulator_name="RC029-native-files-$$-$RANDOM"
+  OWNED_DEVICE_ID="$(xcrun simctl create "$simulator_name" com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro com.apple.CoreSimulator.SimRuntime.iOS-18-5)"
+  OWNED_DEVICE_NAME="$simulator_name"
+  DEVICE_ID="$OWNED_DEVICE_ID"
+  python3 - "$WORK_DIR/simulator.json" "$simulator_name" "$OWNED_DEVICE_ID" <<'PY'
+import json,sys
+with open(sys.argv[1],"x") as file: json.dump({"name":sys.argv[2],"udid":sys.argv[3],"deviceType":"com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro","runtime":"com.apple.CoreSimulator.SimRuntime.iOS-18-5"},file,indent=2)
+PY
+  DERIVED_DATA_PATH=""
+  DERIVED_ARGS=()
+fi
+
 if [[ -z "$DEVICE_ID" ]]; then
   DEVICE_ID="$(xcrun simctl list devices booted --json | python3 -c 'import json,sys; d=json.load(sys.stdin)["devices"]; print(next((x["udid"] for k,v in d.items() if "iOS" in k for x in v if x["state"] == "Booted"), ""))')"
 fi
@@ -287,29 +336,79 @@ if [[ -e "$DATABASE_PATH" || -e "$WORK_DIR/NativeTests.xcresult" ]]; then
   exit 2
 fi
 cd "$ROOT_DIR"
-API_PORT="$API_PORT" \
-  DATABASE_PATH="$DATABASE_PATH" \
-  RC_NATIVE_TEST_STORAGE_DEVICE_ID="$OWNED_DEVICE_ID" \
-  RC_NATIVE_TEST_STORAGE_DEVICE_NAME="$OWNED_DEVICE_NAME" \
-  RC_NATIVE_TEST_WORK_DIR="$WORK_DIR" \
-  REMOTECODE_AUTH_PASSWORD="$API_PASSWORD" \
-  REMOTECODE_WEB_ORIGIN="http://localhost:5173" \
-  bun run "$API_ENTRY" > "$WORK_DIR/api.log" 2>&1 &
-API_PID=$!
+if [[ "${RC_NATIVE_TEST_FILES:-0}" == "1" ]]; then
+  TLS_CERT="$WORK_DIR/native-proof-ca.pem"
+  TLS_KEY="$WORK_DIR/native-proof-key.pem"
+  openssl req -x509 -newkey rsa:2048 -nodes -sha256 -days 1 -keyout "$TLS_KEY" -out "$TLS_CERT" \
+    -subj "/CN=RemoteCode native proof CA" -addext "basicConstraints=critical,CA:TRUE" \
+    -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" >/dev/null 2>&1
+  chmod 600 "$TLS_CERT" "$TLS_KEY"
+  xcrun simctl boot "$OWNED_DEVICE_ID"
+  xcrun simctl bootstatus "$OWNED_DEVICE_ID" -b
+  xcrun simctl keychain "$OWNED_DEVICE_ID" add-root-cert "$TLS_CERT"
+  API_TLS_CERT="/proof/native-proof-ca.pem"
+  API_TLS_KEY="/proof/native-proof-key.pem"
+fi
+API_WEB_ORIGIN="http://localhost:5173"
+CLIENT_ORIGIN="http://localhost:5173"
+CURL_TLS_ARGS=()
+if [[ "${RC_NATIVE_TEST_FILES:-0}" == "1" ]]; then
+  API_WEB_ORIGIN="https://localhost"
+  CLIENT_ORIGIN="https://localhost"
+  CURL_TLS_ARGS=(--cacert "$TLS_CERT")
+fi
+if [[ "${RC_NATIVE_TEST_FILES:-0}" == "1" ]]; then
+  IMAGE_META="$(docker image inspect --format '{{.Id}} {{.Architecture}} {{.Os}}' "$LINUX_IMAGE")"
+  [[ "$IMAGE_META" == "$LINUX_IMAGE arm64 linux" ]] || { echo "Approved image identity/platform mismatch." >&2; exit 2; }
+  DEPENDENCY_PROJECT_ROOT="$(python3 - "$ROOT_DIR/node_modules" <<'PYDEPS'
+import os,sys
+print(os.path.dirname(os.path.realpath(sys.argv[1])))
+PYDEPS
+)"
+  DEPENDENCY_MOUNT=()
+  if [[ "$DEPENDENCY_PROJECT_ROOT" != "$ROOT_DIR" ]]; then
+    DEPENDENCY_MOUNT=(--mount "type=bind,src=$DEPENDENCY_PROJECT_ROOT,dst=$DEPENDENCY_PROJECT_ROOT,readonly")
+  fi
+  DOCKER_NAME="rc029-native-files-$$-$RANDOM"
+  DOCKER_ID="$(docker create --platform linux/arm64 --pull never --read-only --entrypoint bun --workdir /workspace --name "$DOCKER_NAME" --label "remotecode.rc029.native=$OWNED_DEVICE_ID" -p "127.0.0.1:$API_PORT:$API_PORT" \
+    --mount "type=bind,src=$ROOT_DIR,dst=/workspace,readonly" \
+    ${DEPENDENCY_MOUNT[@]+"${DEPENDENCY_MOUNT[@]}"} \
+    --mount "type=bind,src=$WORK_DIR,dst=/proof,readonly" \
+    --tmpfs /var/lib/remotecode:rw,nosuid,nodev,size=64m,mode=700 \
+    --tmpfs /tmp:rw,nosuid,nodev,size=64m \
+    -e API_PORT="$API_PORT" -e DATABASE_PATH="$API_DATABASE_PATH" \
+    -e RC_NATIVE_TEST_TLS_CERT="$API_TLS_CERT" -e RC_NATIVE_TEST_TLS_KEY="$API_TLS_KEY" \
+    -e REMOTECODE_AUTH_PASSWORD="$API_PASSWORD" -e REMOTECODE_WEB_ORIGIN="$API_WEB_ORIGIN" \
+    "$LINUX_IMAGE" run /workspace/apps/api/test-support/native-file-api.ts)"
+  printf '{"containerId":"%s","name":"%s","ownedDeviceId":"%s","image":"%s"}\n' "$DOCKER_ID" "$DOCKER_NAME" "$OWNED_DEVICE_ID" "$LINUX_IMAGE" > "$WORK_DIR/linux-container.json"
+  docker start "$DOCKER_ID" >/dev/null
+else
+  API_PORT="$API_PORT" \
+    DATABASE_PATH="$DATABASE_PATH" \
+    RC_NATIVE_TEST_STORAGE_DEVICE_ID="$OWNED_DEVICE_ID" \
+    RC_NATIVE_TEST_STORAGE_DEVICE_NAME="$OWNED_DEVICE_NAME" \
+    RC_NATIVE_TEST_WORK_DIR="$WORK_DIR" \
+    REMOTECODE_AUTH_PASSWORD="$API_PASSWORD" \
+    REMOTECODE_WEB_ORIGIN="$API_WEB_ORIGIN" \
+    bun run "$API_ENTRY" > "$WORK_DIR/api.log" 2>&1 &
+  API_PID=$!
+fi
 
 ready=false
 for _ in $(seq 1 30); do
-  if curl --silent --fail "$API_ORIGIN/api/health/ready" >/dev/null; then
+  if curl --silent --fail "${CURL_TLS_ARGS[@]}" "$API_ORIGIN/api/health/ready" >/dev/null; then
     ready=true
     break
   fi
-  if ! kill -0 "$API_PID" 2>/dev/null; then
+  if [[ -n "$DOCKER_ID" ]]; then
+    if ! docker ps --no-trunc --format '{{.ID}}' | grep -Fqx "$DOCKER_ID"; then break; fi
+  elif ! kill -0 "$API_PID" 2>/dev/null; then
     break
   fi
   sleep 1
 done
 if [[ "$ready" != true ]]; then
-  cat "$WORK_DIR/api.log" >&2
+  if [[ -n "$DOCKER_ID" ]]; then docker logs "$DOCKER_ID" >&2 || true; else cat "$WORK_DIR/api.log" >&2; fi
   echo "The isolated API did not become ready." >&2
   exit 1
 fi
@@ -351,12 +450,12 @@ print("Generated scheme includes one UI-test target and retains the app Archive 
 PY
 
 if ! EXPO_PUBLIC_API_ORIGIN="$API_ORIGIN" \
-  EXPO_PUBLIC_CLIENT_ORIGIN="http://localhost:5173" \
+  EXPO_PUBLIC_CLIENT_ORIGIN="$CLIENT_ORIGIN" \
   xcodebuild \
     -workspace "$ROOT_DIR/apps/mobile/ios/RemoteCodeMobileProof.xcworkspace" \
     -scheme RemoteCodeMobileProof \
     -destination "platform=iOS Simulator,id=$DEVICE_ID" \
-    -derivedDataPath "$DERIVED_DATA_PATH" \
+    ${DERIVED_ARGS[@]+"${DERIVED_ARGS[@]}"} \
     RC_NATIVE_TEST_API_ORIGIN="$API_ORIGIN" \
     -only-testing:"$TEST_SELECTION" \
     ${SKIP_TEST_ARG:+"$SKIP_TEST_ARG"} \
@@ -366,6 +465,32 @@ if ! EXPO_PUBLIC_API_ORIGIN="$API_ORIGIN" \
     test > "$WORK_DIR/xcodebuild-test.log" 2>&1; then
   tail -100 "$WORK_DIR/xcodebuild-test.log" >&2
   exit 1
+fi
+
+if [[ "${RC_NATIVE_TEST_FILES:-0}" == "1" ]]; then
+  if [[ ! -d "$WORK_DIR/NativeTests.xcresult" ]]; then echo "Installed native tests produced no XCResult; proof unverified." >&2; exit 1; fi
+  xcrun xcresulttool get test-results summary --path "$WORK_DIR/NativeTests.xcresult" > "$WORK_DIR/xcresult-summary.json"
+  docker exec "$DOCKER_ID" bun -e 'import{Database}from"bun:sqlite";import{readFileSync}from"node:fs";import{createHash}from"node:crypto";const d=new Database(process.env.DATABASE_PATH,{readonly:true,create:false});const outcomes=d.query("SELECT request_id,kind,workspace_id,result_path,result_sha256 FROM file_operation_outcomes ORDER BY completed_at").all();const files=outcomes.filter(r=>r.kind==="save").map(r=>{const b=readFileSync("/var/lib/remotecode/workspaces/"+r.workspace_id+"/"+r.result_path);return{requestId:r.request_id,workspaceId:r.workspace_id,path:r.result_path,base64:b.toString("base64"),sha256:createHash("sha256").update(b).digest("hex")}});console.log(JSON.stringify({outcomes,files,intents:d.query("select request_id,state from file_operation_intents").all(),workspaces:d.query("select id,name from workspaces").all(),actions:d.query("select id,action from actions").all(),sessions:d.query("select count(*) n from sessions").get().n,quickCheck:d.query("pragma quick_check").all()}));d.close()' > "$WORK_DIR/linux-state.json"
+  python3 - "$WORK_DIR/linux-state.json" "$WORK_DIR/xcresult-summary.json" <<'PYFILE'
+import base64,json,sys
+j=json.load(open(sys.argv[1]))
+report=json.load(open(sys.argv[2]))
+assert report["result"]=="Passed" and report["passedTests"]==3 and report["failedTests"]==0 and report["skippedTests"]==0
+assert j["sessions"]==0 and len(j["actions"])==2
+assert sum(r["action"].startswith("native-event-") for r in j["actions"])==1
+assert sum(r["action"].startswith("native-submit-") for r in j["actions"])==1
+assert len(j["workspaces"])==2 and len(j["outcomes"])==4 and len(j["intents"])==4
+assert sum(r["kind"]=="create" for r in j["outcomes"])==2 and sum(r["kind"]=="save" for r in j["outcomes"])==2
+assert all(r["state"]=="completed" for r in j["intents"]) and j["quickCheck"]==[{"quick_check":"ok"}]
+expected={"native-proof.txt":b"saved by the installed native client","native-loss.txt":b"committed save after response loss"}
+assert len(j["files"])==2 and {r["path"] for r in j["files"]}==set(expected)
+for f in j["files"]:
+    assert base64.b64decode(f["base64"])==expected[f["path"]]
+    assert any(r["request_id"]==f["requestId"] and r["workspace_id"]==f["workspaceId"] and r["result_path"]==f["path"] and r["result_sha256"]==f["sha256"] for r in j["outcomes"])
+print("Actual Linux SQLite and disk bytes verified for both installed-native SAVE cases")
+PYFILE
+  echo "Native file proof passed; exact Linux state: $WORK_DIR/linux-state.json"
+  exit 0
 fi
 
 python3 - "$DATABASE_PATH" "${RC_NATIVE_TEST_RECOVERY:-0}" "${RC_NATIVE_TEST_HEALTH:-0}" "${RC_NATIVE_TEST_AUTO_ACTION:-0}" "${RC_NATIVE_TEST_DEADLINE:-0}" "${RC_NATIVE_TEST_POST_DELAY:-0}" "${RC_NATIVE_TEST_LOGIN_DEADLINE:-0}" "${RC_NATIVE_TEST_LOGIN_PREFLIGHT_DEADLINE:-0}" "${RC_NATIVE_TEST_WORKSPACES:-0}" "${RC_NATIVE_TEST_PRIVACY_EXPIRY:-0}" "${RC_NATIVE_TEST_PRIVACY_BUSY:-0}" "${RC_NATIVE_TEST_STORAGE_FAILURE:-0}" "${RC_NATIVE_TEST_STORAGE_SCENARIO:-}" <<'PY'

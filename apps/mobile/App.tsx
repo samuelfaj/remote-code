@@ -833,7 +833,7 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <SafeAreaView style={styles.safeArea}>
-        <ScrollView contentContainerStyle={styles.page}>
+        <ScrollView automaticallyAdjustKeyboardInsets contentContainerStyle={styles.page}>
           <Text accessibilityRole="header" style={styles.title}>RemoteCode mobile</Text>
           <Text style={styles.endpoint}>Host: {apiOrigin}</Text>
           <HostReadiness />

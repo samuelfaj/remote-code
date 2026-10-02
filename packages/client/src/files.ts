@@ -78,3 +78,63 @@ export function fileReceiptFromValue(value: unknown, pending: PendingFile, expec
   const receipt = { requestId: identity.requestId, workspaceId: identity.workspaceId, path: row.path, version: row.version, createdAt };
   return identity.kind === "move" ? { ...receipt, kind: "move", sourcePath: identity.sourcePath } : { ...receipt, kind: identity.kind };
 }
+
+
+export type FileEntry = { name: string; type: "file" | "directory"; size: number };
+export type FileContent = { path: string; content: string; version: string };
+export type FileFolderState = "provisioned" | "not_provisioned" | "unknown";
+
+export function validFilePath(value: unknown, root = false): value is string {
+  return root && value === "" || filePath(value);
+}
+
+export function validFileText(value: string) {
+  if (value.includes("\0")) return false;
+  const bytes = new TextEncoder().encode(value);
+  return bytes.length <= 1024 * 1024 && new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes) === value;
+}
+
+function fileRow(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+export function fileFolderStateFromValue(value: unknown, workspaceId: string): FileFolderState | null {
+  const data = fileRow(value);
+  if (!data || data.workspaceId !== workspaceId) return null;
+  const keys = Object.keys(data).sort().join(",");
+  if (data.state === "not_provisioned" && keys === "state,workspaceId") return data.state;
+  if ((data.state === "provisioned" || data.state === "unknown") && keys === "requestId,state,workspaceId" && typeof data.requestId === "string" && uuid.test(data.requestId)) return data.state;
+  return null;
+}
+
+export function fileDirectoryFromValue(value: unknown, path: string): FileEntry[] | null {
+  const data = fileRow(value);
+  if (!data || Object.keys(data).sort().join(",") !== "entries,path" || data.path !== path || !validFilePath(path, true) || !Array.isArray(data.entries) || data.entries.length > 1000) return null;
+  const entries: FileEntry[] = [];
+  const names = new Set<string>();
+  for (const item of data.entries) {
+    const entry = fileRow(item);
+    if (!entry || Object.keys(entry).sort().join(",") !== "name,size,type" || !validFilePath(entry.name) || entry.name.includes("/") || names.has(entry.name) ||
+      (entry.type !== "file" && entry.type !== "directory") || typeof entry.size !== "number" || !Number.isSafeInteger(entry.size) || entry.size < 0 ||
+      (entry.type === "directory" && entry.size !== 0) || !validFilePath(path ? `${path}/${entry.name}` : entry.name)) return null;
+    names.add(entry.name);
+    entries.push({ name: entry.name, type: entry.type, size: entry.size });
+  }
+  return entries;
+}
+
+export function fileContentFromValue(value: unknown, path: string): FileContent | null {
+  const data = fileRow(value);
+  if (!data || Object.keys(data).sort().join(",") !== "content,path,version" || data.path !== path || !validFilePath(path) ||
+    typeof data.content !== "string" || !validFileText(data.content) || typeof data.version !== "string" || !sha256.test(data.version)) return null;
+  return { path, content: data.content, version: data.version };
+}
+
+
+export function fileVersionConflict(error: unknown) {
+  const data = fileRow(error);
+  const value = fileRow(data?.value);
+  if (data?.status !== 409 || value?.error !== "version_conflict") return false;
+  const keys = Object.keys(value).sort().join(",");
+  return keys === "error" || keys === "currentVersion,error" && typeof value.currentVersion === "string" && sha256.test(value.currentVersion);
+}

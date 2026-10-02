@@ -1,9 +1,6 @@
-import { pendingFileFromValue, pendingFileValueMatches, type PendingFile } from "@remotecode/client";
+import { pendingFileFromValue, pendingFileValueMatches, fileContentFromValue, validFileText, type PendingFile } from "@remotecode/client";
 
-const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-const sha256 = /^[0-9a-f]{64}$/;
-export type FolderState = "provisioned" | "not_provisioned" | "unknown";
-export type FileEntry = { name: string; type: "file" | "directory"; size: number };
+export type { FileFolderState as FolderState, FileEntry } from "@remotecode/client";
 export type OpenFile = { workspaceId: string; path: string; content: string; version: string };
 
 function row(value: unknown): Record<string, unknown> | null {
@@ -11,60 +8,18 @@ function row(value: unknown): Record<string, unknown> | null {
     ? value as Record<string, unknown> : null;
 }
 
-export function validText(value: string) {
-  const bytes = new TextEncoder().encode(value);
-  return !value.includes("\0") && bytes.length <= 1024 * 1024 &&
-    new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes) === value;
-}
-
-export function validPath(path: unknown, root = false): path is string {
-  return typeof path === "string" && (root && path === "" ||
-    path.length > 0 && path.length <= 4096 && validText(path) &&
-    path.split("/").every((part) => part && part !== "." && part !== ".." &&
-      part !== ".remotecode-workspace" && !part.startsWith(".remotecode-stage-")));
-}
-
-export function folderStateFromValue(value: unknown, workspaceId: string): FolderState | null {
-  const data = row(value);
-  if (!data || data.workspaceId !== workspaceId) return null;
-  const keys = Object.keys(data).sort().join(",");
-  if (data.state === "not_provisioned" && keys === "state,workspaceId") return data.state;
-  if ((data.state === "provisioned" || data.state === "unknown") &&
-    keys === "requestId,state,workspaceId" && typeof data.requestId === "string" && uuid.test(data.requestId)) return data.state;
-  return null;
-}
-
-export function directoryFromValue(value: unknown, path: string): FileEntry[] | null {
-  const data = row(value);
-  if (!data || Object.keys(data).sort().join(",") !== "entries,path" || data.path !== path ||
-    !validPath(path, true) || !Array.isArray(data.entries) || data.entries.length > 1000) return null;
-  const entries: FileEntry[] = [];
-  const names = new Set<string>();
-  for (const item of data.entries) {
-    const entry = row(item);
-    if (!entry || Object.keys(entry).sort().join(",") !== "name,size,type" || !validPath(entry.name) ||
-      entry.name.includes("/") || names.has(entry.name) ||
-      (entry.type !== "file" && entry.type !== "directory") ||
-      typeof entry.size !== "number" || !Number.isSafeInteger(entry.size) || entry.size < 0 ||
-      (entry.type === "directory" && entry.size !== 0) || !validPath(path ? `${path}/${entry.name}` : entry.name)) return null;
-    names.add(entry.name);
-    entries.push({ name: entry.name, type: entry.type, size: entry.size });
-  }
-  return entries;
-}
+export { validFilePath as validPath, validFileText as validText, fileFolderStateFromValue as folderStateFromValue, fileDirectoryFromValue as directoryFromValue } from "@remotecode/client";
 
 export async function textSha256(content: string) {
-  if (!validText(content)) throw new Error("Unsupported text or file too large");
+  if (!validFileText(content)) throw new Error("Unsupported text or file too large");
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(content));
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 export async function openFileFromValue(value: unknown, workspaceId: string, path: string): Promise<OpenFile | null> {
-  const data = row(value);
-  if (!data || Object.keys(data).sort().join(",") !== "content,path,version" || data.path !== path ||
-    !validPath(path) || typeof data.content !== "string" || !validText(data.content) ||
-    typeof data.version !== "string" || !sha256.test(data.version) || await textSha256(data.content) !== data.version) return null;
-  return { workspaceId, path, content: data.content, version: data.version };
+  const data = fileContentFromValue(value, path);
+  if (!data || await textSha256(data.content) !== data.version) return null;
+  return { workspaceId, ...data };
 }
 
 export function fileStorageKey(origin: string, userId: string) {
@@ -106,11 +61,4 @@ export function isMissingFilePath(error: unknown, kind: "create" | "move") {
   return data?.status === 404 && typeof value?.error === "string" && codes.includes(value.error) && Object.keys(value).join(",") === "error";
 }
 
-export function isVersionConflict(error: unknown) {
-  const data = row(error);
-  const value = row(data?.value);
-  if (data?.status !== 409 || value?.error !== "version_conflict") return false;
-  const keys = Object.keys(value).sort().join(",");
-  return keys === "error" || keys === "currentVersion,error" &&
-    typeof value.currentVersion === "string" && sha256.test(value.currentVersion);
-}
+export { fileVersionConflict as isVersionConflict } from "@remotecode/client";
