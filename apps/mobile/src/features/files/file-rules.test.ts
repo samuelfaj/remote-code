@@ -1,6 +1,6 @@
 import { expect, it } from "bun:test";
 import type { PendingFile } from "@remotecode/client";
-import { beforeFileDeadline, clearStoredFile, directoryFromValue, fileStorageKey, folderStateFromValue, persistStoredFile, readPendingFile, validPath, validText, type FileStorage } from "./file-rules";
+import { beforeFileDeadline, clearStoredFile, directoryFromValue, fileStorageKey, folderStateFromValue, nextFileInputScope, persistStoredFile, readPendingFile, validPath, validText, type FileStorage } from "./file-rules";
 
 const workspaceId = "123e4567-e89b-42d3-a456-426614174001";
 const requestId = "123e4567-e89b-42d3-a456-426614174002";
@@ -15,6 +15,22 @@ function storage() {
   };
   return { values, result };
 }
+
+it("keeps callbacks from an earlier A visit fenced after A-B-A without invalidating same-scope typing", () => {
+  let current = nextFileInputScope(null, "https://host", "owner", "A");
+  const captured = current;
+  let input = "first visit";
+  const oldCallback = (value: string) => { if (current === captured) input = value; };
+  expect(nextFileInputScope(current, "https://host", "owner", "A")).toBe(current);
+  current = nextFileInputScope(current, "https://host", "owner", "B");
+  current = nextFileInputScope(current, "https://host", "owner", "A");
+  expect(current).not.toBe(captured);
+  input = "new visit";
+  oldCallback("stale text");
+  expect(input).toBe("new visit");
+  expect(nextFileInputScope(current, "https://other-host", "owner", "A")).not.toBe(current);
+  expect(nextFileInputScope(current, "https://host", "other-owner", "A")).not.toBe(current);
+});
 
 it("enforces encoded UTF-8 size and exact scalar/BOM preservation before native SAVE", () => {
   expect(validText("é".repeat(524_288))).toBe(true);
@@ -35,6 +51,21 @@ it("binds provisioned folder and nested listing to requested workspace/path with
   expect(directoryFromValue({ path: "nested", entries }, "nested")).toEqual(entries);
   expect(directoryFromValue({ path: "", entries }, "nested")).toBeNull();
   expect(directoryFromValue({ path: "nested", entries: [entries[0], entries[0]] }, "nested")).toBeNull();
+});
+
+it("persists content-free CREATE/MOVE identities without draft bytes or substituting MOVE baseline", async () => {
+  const { values, result } = storage();
+  const create: PendingFile = { kind: "create", workspaceId, requestId, path: "new.txt", resultSha256: "cd".repeat(32) };
+  expect(await persistStoredFile(result, key, create, () => true)).toBe("saved");
+  expect(readPendingFile(values.get(key)!)).toEqual(create);
+  expect(values.get(key)).not.toContain("content");
+  expect(await clearStoredFile(result, key, create, () => true)).toBe(true);
+  const move: PendingFile = { kind: "move", workspaceId, requestId, sourcePath: "nested/file.txt", destinationPath: "moved.txt", expectedVersion: "ab".repeat(32) };
+  expect(await persistStoredFile(result, key, move, () => true)).toBe("saved");
+  expect(readPendingFile(values.get(key)!)).toEqual(move);
+  expect(Object.keys(JSON.parse(values.get(key)!)).sort()).toEqual(["destinationPath", "expectedVersion", "kind", "requestId", "sourcePath", "workspaceId"]);
+  expect(await clearStoredFile(result, key, { ...move, expectedVersion: "ef".repeat(32) }, () => true)).toBe(false);
+  expect(readPendingFile(values.get(key)!)).toEqual(move);
 });
 
 it("persists only a content-free matching identity and refuses a replacement before clearing", async () => {

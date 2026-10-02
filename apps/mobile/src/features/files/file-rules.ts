@@ -8,6 +8,12 @@ export type FileStorage = {
   removeItem(key: string): Promise<void>;
 };
 
+export type FileInputScope = { origin: string; userId: string; workspaceId: string | null };
+export function nextFileInputScope(previous: FileInputScope | null, origin: string, userId: string, workspaceId: string | null): FileInputScope {
+  return previous?.origin === origin && previous.userId === userId && previous.workspaceId === workspaceId
+    ? previous : { origin, userId, workspaceId };
+}
+
 export function fileStorageKey(origin: string, userId: string) { return `remotecode.pending-file:${JSON.stringify([origin, userId])}`; }
 export function readPendingFile(raw: string | null): PendingFile | null {
   if (raw === null) return null;
@@ -16,7 +22,7 @@ export function readPendingFile(raw: string | null): PendingFile | null {
   return parsed;
 }
 
-export { fileVersionConflict as isVersionConflict } from "@remotecode/client";
+export { fileVersionConflict as isVersionConflict, fileTargetExists as isTargetExists, fileMissingPath as isMissingFilePath } from "@remotecode/client";
 
 export async function beforeFileDeadline<T>(work: Promise<T>, end: number) {
   const remaining = end - Date.now();

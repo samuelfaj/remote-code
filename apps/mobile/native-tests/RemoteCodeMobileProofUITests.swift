@@ -424,6 +424,165 @@ final class RemoteCodeMobileProofUITests: XCTestCase {
     }
 
     @MainActor
+    func testInstalledAppCreatesMovesAndRefusesOccupiedStaleAndDirtyFiles() async throws {
+        let app = XCUIApplication(bundleIdentifier: "com.remotecode.mobileproof")
+        let observer = URLSession(configuration: .ephemeral)
+        let (api, workspace) = try await fileWorkspace(app, observer: observer, prefix: "native-create-move-")
+        let source = "native-create.txt"
+        let original = "native created bytes"
+        try app.textFields["New file path"].clearAndTypeText(source, in: app)
+        try app.textViews["New file text"].clearAndTypeText(original, in: app)
+        try tapFileControl("Create file", in: app)
+        let status = app.staticTexts.matching(identifier: "file-status").firstMatch
+        guard status.waitForLabelContaining("CREATE receipt confirmed", timeout: 15) else { XCTFail("Native CREATE must confirm before any follow-up mutation"); return }
+        let created = try await observer.openFile(at: api, workspaceId: workspace.id, path: source)
+        XCTAssertEqual(created.content, original)
+        let createdVersion = try await observer.sha256(original)
+        XCTAssertEqual(created.version, createdVersion)
+        try await observer.createFile(at: api, workspaceId: workspace.id, path: "native-occupied.txt", content: "keep occupied target")
+        try openNativeFile(source, in: app)
+        try app.textFields["Move destination path"].clearAndTypeText("native-occupied.txt", in: app)
+        try tapFileControl("Move file", in: app)
+        guard status.waitForLabelContaining("target already exists", timeout: 15) else { XCTFail("Occupied destination must refuse MOVE"); return }
+        XCTAssertFalse(app.buttons["Check file receipt"].exists)
+        let occupied = try await observer.openFile(at: api, workspaceId: workspace.id, path: "native-occupied.txt")
+        XCTAssertEqual(occupied.content, "keep occupied target")
+        try tapFileControl("Read current file", in: app)
+        guard status.waitForLabelContaining("Current host text read", timeout: 15) else { XCTFail("MOVE baseline must be explicitly read after refusal"); return }
+        let draft = app.textViews["File draft"]
+        try draft.clearAndTypeText("unsaved draft", in: app)
+        XCTAssertFalse(app.buttons["Move file"].isEnabled, "MOVE must never save or move an unsaved draft")
+        let untouched = try await observer.openFile(at: api, workspaceId: workspace.id, path: source)
+        XCTAssertEqual(untouched.content, original)
+        try draft.clearAndTypeText(original, in: app)
+        let changed = "changed by second client"
+        let external = try await observer.saveFileRaw(at: api, workspaceId: workspace.id, path: source, content: changed, expectedVersion: created.version, requestId: UUID().uuidString)
+        XCTAssertEqual(external.statusCode, 201)
+        try app.textFields["Move destination path"].clearAndTypeText("native-moved.txt", in: app)
+        try tapFileControl("Move file", in: app)
+        guard status.waitForLabelContaining("version conflict", timeout: 15) else { XCTFail("Native MOVE must show stale-version refusal"); return }
+        let afterConflict = try await observer.openFile(at: api, workspaceId: workspace.id, path: source)
+        XCTAssertEqual(afterConflict.content, changed)
+        try tapFileControl("Read current file", in: app)
+        guard status.waitForLabelContaining("Current host text read", timeout: 15) else { XCTFail("Conflict recovery requires an explicit current OPEN"); return }
+        try draft.clearAndTypeText(changed, in: app)
+        try tapFileControl("Move file", in: app)
+        guard status.waitForLabelContaining("MOVE receipt confirmed", timeout: 15) else { XCTFail("Native MOVE must confirm before readback"); return }
+        let old = try await observer.get(URL(string: "/api/workspaces/\(workspace.id)/files/content?path=\(source)", relativeTo: api)!)
+        XCTAssertEqual(old.statusCode, 404)
+        let moved = try await observer.openFile(at: api, workspaceId: workspace.id, path: "native-moved.txt")
+        XCTAssertEqual(moved.content, changed)
+        XCTAssertEqual(moved.version, afterConflict.version)
+        try openNativeFile("native-moved.txt", in: app)
+        XCTAssertEqual(draft.value as? String, changed)
+        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Native current file after confirmed MOVE"; shot.lifetime = .keepAlways; add(shot)
+        app.buttons["Sign out"].tap()
+        XCTAssertTrue(app.staticTexts.matching(identifier: "connection-status").firstMatch.waitForLabel("signed out", timeout: 10))
+    }
+
+    @MainActor
+    func testInstalledAppRecoversCommittedCreateAndMoveWithoutReplayingPost() async throws {
+        let app = XCUIApplication(bundleIdentifier: "com.remotecode.mobileproof")
+        let observer = URLSession(configuration: .ephemeral)
+        let (api, workspace) = try await fileWorkspace(app, observer: observer, prefix: "native-create-move-loss-")
+        let source = "native-create-loss.txt"
+        let text = "native CREATE after lost response"
+        try app.textFields["New file path"].clearAndTypeText(source, in: app)
+        try app.textViews["New file text"].clearAndTypeText(text, in: app)
+        try await observer.armFileSaveLoss(at: api, nonce: UUID().uuidString, workspaceId: workspace.id, path: source, kind: "create")
+        try tapFileControl("Create file", in: app)
+        let status = app.staticTexts.matching(identifier: "file-status").firstMatch
+        guard status.waitForLabelContaining("unknown", timeout: 15) else { XCTFail("Committed CREATE response loss must remain unknown"); return }
+        var diagnostics = try await observer.fileSaveLossDiagnostics(at: api)
+        XCTAssertTrue(diagnostics.held); XCTAssertEqual(diagnostics.kind, "create"); XCTAssertEqual(diagnostics.mutationPosts, 1)
+        let createId = try XCTUnwrap(diagnostics.requestId)
+        try await observer.releaseFileSaveLoss(at: api)
+        app.terminate(); app.launch(); signIn(app)
+        try selectFileWorkspace(workspace.name, in: app)
+        try tapFileControl("Check file receipt", in: app)
+        guard status.waitForLabelContaining("Historical file receipt confirmed", timeout: 15) else { XCTFail("Original CREATE identity must recover by GET"); return }
+        diagnostics = try await observer.fileSaveLossDiagnostics(at: api)
+        XCTAssertEqual(diagnostics.requestId, createId); XCTAssertEqual(diagnostics.mutationPosts, 1); XCTAssertGreaterThanOrEqual(diagnostics.receiptGets, 1)
+        try openNativeFile(source, in: app)
+        let draft = app.textViews["File draft"]
+        XCTAssertEqual(draft.value as? String, text)
+        try app.textFields["Move destination path"].clearAndTypeText("native-move-loss.txt", in: app)
+        try await observer.armFileSaveLoss(at: api, nonce: UUID().uuidString, workspaceId: workspace.id, path: "native-move-loss.txt", kind: "move", sourcePath: source)
+        try tapFileControl("Move file", in: app)
+        guard status.waitForLabelContaining("unknown", timeout: 15) else { XCTFail("Committed MOVE response loss must remain unknown"); return }
+        diagnostics = try await observer.fileSaveLossDiagnostics(at: api)
+        XCTAssertTrue(diagnostics.held); XCTAssertEqual(diagnostics.kind, "move"); XCTAssertEqual(diagnostics.mutationPosts, 1)
+        let moveId = try XCTUnwrap(diagnostics.requestId)
+        try await observer.releaseFileSaveLoss(at: api)
+        app.terminate(); app.launch(); signIn(app)
+        try selectFileWorkspace(workspace.name, in: app)
+        try tapFileControl("Check file receipt", in: app)
+        guard status.waitForLabelContaining("Historical file receipt confirmed", timeout: 15) else { XCTFail("Original MOVE identity must recover by GET"); return }
+        diagnostics = try await observer.fileSaveLossDiagnostics(at: api)
+        XCTAssertEqual(diagnostics.requestId, moveId); XCTAssertEqual(diagnostics.mutationPosts, 1); XCTAssertGreaterThanOrEqual(diagnostics.receiptGets, 1)
+        let moved = try await observer.openFile(at: api, workspaceId: workspace.id, path: "native-move-loss.txt")
+        XCTAssertEqual(moved.content, text)
+        let old = try await observer.get(URL(string: "/api/workspaces/\(workspace.id)/files/content?path=\(source)", relativeTo: api)!)
+        XCTAssertEqual(old.statusCode, 404)
+        try openNativeFile("native-move-loss.txt", in: app)
+        XCTAssertEqual(app.textViews["File draft"].value as? String, text)
+        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Native current file after receipt-only MOVE recovery"; shot.lifetime = .keepAlways; add(shot)
+        app.buttons["Sign out"].tap()
+        XCTAssertTrue(app.staticTexts.matching(identifier: "connection-status").firstMatch.waitForLabel("signed out", timeout: 10))
+    }
+
+    @MainActor
+    private func fileWorkspace(_ app: XCUIApplication, observer: URLSession, prefix: String) async throws -> (URL, WorkspaceMetadata) {
+        app.launch()
+        let host = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Host: ")).firstMatch
+        XCTAssertTrue(host.waitForExistence(timeout: 15))
+        let api = try XCTUnwrap(URL(string: String(host.label.dropFirst("Host: ".count))))
+        XCTAssertEqual(api.scheme, "https"); XCTAssertEqual(api.host, "127.0.0.1")
+        signIn(app); try await observer.signIn(at: api, password: password)
+        let name = prefix + UUID().uuidString
+        let input = app.textFields["Workspace name"]
+        input.tap(); for character in name { input.typeText(String(character)) }
+        app.staticTexts["Host connection"].firstMatch.tap()
+        app.buttons["Create workspace"].tap()
+        guard app.staticTexts["Workspace change confirmed."].waitForExistence(timeout: 15) else { throw NSError(domain: "NativeFileProof", code: 3) }
+        try selectFileWorkspace(name, in: app)
+        let rows = try await observer.workspaceList(at: api)
+        let workspace = try XCTUnwrap(rows.first { $0.name == name })
+        try await observer.provisionFolder(at: api, workspaceId: workspace.id)
+        try tapFileControl("Refresh files", in: app)
+        return (api, workspace)
+    }
+
+    @MainActor
+    private func selectFileWorkspace(_ name: String, in app: XCUIApplication) throws {
+        let open = app.buttons["Open workspace \(name)"]
+        guard open.waitForExistence(timeout: 10) else { throw NSError(domain: "NativeFileProof", code: 4) }
+        open.tap()
+        XCTAssertTrue(app.staticTexts["Selected: \(name)"].waitForExistence(timeout: 10))
+    }
+
+    @MainActor
+    private func tapFileControl(_ label: String, in app: XCUIApplication) throws {
+        if app.keyboards.firstMatch.exists { app.staticTexts["Files and editor"].firstMatch.tap() }
+        guard app.keyboards.firstMatch.waitForNonExistence(timeout: 5) else { throw NSError(domain: "NativeFileProof", code: 5) }
+        let control = app.buttons[label]
+        guard control.waitForExistence(timeout: 10) else { throw NSError(domain: "NativeFileProof", code: 6) }
+        for _ in 0..<8 where !control.isHittable {
+            let scroll = app.scrollViews.firstMatch
+            if control.frame.midY < scroll.frame.minY { scroll.swipeDown() } else { scroll.swipeUp() }
+        }
+        guard control.isEnabled && control.isHittable else { throw NSError(domain: "NativeFileProof", code: 7, userInfo: [NSLocalizedDescriptionKey: "Control not interactable: \(label)"]) }
+        control.tap()
+    }
+
+    @MainActor
+    private func openNativeFile(_ path: String, in app: XCUIApplication) throws {
+        try tapFileControl("Refresh files", in: app)
+        try tapFileControl("Open file \(path)", in: app)
+        XCTAssertTrue(app.textViews["File draft"].waitForExistence(timeout: 10))
+    }
+
+    @MainActor
     func testInstalledAppListsOpensSavesLinuxWorkspaceFileAndRejectsStaleClient() async throws {
         let app = XCUIApplication(bundleIdentifier: "com.remotecode.mobileproof")
         let observer = URLSession(configuration: .ephemeral)
@@ -1687,6 +1846,8 @@ private struct FileSaveError: Decodable {
 }
 
 private struct FileLossDiagnostics: Decodable {
+    let kind: String
+    let mutationPosts: Int
     let held: Bool
     let requestId: String?
     let savePosts: Int
@@ -1718,21 +1879,24 @@ private struct NativeFailureDiagnostics: Decodable {
 private extension XCUIElement {
     func clearAndTypeText(_ text: String, in app: XCUIApplication) throws {
         tap()
-        press(forDuration: 1.2)
-        if app.staticTexts["Type English and Portuguese"].waitForExistence(timeout: 2) {
-            app.buttons["Continue"].tap()
+        if (value as? String) != "" {
             press(forDuration: 1.2)
-        }
-        let selectAll = app.descendants(matching: .any).matching(identifier: "Select All").firstMatch
-        guard selectAll.waitForExistence(timeout: 5) else {
-            throw NSError(domain: "NativeFileProof", code: 1, userInfo: [NSLocalizedDescriptionKey: "The native text selection menu must offer Select All"])
-        }
-        selectAll.tap()
-        typeText(XCUIKeyboardKey.delete.rawValue)
-        guard (value as? String) == "" else {
-            throw NSError(domain: "NativeFileProof", code: 2, userInfo: [NSLocalizedDescriptionKey: "Text selection must clear the old draft before typing"])
+            if app.staticTexts["Type English and Portuguese"].waitForExistence(timeout: 2) {
+                app.buttons["Continue"].tap()
+                press(forDuration: 1.2)
+            }
+            let selectAll = app.descendants(matching: .any).matching(identifier: "Select All").firstMatch
+            guard selectAll.waitForExistence(timeout: 5) else {
+                throw NSError(domain: "NativeFileProof", code: 1, userInfo: [NSLocalizedDescriptionKey: "The native text selection menu must offer Select All"])
+            }
+            selectAll.tap()
+            typeText(XCUIKeyboardKey.delete.rawValue)
+            guard (value as? String) == "" else {
+                throw NSError(domain: "NativeFileProof", code: 2, userInfo: [NSLocalizedDescriptionKey: "Text selection must clear the old draft before typing"])
+            }
         }
         for character in text { typeText(String(character)) }
+        guard (value as? String) == text else { throw NSError(domain: "NativeFileProof", code: 8, userInfo: [NSLocalizedDescriptionKey: "Exact draft input was not preserved"]) }
     }
 
     func waitForLabelContaining(_ expected: String, timeout: TimeInterval) -> Bool {
@@ -1796,10 +1960,13 @@ private extension URLSession {
         return try JSONDecoder().decode(WorkspaceMetadata.self, from: data)
     }
 
-    func armFileSaveLoss(at baseURL: URL, nonce: String, workspaceId: String, path: String) async throws {
+    func armFileSaveLoss(at baseURL: URL, nonce: String, workspaceId: String, path: String, kind: String = "save", sourcePath: String? = nil) async throws {
         var request = URLRequest(url: URL(string: "/__test__/file-save-loss-arm", relativeTo: baseURL)!)
         request.httpMethod = "POST"; request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONSerialization.data(withJSONObject: ["nonce": nonce, "workspaceId": workspaceId, "path": path])
+        var body = ["nonce": nonce, "workspaceId": workspaceId, "path": path]
+        if kind != "save" { body["kind"] = kind }
+        if let sourcePath { body["sourcePath"] = sourcePath }
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
         let (_, response) = try await data(for: request)
         XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
     }

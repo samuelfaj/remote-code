@@ -1,9 +1,9 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { randomUUID } from "expo-crypto";
 import { createApiClient, fileReceiptFromValue, pendingFileValueMatches, workspaceErrorStatus, workspaceFromValue, type PendingFile, type Workspace } from "@remotecode/client";
-import { beforeFileDeadline, clearStoredFile, directoryFromValue, fileStorageKey, folderStateFromValue, isVersionConflict, openFileFromValue, persistStoredFile, readPendingFile, textSha256, validText, type FileEntry, type OpenFile } from "./file-editor";
+import { beforeFileDeadline, clearStoredFile, directoryFromValue, fileStorageKey, folderStateFromValue, isMissingFilePath, isTargetExists, isVersionConflict, nextFileInputScope, openFileFromValue, persistStoredFile, readPendingFile, textSha256, validPath, validText, type FileEntry, type FileInputScope, type OpenFile } from "./file-editor";
 
 const deadlineMs = 10_000;
 let storageQueue = Promise.resolve();
@@ -20,6 +20,12 @@ export function FilePanel({ origin, userId, workspace, blocked, onUnauthorized }
   const key = fileStorageKey(origin, userId);
   const live = useRef({ origin, userId, workspace, blocked });
   live.current = { origin, userId, workspace, blocked };
+  const inputScopeRef = useRef<FileInputScope | null>(null);
+  const inputScope = useMemo(() => nextFileInputScope(inputScopeRef.current, origin, userId, workspace?.id ?? null), [origin, userId, workspace?.id]);
+  useLayoutEffect(() => {
+    inputScopeRef.current = inputScope;
+    return () => { inputScopeRef.current = null; };
+  }, [inputScope]);
   const active = useRef(false);
   const epoch = useRef(0);
   const storageEpoch = useRef(0);
@@ -32,6 +38,9 @@ export function FilePanel({ origin, userId, workspace, blocked, onUnauthorized }
   const [inspection, setInspection] = useState<Inspection | null>(null);
   const [listing, setListing] = useState<{ workspaceId: string; path: string; entries: FileEntry[] } | null>(null);
   const [editor, setEditor] = useState<Editor | null>(null);
+  const [createPath, setCreatePath] = useState("");
+  const [createText, setCreateText] = useState("");
+  const [moveDestination, setMoveDestination] = useState("");
   const [message, setMessage] = useState("");
   editorRef.current = editor;
   const currentEditor = editor?.host.workspaceId === workspace?.id ? editor : null;
@@ -99,7 +108,7 @@ export function FilePanel({ origin, userId, workspace, blocked, onUnauthorized }
       Alert.alert("Discard unsaved draft?", "Opening another file replaces this in-memory draft.", [
         { text: "Cancel", style: "cancel" },
         { text: "Discard and open", style: "destructive", onPress: () => {
-          if (live.current.workspace?.id !== workspace.id || live.current.userId !== userId || live.current.origin !== origin || editorRef.current?.host !== old.host || pendingRef.current) return;
+          if (!active.current || inputScopeRef.current !== inputScope || live.current.workspace?.id !== workspace.id || live.current.userId !== userId || live.current.origin !== origin || editorRef.current?.host !== old.host || pendingRef.current) return;
           editorRef.current = { ...old, draft: old.host.content };
           setEditor(editorRef.current);
           void read(path, true);
@@ -152,29 +161,44 @@ export function FilePanel({ origin, userId, workspace, blocked, onUnauthorized }
     const task = queued(() => clearStoredFile(AsyncStorage, key, operation, () => true, true));
     void task.then(cleared => {
       if (!active.current || storageEpoch.current !== storeGeneration || live.current.origin !== origin || live.current.userId !== userId || !pendingFileValueMatches(JSON.stringify(pendingRef.current), operation)) return;
-      if (cleared) { updatePending(null); setStorageReady(true); setMessage("No SAVE was sent. Unsent identity cleanup confirmed."); }
-      else { setStorageReady(false); setMessage("No SAVE was sent. Identity cleanup is unverified; writes disabled."); }
+      if (cleared) { updatePending(null); setStorageReady(true); setMessage("No file mutation was sent. Unsent identity cleanup confirmed."); }
+      else { setStorageReady(false); setMessage("No file mutation was sent. Identity cleanup is unverified; writes disabled."); }
     }).catch(() => {
       if (active.current && storageEpoch.current === storeGeneration) setStorageReady(false);
     });
   }
-  async function save() {
+  async function mutate(kind: PendingFile["kind"]) {
     const value = editorRef.current;
-    if (!workspace || !value || value.host.workspaceId !== workspace.id || working.current || blocked || workspace.archived ||
-      !storageReady || pendingRef.current || value.needsRead || value.draft === value.host.content || !validText(value.draft) || !inspected?.provisioned || inspected.archived) return;
+    const snapshotText = kind === "create" ? createText : value?.draft;
+    const snapshotPath = createPath;
+    const snapshotDestination = moveDestination;
+    if (!workspace || working.current || blocked || workspace.archived || !storageReady || pendingRef.current ||
+      !inspected?.provisioned || inspected.archived) return;
+    if (kind === "create") {
+      if (!validPath(snapshotPath) || !validText(snapshotText ?? "")) return;
+    } else if (!value || value.host.workspaceId !== workspace.id || value.needsRead || !validText(snapshotText ?? "")) return;
+    if (kind === "save" && (!value || snapshotText === value.host.content)) return;
+    if (kind === "move" && (!value || snapshotText !== value.host.content || !validPath(snapshotDestination) || snapshotDestination === value.host.path)) return;
+    const content = snapshotText ?? "";
     const current = begin();
     const end = Date.now() + deadlineMs;
     const storeGeneration = storageEpoch.current;
-    working.current = true; setBusy(true); setMessage("Checking SAVE authority…");
+    working.current = true; setBusy(true); setMessage(`Checking ${kind.toUpperCase()} authority…`);
     let operation: PendingFile | null = null;
     let sent = false;
     try {
       const state = await inspect(end, current);
       if (!current() || !state?.provisioned || state.archived) return;
-      const resultSha256 = await textSha256(value.draft);
-      if (!current()) return;
-      if (Date.now() >= end) throw new Error("File deadline expired");
-      operation = { kind: "save", requestId: randomUUID(), workspaceId: workspace.id, path: value.host.path, resultSha256 };
+      if (kind === "move" && (editorRef.current?.host !== value!.host || editorRef.current.needsRead || editorRef.current.draft !== editorRef.current.host.content)) {
+        setMessage("MOVE requires the same current verified OPEN. No MOVE request was sent; draft kept.");
+        return;
+      }
+      if (!current() || Date.now() >= end) throw new Error("File deadline expired");
+      const requestId = randomUUID();
+      operation = kind === "move"
+        ? { kind, requestId, workspaceId: workspace.id, sourcePath: value!.host.path, destinationPath: snapshotDestination, expectedVersion: value!.host.version }
+        : { kind, requestId, workspaceId: workspace.id, path: kind === "create" ? snapshotPath : value!.host.path, resultSha256: await textSha256(content) };
+      if (!current() || Date.now() >= end) throw new Error("File deadline expired");
       updatePending(operation); setStorageReady(false);
       const identity = operation;
       const allowed = () => current() && Date.now() < end;
@@ -182,26 +206,40 @@ export function FilePanel({ origin, userId, workspace, blocked, onUnauthorized }
       if (persisted.expired || !current() || Date.now() >= end) { cleanupUnsent(identity, storeGeneration); return; }
       if (persisted.value !== "saved") {
         if (persisted.value === "cleaned" || persisted.value === "not_written") { updatePending(null); setStorageReady(true); }
-        setMessage("No SAVE was sent. Pending storage could not be verified; repair storage before writing.");
+        setMessage(`No ${kind.toUpperCase()} was sent. Pending identity could not be verified; repair storage before writing.`);
         return;
       }
-      setEditor(item => item?.host === value.host ? { ...item, needsRead: true } : item);
+      if (kind === "move" && (editorRef.current?.host !== value!.host || editorRef.current.needsRead || editorRef.current.draft !== editorRef.current.host.content)) {
+        cleanupUnsent(identity, storeGeneration);
+        setMessage("No MOVE was sent. Draft changed during preflight or storage; draft kept.");
+        return;
+      }
+      if (value) setEditor(item => item?.host === value.host ? { ...item, needsRead: true } : item);
       sent = true;
-      const response = await request(end).api.workspaces({ workspaceId: workspace.id }).files.content.put({ requestId: identity.requestId, path: identity.path, content: value.draft, expectedVersion: value.host.version });
+      const files = request(end).api.workspaces({ workspaceId: identity.workspaceId }).files;
+      const response = identity.kind === "move"
+        ? await files.move.post({ requestId: identity.requestId, sourcePath: identity.sourcePath, destinationPath: identity.destinationPath, expectedVersion: identity.expectedVersion })
+        : identity.kind === "create"
+          ? await files.post({ requestId: identity.requestId, path: identity.path, content })
+          : await files.content.put({ requestId: identity.requestId, path: identity.path, content, expectedVersion: value!.host.version });
       if (!current()) return;
       if (Date.now() >= end) throw new Error("File deadline expired");
       if (response.error) {
         unauthorized(response.error);
-        if (isVersionConflict(response.error) && await clearConfirmed(identity, end, current)) setMessage("Version conflict. Draft kept; read current host text before another explicit SAVE.");
-        else if (current()) setMessage("SAVE was not confirmed. Keep request ID and check its receipt manually; no retry.");
+        const refused = identity.kind !== "create" && isVersionConflict(response.error) ||
+          identity.kind !== "save" && (isTargetExists(response.error) || isMissingFilePath(response.error, identity.kind));
+        if (refused && await clearConfirmed(identity, end, current)) {
+          const reason = isVersionConflict(response.error) ? "version conflict" : isTargetExists(response.error) ? "target already exists" : "source or parent path is unavailable";
+          setMessage(`${kind.toUpperCase()} refused (${reason}). No file change occurred. Inputs and draft kept; explicitly OPEN current content before writing again.`);
+        } else if (current()) setMessage(`${kind.toUpperCase()} was not confirmed. Keep pending identity and inputs; check its receipt manually. No retry.`);
         return;
       }
-      if (!fileReceiptFromValue(response.data, identity, workspace.id)) { setMessage("SAVE receipt did not match pending identity. Outcome unknown; request ID kept."); return; }
-      if (await clearConfirmed(identity, end, current)) setMessage("SAVE receipt confirmed. Read current host text before another write; draft kept.");
+      if (!fileReceiptFromValue(response.data, identity, workspace.id)) { setMessage(`${kind.toUpperCase()} receipt did not match pending identity. Outcome unknown; request ID kept.`); return; }
+      if (await clearConfirmed(identity, end, current)) setMessage(`${kind.toUpperCase()} receipt confirmed. Inputs and draft kept. Historical receipt is not a writable baseline; explicitly OPEN current file content before writing again.`);
       else if (current()) setMessage("Receipt found, but identity cleanup is unverified. Writes remain blocked.");
     } catch {
       if (!sent && operation) cleanupUnsent(operation, storeGeneration);
-      if (current()) { setInspection(null); setMessage(sent ? "SAVE outcome unknown. Request ID and draft kept; check receipt manually." : "No SAVE was sent. Preflight or storage failed; refresh manually."); }
+      if (current()) { setInspection(null); setMessage(sent ? `${kind.toUpperCase()} outcome unknown. Request ID, inputs and draft kept; check receipt manually. No write retry.` : `No ${kind.toUpperCase()} was sent. Preflight or storage failed; refresh manually.`); }
     } finally { if (current()) { working.current = false; setBusy(false); } }
   }
   async function checkReceipt() {
@@ -209,7 +247,7 @@ export function FilePanel({ origin, userId, workspace, blocked, onUnauthorized }
     if (!workspace || !operation || operation.workspaceId !== workspace.id || working.current) return;
     const current = begin();
     const end = Date.now() + deadlineMs;
-    working.current = true; setBusy(true); setMessage("Checking file receipt. No SAVE will be resent.");
+    working.current = true; setBusy(true); setMessage("Checking file receipt. No file mutation will be resent.");
     try {
       if (!await session(end, current)) return;
       const stored = await beforeFileDeadline(queued(() => AsyncStorage.getItem(key)), end);
@@ -222,7 +260,7 @@ export function FilePanel({ origin, userId, workspace, blocked, onUnauthorized }
       if (!fileReceiptFromValue(response.data, operation, workspace.id)) { setMessage("Receipt did not match persisted identity. Outcome unknown; request ID retained."); return; }
       if (await clearConfirmed(operation, end, current)) { setEditor(item => item?.host.workspaceId === workspace.id ? { ...item, needsRead: true } : item); setMessage("Historical file receipt confirmed. Read current host text before writing again."); }
       else if (current()) setMessage("Receipt found, but storage cleanup is unverified. Writes remain blocked.");
-    } catch { if (current()) { setStorageReady(false); setMessage("Receipt or pending storage could not be checked. Outcome unknown; no SAVE resent."); } }
+    } catch { if (current()) { setStorageReady(false); setMessage("Receipt or pending storage could not be checked. Outcome unknown; no file mutation resent."); } }
     finally { if (current()) { working.current = false; setBusy(false); } }
   }
   useLayoutEffect(() => {
@@ -239,6 +277,9 @@ export function FilePanel({ origin, userId, workspace, blocked, onUnauthorized }
     return () => { active.current = false; storageEpoch.current++; epoch.current++; };
   }, [origin, userId]);
   useLayoutEffect(() => {
+    setCreatePath(""); setCreateText(""); setMoveDestination("");
+  }, [origin, userId, workspace?.id]);
+  useLayoutEffect(() => {
     epoch.current++; working.current = false; setBusy(false); setInspection(null); setListing(null); setMessage("");
     if (workspace && !blocked) void read("");
   }, [origin, userId, workspace?.id, workspace?.archived, blocked]);
@@ -254,18 +295,39 @@ export function FilePanel({ origin, userId, workspace, blocked, onUnauthorized }
         {currentListing.path ? <Pressable accessibilityRole="button" accessibilityLabel="Open parent directory" disabled={busy || blocked} onPress={() => void read(currentListing.path.split("/").slice(0, -1).join("/"))} style={styles.secondary}><Text>Parent directory</Text></Pressable> : null}
         {!currentListing.entries.length ? <Text>This directory is empty.</Text> : currentListing.entries.map(entry => <Pressable key={entry.name} accessibilityRole="button" accessibilityLabel={`Open ${entry.type} ${entry.name}`} disabled={busy || blocked} onPress={() => void read(currentListing.path ? `${currentListing.path}/${entry.name}` : entry.name, entry.type === "file")} style={styles.row}><Text>{entry.name}{entry.type === "directory" ? "/" : ` (${entry.size} bytes)`}</Text></Pressable>)}
       </> : null}
+      <View style={styles.editor}>
+        <Text accessibilityRole="header">Create text file</Text>
+        <Text>Relative path in workspace; parent directory must exist. Existing files are never overwritten.</Text>
+        <TextInput accessibilityLabel="New file path" value={createPath} editable={!workspace.archived && !inspected?.archived}
+          autoCapitalize="none" autoCorrect={false} onChangeText={path => { if (active.current && inputScopeRef.current === inputScope) setCreatePath(path); }} style={styles.input}/>
+        <TextInput accessibilityLabel="New file text" multiline value={createText} editable={!workspace.archived && !inspected?.archived}
+          autoCapitalize="none" autoCorrect={false} onChangeText={text => { if (active.current && inputScopeRef.current === inputScope) setCreateText(text); }} style={styles.textarea}/>
+        {(!validPath(createPath) || !validText(createText)) ? <Text>Use a valid relative path and UTF-8 text without NUL, up to 1 MiB.</Text> : null}
+        <Pressable accessibilityRole="button" accessibilityLabel="Create file" disabled={disabled || !validPath(createPath) || !validText(createText)}
+          onPress={() => void mutate("create")} style={[styles.button, (disabled || !validPath(createPath) || !validText(createText)) && styles.disabled]}>
+          <Text style={styles.buttonText}>Create file</Text>
+        </Pressable>
+      </View>
       {currentEditor ? <View style={styles.editor}>
         <Text>{currentEditor.host.path} · {currentEditor.needsRead ? "current version must be read" : "last read version available"}</Text>
-        <TextInput accessibilityLabel="File draft" multiline value={currentEditor.draft} editable={!workspace.archived && !inspected?.archived} onChangeText={draft => {
+        <TextInput accessibilityLabel="File draft" multiline value={currentEditor.draft} autoCapitalize="none" autoCorrect={false} editable={!workspace.archived && !inspected?.archived} onChangeText={draft => {
           const item = editorRef.current;
-          if (live.current.workspace?.id !== workspace.id || !item || item.host !== currentEditor.host) return;
+          if (!active.current || inputScopeRef.current !== inputScope || live.current.workspace?.id !== workspace.id || !item || item.host !== currentEditor.host) return;
           editorRef.current = { ...item, draft };
           setEditor(value => value?.host === item.host ? { ...value, draft } : value);
         }} style={styles.textarea}/>
         {dirty ? <><Text>Draft differs from last read host text.</Text><TextInput accessibilityLabel="Last read host text" multiline editable={false} value={currentEditor.host.content} style={styles.textarea}/></> : null}
         {!validText(currentEditor.draft) ? <Text accessibilityRole="alert">SAVE requires valid UTF-8 without NUL, at most 1 MiB.</Text> : null}
         <Pressable accessibilityRole="button" accessibilityLabel="Read current file" disabled={busy || blocked} onPress={() => void read(currentEditor.host.path, true)} style={styles.secondary}><Text>Read current file (keep draft)</Text></Pressable>
-        <Pressable accessibilityRole="button" accessibilityLabel="Save file" disabled={disabled || currentEditor.needsRead || !dirty || !validText(currentEditor.draft)} onPress={() => void save()} style={[styles.button, (disabled || currentEditor.needsRead || !dirty) && styles.disabled]}><Text style={styles.buttonText}>Save file</Text></Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel="Save file" disabled={disabled || currentEditor.needsRead || !dirty || !validText(currentEditor.draft)} onPress={() => void mutate("save")} style={[styles.button, (disabled || currentEditor.needsRead || !dirty) && styles.disabled]}><Text style={styles.buttonText}>Save file</Text></Pressable>
+        <TextInput accessibilityLabel="Move destination path" value={moveDestination} editable={!workspace.archived && !inspected?.archived}
+          autoCapitalize="none" autoCorrect={false} onChangeText={path => { if (active.current && inputScopeRef.current === inputScope) setMoveDestination(path); }} style={styles.input}/>
+        <Text>MOVE uses this explicitly OPEN current version, never an unsaved draft. Destination parent must exist; MOVE never overwrites.</Text>
+        {dirty ? <Text>MOVE requires a clean draft. SAVE or explicitly discard it before moving.</Text> : null}
+        <Pressable accessibilityRole="button" accessibilityLabel="Move file" disabled={disabled || currentEditor.needsRead || dirty || !validPath(moveDestination) || moveDestination === currentEditor.host.path}
+          onPress={() => void mutate("move")} style={[styles.button, (disabled || currentEditor.needsRead || dirty || !validPath(moveDestination) || moveDestination === currentEditor.host.path) && styles.disabled]}>
+          <Text style={styles.buttonText}>Move file</Text>
+        </Pressable>
       </View> : null}
     </>}
     {pending ? <View style={styles.pending} testID="pending-file"><Text>File operation awaits confirmation. No automatic write retry.</Text><Text selectable>Request ID: {pending.requestId}</Text><Pressable accessibilityRole="button" accessibilityLabel="Check file receipt" disabled={busy || pending.workspaceId !== workspace?.id} onPress={() => void checkReceipt()} style={styles.secondary}><Text>{pending.workspaceId === workspace?.id ? "Check file receipt" : "Select original workspace to check receipt"}</Text></Pressable></View> : null}
@@ -273,4 +335,4 @@ export function FilePanel({ origin, userId, workspace, blocked, onUnauthorized }
     {message ? <Text testID="file-status" accessibilityLiveRegion="polite">{message}</Text> : null}
   </View>;
 }
-const styles = StyleSheet.create({ card: { backgroundColor: "#fff", borderColor: "#d9e5e0", borderRadius: 16, borderWidth: 1, gap: 10, padding: 18 }, heading: { color: "#183337", fontSize: 18, fontWeight: "700" }, row: { borderTopColor: "#e3ebe7", borderTopWidth: 1, paddingVertical: 10 }, editor: { gap: 8 }, textarea: { borderColor: "#c9d9d2", borderRadius: 9, borderWidth: 1, minHeight: 120, padding: 12, textAlignVertical: "top" }, button: { alignItems: "center", backgroundColor: "#126b54", borderRadius: 9, justifyContent: "center", minHeight: 42 }, disabled: { opacity: 0.55 }, buttonText: { color: "#fff", fontWeight: "700" }, secondary: { alignItems: "center", justifyContent: "center", minHeight: 40 }, pending: { backgroundColor: "#fff0cf", gap: 8, padding: 12 } });
+const styles = StyleSheet.create({ card: { backgroundColor: "#fff", borderColor: "#d9e5e0", borderRadius: 16, borderWidth: 1, gap: 10, padding: 18 }, heading: { color: "#183337", fontSize: 18, fontWeight: "700" }, row: { borderTopColor: "#e3ebe7", borderTopWidth: 1, paddingVertical: 10 }, editor: { gap: 8 }, input: { borderColor: "#c9d9d2", borderRadius: 9, borderWidth: 1, minHeight: 42, padding: 12 }, textarea: { borderColor: "#c9d9d2", borderRadius: 9, borderWidth: 1, minHeight: 120, padding: 12, textAlignVertical: "top" }, button: { alignItems: "center", backgroundColor: "#126b54", borderRadius: 9, justifyContent: "center", minHeight: 42 }, disabled: { opacity: 0.55 }, buttonText: { color: "#fff", fontWeight: "700" }, secondary: { alignItems: "center", justifyContent: "center", minHeight: 40 }, pending: { backgroundColor: "#fff0cf", gap: 8, padding: 12 } });

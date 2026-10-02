@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApi } from "../../../apps/api/src/app";
-import { createApiClient, fileReceiptFromValue, pendingFileFromValue, pendingFileValueMatches, workspaceErrorStatus, type PendingFile } from "./index";
+import { createApiClient, fileMissingPath, fileReceiptFromValue, fileTargetExists, pendingFileFromValue, pendingFileValueMatches, workspaceErrorStatus, type PendingFile } from "./index";
 
 const requestId = "123e4567-e89b-42d3-a456-426614174000";
 const workspaceId = "123e4567-e89b-42d3-a456-426614174001";
@@ -11,6 +11,17 @@ const version = "ab".repeat(32);
 const createdAt = "2026-10-01T00:00:00.000Z";
 const pending: PendingFile = { kind: "create", requestId, workspaceId, path: createdAt, resultSha256: version };
 const receipt = { kind: "create", requestId, workspaceId, path: createdAt, version, createdAt };
+
+it("clears only exact known no-effect CREATE/MOVE refusals, never generic or enriched errors", () => {
+  expect(fileTargetExists({ status: 409, value: { error: "target_exists" } })).toBe(true);
+  expect(fileTargetExists({ status: 400, value: { error: "target_exists" } })).toBe(false);
+  expect(fileTargetExists({ status: 409, value: { error: "target_exists", requestId } })).toBe(false);
+  expect(fileMissingPath({ status: 404, value: { error: "parent_directory_not_found" } }, "create")).toBe(true);
+  expect(fileMissingPath({ status: 404, value: { error: "file_not_found" } }, "create")).toBe(false);
+  expect(fileMissingPath({ status: 404, value: { error: "file_not_found" } }, "move")).toBe(true);
+  expect(fileMissingPath({ status: 404, value: { error: "file_not_found", path: "file.txt" } }, "move")).toBe(false);
+  expect(fileMissingPath({ status: 503, value: { error: "file_not_found" } }, "move")).toBe(false);
+});
 
 it("confirms only exact file receipts bound to the current request, workspace, path and result bytes", () => {
   for (const kind of ["create", "save"] as const) {

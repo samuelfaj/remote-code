@@ -187,7 +187,7 @@ if [[ "${RC_NATIVE_TEST_RECOVERY:-0}" == "1" ]]; then
   EXTRA_SKIP_ARGS=("-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testAutomaticActionReceiptAfterLostBody" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testAutomaticActionReceiptStallEndsUnknownWithoutReplay" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testAutomaticActionMalformedTimestampStaysUnknownWithoutReplay" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testActionDeadlineStartsAtTapAndIgnoresLateReceiptWithoutReplay" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testActionPostAcceptedAfterTapDeadlineStaysUnknownUntilManualReceipt" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testNativeLoginDeadlineStartsAtTapAndNeverReplays" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testNativeLoginPreflightDeadlineSendsNoRequestAndAllowsManualRetry" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testInstalledAppCreatesAndMutatesTwoWorkspaceMetadataRecords" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testActionReceiptUnauthorizedClearsPrivateWorkspaceState" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testWorkspaceUnauthorizedClearsBusyActionAndIgnoresOldReceiptAfterRelogin" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testPendingActionAPrePostWriteFailureSendsNoActionAndBlocksSubmission" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testPendingActionZReceiptClearFailureRecoversOriginalReceiptAfterRelaunchWithoutReplay")
 fi
 if [[ "${RC_NATIVE_TEST_RECOVERY:-0}" == "1" ]]; then
-  EXTRA_SKIP_ARGS+=("-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testInstalledAppListsOpensSavesLinuxWorkspaceFileAndRejectsStaleClient" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testInstalledAppRetainsUnknownCommittedSaveAndRecoversByReceiptWithoutReplay")
+  EXTRA_SKIP_ARGS+=("-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testInstalledAppListsOpensSavesLinuxWorkspaceFileAndRejectsStaleClient" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testInstalledAppRetainsUnknownCommittedSaveAndRecoversByReceiptWithoutReplay" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testInstalledAppCreatesMovesAndRefusesOccupiedStaleAndDirtyFiles" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testInstalledAppRecoversCommittedCreateAndMoveWithoutReplayingPost")
 fi
 if [[ "${RC_NATIVE_TEST_AUTO_ACTION:-0}" == "1" ]]; then
   API_ENTRY="apps/api/test-support/native-recovery.ts"
@@ -305,7 +305,7 @@ if [[ "${RC_NATIVE_TEST_FILES:-0}" == "1" ]]; then
   API_ORIGIN="https://127.0.0.1:$API_PORT"
   API_DATABASE_PATH="/var/lib/remotecode/remotecode-native.sqlite"
   TEST_SELECTION="RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testInstalledAppListsOpensSavesLinuxWorkspaceFileAndRejectsStaleClient"
-  ONLY_TEST_ARGS=("-only-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testInstalledAppRetainsUnknownCommittedSaveAndRecoversByReceiptWithoutReplay" "-only-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testInstalledAppUsesAuthenticatedSnapshotEventsAndReceipts")
+  ONLY_TEST_ARGS=("-only-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testInstalledAppRetainsUnknownCommittedSaveAndRecoversByReceiptWithoutReplay" "-only-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testInstalledAppUsesAuthenticatedSnapshotEventsAndReceipts" "-only-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testInstalledAppCreatesMovesAndRefusesOccupiedStaleAndDirtyFiles" "-only-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testInstalledAppRecoversCommittedCreateAndMoveWithoutReplayingPost")
   xcrun simctl list devices booted --json | python3 -c 'import json,sys; data=json.load(sys.stdin); devices={x["udid"]:{"runtime":r,"name":x["name"],"deviceTypeIdentifier":x["deviceTypeIdentifier"],"state":x["state"],"dataPath":x["dataPath"],"lastBootedAt":x.get("lastBootedAt")} for r,v in data["devices"].items() for x in v if x["state"]=="Booted"}; print(json.dumps(devices,sort_keys=True))' > "$WORK_DIR/preexisting-booted-devices.json"
   simulator_name="RC029-native-files-$$-$RANDOM"
   OWNED_DEVICE_ID="$(xcrun simctl create "$simulator_name" com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro com.apple.CoreSimulator.SimRuntime.iOS-18-5)"
@@ -470,24 +470,30 @@ fi
 if [[ "${RC_NATIVE_TEST_FILES:-0}" == "1" ]]; then
   if [[ ! -d "$WORK_DIR/NativeTests.xcresult" ]]; then echo "Installed native tests produced no XCResult; proof unverified." >&2; exit 1; fi
   xcrun xcresulttool get test-results summary --path "$WORK_DIR/NativeTests.xcresult" > "$WORK_DIR/xcresult-summary.json"
-  docker exec "$DOCKER_ID" bun -e 'import{Database}from"bun:sqlite";import{readFileSync}from"node:fs";import{createHash}from"node:crypto";const d=new Database(process.env.DATABASE_PATH,{readonly:true,create:false});const outcomes=d.query("SELECT request_id,kind,workspace_id,result_path,result_sha256 FROM file_operation_outcomes ORDER BY completed_at").all();const files=outcomes.filter(r=>r.kind==="save").map(r=>{const b=readFileSync("/var/lib/remotecode/workspaces/"+r.workspace_id+"/"+r.result_path);return{requestId:r.request_id,workspaceId:r.workspace_id,path:r.result_path,base64:b.toString("base64"),sha256:createHash("sha256").update(b).digest("hex")}});console.log(JSON.stringify({outcomes,files,intents:d.query("select request_id,state from file_operation_intents").all(),workspaces:d.query("select id,name from workspaces").all(),actions:d.query("select id,action from actions").all(),sessions:d.query("select count(*) n from sessions").get().n,quickCheck:d.query("pragma quick_check").all()}));d.close()' > "$WORK_DIR/linux-state.json"
+  docker exec "$DOCKER_ID" bun -e 'import{Database}from"bun:sqlite";import{readFileSync,lstatSync,existsSync}from"node:fs";import{createHash}from"node:crypto";const d=new Database(process.env.DATABASE_PATH,{readonly:true,create:false});const outcomes=d.query("SELECT request_id,kind,workspace_id,source_path,result_path,result_sha256 FROM file_operation_outcomes ORDER BY completed_at").all();const seen=new Set();const files=outcomes.flatMap(r=>{const key=r.workspace_id+"/"+r.result_path;if(seen.has(key))return[];seen.add(key);const path="/var/lib/remotecode/workspaces/"+key;if(!existsSync(path))return[{workspaceId:r.workspace_id,path:r.result_path,exists:false}];const b=readFileSync(path),st=lstatSync(path,{bigint:true});return[{workspaceId:r.workspace_id,path:r.result_path,exists:true,base64:b.toString("base64"),sha256:createHash("sha256").update(b).digest("hex"),device:st.dev.toString(),inode:st.ino.toString(),mode:Number(st.mode&0o777n)}]});console.log(JSON.stringify({outcomes,files,intents:d.query("select request_id,kind,workspace_id,source_path,destination_path,state,source_device,source_inode from file_operation_intents").all(),workspaces:d.query("select id,name from workspaces").all(),actions:d.query("select id,action from actions").all(),sessions:d.query("select count(*) n from sessions").get().n,quickCheck:d.query("pragma quick_check").all()}));d.close()' > "$WORK_DIR/linux-state.json"
   python3 - "$WORK_DIR/linux-state.json" "$WORK_DIR/xcresult-summary.json" <<'PYFILE'
 import base64,json,sys
 j=json.load(open(sys.argv[1]))
 report=json.load(open(sys.argv[2]))
-assert report["result"]=="Passed" and report["passedTests"]==3 and report["failedTests"]==0 and report["skippedTests"]==0
+assert report["result"]=="Passed" and report["passedTests"]==5 and report["failedTests"]==0 and report["skippedTests"]==0
 assert j["sessions"]==0 and len(j["actions"])==2
 assert sum(r["action"].startswith("native-event-") for r in j["actions"])==1
 assert sum(r["action"].startswith("native-submit-") for r in j["actions"])==1
-assert len(j["workspaces"])==2 and len(j["outcomes"])==4 and len(j["intents"])==4
-assert sum(r["kind"]=="create" for r in j["outcomes"])==2 and sum(r["kind"]=="save" for r in j["outcomes"])==2
+assert len(j["workspaces"])==4 and len(j["outcomes"])==10 and len(j["intents"])==10
+assert sum(r["kind"]=="create" for r in j["outcomes"])==5 and sum(r["kind"]=="save" for r in j["outcomes"])==3 and sum(r["kind"]=="move" for r in j["outcomes"])==2
 assert all(r["state"]=="completed" for r in j["intents"]) and j["quickCheck"]==[{"quick_check":"ok"}]
-expected={"native-proof.txt":b"saved by the installed native client","native-loss.txt":b"committed save after response loss"}
-assert len(j["files"])==2 and {r["path"] for r in j["files"]}==set(expected)
-for f in j["files"]:
-    assert base64.b64decode(f["base64"])==expected[f["path"]]
-    assert any(r["request_id"]==f["requestId"] and r["workspace_id"]==f["workspaceId"] and r["result_path"]==f["path"] and r["result_sha256"]==f["sha256"] for r in j["outcomes"])
-print("Actual Linux SQLite and disk bytes verified for both installed-native SAVE cases")
+expected={"native-proof.txt":b"saved by the installed native client","native-loss.txt":b"committed save after response loss","native-occupied.txt":b"keep occupied target","native-moved.txt":b"changed by second client","native-move-loss.txt":b"native CREATE after lost response"}
+assert len(j["files"])==7
+live={f["path"]:f for f in j["files"] if f["exists"]}
+assert set(live)==set(expected)
+assert {f["path"] for f in j["files"] if not f["exists"]}=={"native-create.txt","native-create-loss.txt"}
+for path,f in live.items():
+    assert base64.b64decode(f["base64"])==expected[path] and f["mode"]==0o600
+    assert any(r["workspace_id"]==f["workspaceId"] and r["result_path"]==path and r["result_sha256"]==f["sha256"] for r in j["outcomes"])
+for intent in (r for r in j["intents"] if r["kind"]=="move"):
+    f=live[intent["destination_path"]]
+    assert f["workspaceId"]==intent["workspace_id"] and (f["device"],f["inode"])==(intent["source_device"],intent["source_inode"])
+print("Actual Linux SQLite/disk bytes/inodes verified for native SAVE/CREATE/MOVE and response-loss recovery")
 PYFILE
   echo "Native file proof passed; exact Linux state: $WORK_DIR/linux-state.json"
   exit 0

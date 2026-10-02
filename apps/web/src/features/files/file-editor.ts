@@ -1,12 +1,7 @@
-import { pendingFileFromValue, pendingFileValueMatches, fileContentFromValue, validFileText, type PendingFile } from "@remotecode/client";
+import { pendingFileFromValue, pendingFileValueMatches, fileContentFromValue, validFileText, fileTargetExists, fileMissingPath, type PendingFile } from "@remotecode/client";
 
 export type { FileFolderState as FolderState, FileEntry } from "@remotecode/client";
 export type OpenFile = { workspaceId: string; path: string; content: string; version: string };
-
-function row(value: unknown): Record<string, unknown> | null {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown> : null;
-}
 
 export { validFilePath as validPath, validFileText as validText, fileFolderStateFromValue as folderStateFromValue, fileDirectoryFromValue as directoryFromValue } from "@remotecode/client";
 
@@ -47,18 +42,6 @@ export function clearPendingFile(storage: Storage, key: string, pending: Pending
   if (storage.getItem(key) !== null) throw new Error("Pending file identity not cleared");
 }
 
-export function isTargetExists(error: unknown) {
-  const data = row(error);
-  const value = row(data?.value);
-  return data?.status === 409 && value?.error === "target_exists" && Object.keys(value).join(",") === "error";
-}
-
-export function isMissingFilePath(error: unknown, kind: "create" | "move") {
-  const data = row(error);
-  const value = row(data?.value);
-  const codes = kind === "create" ? ["parent_directory_not_found"]
-    : ["source_parent_not_found", "destination_parent_not_found", "file_not_found"];
-  return data?.status === 404 && typeof value?.error === "string" && codes.includes(value.error) && Object.keys(value).join(",") === "error";
-}
+export { fileTargetExists as isTargetExists, fileMissingPath as isMissingFilePath };
 
 export { fileVersionConflict as isVersionConflict } from "@remotecode/client";

@@ -2,7 +2,7 @@ export { actionReceiptFromResponse, isDefinitiveActionRejection } from "./action
 export { applyActionEvent, emptyActionEventState } from "./action-events";
 export { pendingWorkspaceFromValue, pendingWorkspaceValueMatches, workspaceDeadlineIsOpen, workspaceErrorStatus, workspaceFromValue, workspaceListFromValue, workspaceReceiptFromValue, workspacePanelUserId } from "./workspaces";
 export type { PendingWorkspace, Workspace, WorkspaceKind } from "./workspaces";
-export { fileReceiptFromValue, pendingFileFromValue, pendingFileValueMatches, validFilePath, validFileText, fileFolderStateFromValue, fileDirectoryFromValue, fileContentFromValue, fileVersionConflict } from "./files";
+export { fileReceiptFromValue, pendingFileFromValue, pendingFileValueMatches, validFilePath, validFileText, fileFolderStateFromValue, fileDirectoryFromValue, fileContentFromValue, fileVersionConflict, fileTargetExists, fileMissingPath } from "./files";
 export type { FileKind, FileReceipt, PendingFile, FileEntry, FileContent, FileFolderState } from "./files";
 export type { ActionEventState, ActionReceipt } from "./action-events";
 

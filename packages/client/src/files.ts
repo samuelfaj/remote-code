@@ -138,3 +138,17 @@ export function fileVersionConflict(error: unknown) {
   const keys = Object.keys(value).sort().join(",");
   return keys === "error" || keys === "currentVersion,error" && typeof value.currentVersion === "string" && sha256.test(value.currentVersion);
 }
+
+export function fileTargetExists(error: unknown) {
+  const data = fileRow(error);
+  const value = fileRow(data?.value);
+  return data?.status === 409 && value?.error === "target_exists" && Object.keys(value).join(",") === "error";
+}
+
+export function fileMissingPath(error: unknown, kind: "create" | "move") {
+  const data = fileRow(error);
+  const value = fileRow(data?.value);
+  const codes = kind === "create" ? ["parent_directory_not_found"]
+    : ["source_parent_not_found", "destination_parent_not_found", "file_not_found"];
+  return data?.status === 404 && typeof value?.error === "string" && codes.includes(value.error) && Object.keys(value).join(",") === "error";
+}
