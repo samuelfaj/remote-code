@@ -1,5 +1,11 @@
 # Pivot policy
 
+## Native MOVE sign-out preflight — locally verified, publication pending — 2026-10-02 (UTC)
+
+- **Outcome / contract:** Final installed22/23 each passed1/0/0 against actual Linux/direct TLS. Native Sign out during held MOVE preflight removes the private editor; release before10s and observation through post-tap+11s leave no POST, source change, pending identity or replay. Re-login requires fresh listing and old editor/destination absence. Actual SQL/disk only fixture CREATE/empty source/mode0600, no MOVE/SAVE/actions,0sessions/integrity ok; exact source/resource audit passed. See current checkpoint evidence for command/version/hashes and failures.
+- **Method / correction:** Reused existing authenticated hold and native controls without a production seam/dependency. Preflight attempt telemetry now counts before authentication, calibrated by actual denied MOVE/SAVE401 then rearmed; actual authorization and legacy mutation phase unchanged. Run20 failed overbroad tap timing, reconciled before correction. Review found early termination/private-editor checks and later post-tap timing gaps; all source findings closed in01a0fc5a. Final22/23, not historical21, bind the current proof. Typecheck/shell/docs passed; source wording review/publication next.
+- **Next / preserved requirements:** Publish bounded sign-out checkpoint; assess RC-021 same-web/native-backend/restart proof and explicitly review its receipt-subset sequencing before implementation. Separate earlier client proofs cannot accept that journey. SDK/AVD absent but existing JDK17 and official ARM64 tools metadata make later Android setup feasible; no install/acceptance yet. Full RC-029/Android/Distill remain open; original unknown effect and unrelated resources protected.
+
 ## Native MOVE preflight counterexample — source published and locally verified — 2026-10-02 (UTC)
 
 - **Start / delivery:** Preserve published CRUD source99fd36d and handoff277b1a5. Exercise the shipped MOVE clean-draft guard after a real held folder preflight; production code is unchanged.

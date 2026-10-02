@@ -487,6 +487,69 @@ final class RemoteCodeMobileProofUITests: XCTestCase {
     }
 
     @MainActor
+    func testInstalledAppSignsOutDuringMovePreflightWithoutSendingPost() async throws {
+        let app = XCUIApplication(bundleIdentifier: "com.remotecode.mobileproof")
+        let observer = URLSession(configuration: .ephemeral)
+        let (api, workspace) = try await fileWorkspace(app, observer: observer, prefix: "native-preflight-logout-")
+        let source = "native-preflight.txt"
+        let destination = "native-preflight-moved.txt"
+        let created = try await observer.createFile(at: api, workspaceId: workspace.id, path: source, content: "")
+        try openNativeFile(source, in: app)
+        try app.textFields["Move destination path"].clearAndTypeText(destination, in: app)
+        try await observer.armFileSaveLoss(at: api, nonce: UUID().uuidString, workspaceId: workspace.id, path: destination, kind: "move", sourcePath: source, phase: "preflight")
+        let unauthenticatedConfiguration = URLSessionConfiguration.ephemeral
+        unauthenticatedConfiguration.httpCookieStorage = nil
+        let unauthenticated = URLSession(configuration: unauthenticatedConfiguration)
+        defer { unauthenticated.invalidateAndCancel() }
+        var denied = URLRequest(url: URL(string: "/api/workspaces/\(workspace.id)/files/move", relativeTo: api)!)
+        denied.httpMethod = "POST"; denied.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        denied.httpBody = try JSONSerialization.data(withJSONObject: ["requestId": UUID().uuidString, "sourcePath": source, "destinationPath": destination, "expectedVersion": created.version])
+        let (_, deniedResponse) = try await unauthenticated.data(for: denied)
+        guard (deniedResponse as? HTTPURLResponse)?.statusCode == 401 else { XCTFail("Unauthenticated MOVE must be refused before the native journey"); return }
+        let deniedSave = try await unauthenticated.saveFileRaw(at: api, workspaceId: workspace.id, path: source, content: "must not be written", expectedVersion: created.version, requestId: UUID().uuidString)
+        guard deniedSave.statusCode == 401 else { XCTFail("Unauthenticated SAVE must be refused before the native journey"); return }
+        let counted = try await observer.fileSaveLossDiagnostics(at: api)
+        guard counted.mutationPosts == 2 && counted.savePosts == 1 else { XCTFail("Preflight diagnostics must count denied MOVE and SAVE attempts even without a session"); return }
+        try await observer.armFileSaveLoss(at: api, nonce: UUID().uuidString, workspaceId: workspace.id, path: destination, kind: "move", sourcePath: source, phase: "preflight")
+        let tappedAt = try tapFileControl("Move file", in: app)
+        let completedTapAt = ProcessInfo.processInfo.systemUptime
+        var diagnostics = try await observer.fileSaveLossDiagnostics(at: api)
+        for _ in 0..<20 where !diagnostics.held {
+            try await Task.sleep(nanoseconds: 100_000_000)
+            diagnostics = try await observer.fileSaveLossDiagnostics(at: api)
+        }
+        guard diagnostics.held && diagnostics.phase == "preflight" && diagnostics.preflightGets == 1 else { XCTFail("The real folder preflight must be held before sign-out"); return }
+        app.buttons["Sign out"].tap()
+        guard app.staticTexts.matching(identifier: "connection-status").firstMatch.waitForLabel("signed out", timeout: 5) else { XCTFail("Sign-out must confirm while file preflight is held"); return }
+        XCTAssertFalse(app.textViews["File draft"].exists, "Sign-out must remove the private file editor")
+        try await observer.signIn(at: api, password: password)
+        try await observer.releaseFileSaveLoss(at: api)
+        guard ProcessInfo.processInfo.systemUptime - tappedAt < 10 else { XCTFail("Release must precede the file deadline so timeout cannot substitute for session fencing"); return }
+        let remaining = max(0, completedTapAt + 11 - ProcessInfo.processInfo.systemUptime)
+        try await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
+        XCTAssertTrue(app.staticTexts.matching(identifier: "connection-status").firstMatch.waitForLabel("signed out", timeout: 2), "The late folder result must not restore the signed-out editor")
+        diagnostics = try await observer.fileSaveLossDiagnostics(at: api)
+        XCTAssertEqual(diagnostics.mutationPosts, 0)
+        XCTAssertNil(diagnostics.requestId)
+        XCTAssertEqual(diagnostics.receiptGets, 0)
+        let current = try await observer.openFile(at: api, workspaceId: workspace.id, path: source)
+        XCTAssertEqual(current.content, ""); XCTAssertEqual(current.version, created.version)
+        let absent = try await observer.get(URL(string: "/api/workspaces/\(workspace.id)/files/content?path=\(destination)", relativeTo: api)!)
+        XCTAssertEqual(absent.statusCode, 404)
+        app.terminate(); app.launch(); signIn(app)
+        try selectFileWorkspace(workspace.name, in: app)
+        XCTAssertTrue(app.staticTexts["Directory: Workspace root"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.textViews["File draft"].exists, "Re-login must not restore the old private editor without an explicit OPEN")
+        XCTAssertFalse(app.textFields["Move destination path"].exists, "Re-login must not restore the old MOVE destination")
+        XCTAssertFalse(app.buttons["Check file receipt"].exists, "An unsent MOVE must not survive sign-out or relaunch as a pending write")
+        diagnostics = try await observer.fileSaveLossDiagnostics(at: api)
+        XCTAssertEqual(diagnostics.mutationPosts, 0, "Re-login must not replay the signed-out MOVE")
+        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Native files after sign-out stopped held MOVE"; shot.lifetime = .keepAlways; add(shot)
+        app.buttons["Sign out"].tap()
+        XCTAssertTrue(app.staticTexts.matching(identifier: "connection-status").firstMatch.waitForLabel("signed out", timeout: 10))
+    }
+
+    @MainActor
     func testInstalledAppCreatesMovesAndRefusesOccupiedStaleAndDirtyFiles() async throws {
         let app = XCUIApplication(bundleIdentifier: "com.remotecode.mobileproof")
         let observer = URLSession(configuration: .ephemeral)
@@ -625,7 +688,8 @@ final class RemoteCodeMobileProofUITests: XCTestCase {
     }
 
     @MainActor
-    private func tapFileControl(_ label: String, in app: XCUIApplication) throws {
+    @discardableResult
+    private func tapFileControl(_ label: String, in app: XCUIApplication) throws -> TimeInterval {
         if app.keyboards.firstMatch.exists { app.staticTexts["Files and editor"].firstMatch.tap() }
         guard app.keyboards.firstMatch.waitForNonExistence(timeout: 5) else { throw NSError(domain: "NativeFileProof", code: 5) }
         let control = app.buttons[label]
@@ -635,7 +699,9 @@ final class RemoteCodeMobileProofUITests: XCTestCase {
             if control.frame.midY < scroll.frame.minY { scroll.swipeDown() } else { scroll.swipeUp() }
         }
         guard control.isEnabled && control.isHittable else { throw NSError(domain: "NativeFileProof", code: 7, userInfo: [NSLocalizedDescriptionKey: "Control not interactable: \(label)"]) }
+        let tappedAt = ProcessInfo.processInfo.systemUptime
         control.tap()
+        return tappedAt
     }
 
     @MainActor

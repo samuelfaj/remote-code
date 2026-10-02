@@ -187,7 +187,7 @@ if [[ "${RC_NATIVE_TEST_RECOVERY:-0}" == "1" ]]; then
   EXTRA_SKIP_ARGS=("-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testAutomaticActionReceiptAfterLostBody" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testAutomaticActionReceiptStallEndsUnknownWithoutReplay" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testAutomaticActionMalformedTimestampStaysUnknownWithoutReplay" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testActionDeadlineStartsAtTapAndIgnoresLateReceiptWithoutReplay" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testActionPostAcceptedAfterTapDeadlineStaysUnknownUntilManualReceipt" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testNativeLoginDeadlineStartsAtTapAndNeverReplays" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testNativeLoginPreflightDeadlineSendsNoRequestAndAllowsManualRetry" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testInstalledAppCreatesAndMutatesTwoWorkspaceMetadataRecords" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testActionReceiptUnauthorizedClearsPrivateWorkspaceState" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testWorkspaceUnauthorizedClearsBusyActionAndIgnoresOldReceiptAfterRelogin" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testPendingActionAPrePostWriteFailureSendsNoActionAndBlocksSubmission" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testPendingActionZReceiptClearFailureRecoversOriginalReceiptAfterRelaunchWithoutReplay")
 fi
 if [[ "${RC_NATIVE_TEST_RECOVERY:-0}" == "1" ]]; then
-  EXTRA_SKIP_ARGS+=("-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testInstalledAppListsOpensSavesLinuxWorkspaceFileAndRejectsStaleClient" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testInstalledAppRetainsUnknownCommittedSaveAndRecoversByReceiptWithoutReplay" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testInstalledAppCreatesMovesAndRefusesOccupiedStaleAndDirtyFiles" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testInstalledAppRecoversCommittedCreateAndMoveWithoutReplayingPost" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testInstalledAppKeepsDraftChangedDuringMovePreflightWithoutSendingPost")
+  EXTRA_SKIP_ARGS+=("-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testInstalledAppListsOpensSavesLinuxWorkspaceFileAndRejectsStaleClient" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testInstalledAppRetainsUnknownCommittedSaveAndRecoversByReceiptWithoutReplay" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testInstalledAppCreatesMovesAndRefusesOccupiedStaleAndDirtyFiles" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testInstalledAppRecoversCommittedCreateAndMoveWithoutReplayingPost" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testInstalledAppKeepsDraftChangedDuringMovePreflightWithoutSendingPost" "-skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testInstalledAppSignsOutDuringMovePreflightWithoutSendingPost")
 fi
 if [[ "${RC_NATIVE_TEST_AUTO_ACTION:-0}" == "1" ]]; then
   API_ENTRY="apps/api/test-support/native-recovery.ts"
@@ -308,6 +308,10 @@ if [[ "${RC_NATIVE_TEST_FILES:-0}" == "1" ]]; then
   ONLY_TEST_ARGS=("-only-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testInstalledAppRetainsUnknownCommittedSaveAndRecoversByReceiptWithoutReplay" "-only-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testInstalledAppUsesAuthenticatedSnapshotEventsAndReceipts" "-only-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testInstalledAppCreatesMovesAndRefusesOccupiedStaleAndDirtyFiles" "-only-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testInstalledAppRecoversCommittedCreateAndMoveWithoutReplayingPost")
   if [[ "${RC_NATIVE_TEST_MOVE_PREFLIGHT:-0}" == "1" ]]; then
     TEST_SELECTION="RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testInstalledAppKeepsDraftChangedDuringMovePreflightWithoutSendingPost"
+    ONLY_TEST_ARGS=()
+  fi
+  if [[ "${RC_NATIVE_TEST_MOVE_PREFLIGHT:-0}" == "logout" ]]; then
+    TEST_SELECTION="RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testInstalledAppSignsOutDuringMovePreflightWithoutSendingPost"
     ONLY_TEST_ARGS=()
   fi
   xcrun simctl list devices booted --json | python3 -c 'import json,sys; data=json.load(sys.stdin); devices={x["udid"]:{"runtime":r,"name":x["name"],"deviceTypeIdentifier":x["deviceTypeIdentifier"],"state":x["state"],"dataPath":x["dataPath"],"lastBootedAt":x.get("lastBootedAt")} for r,v in data["devices"].items() for x in v if x["state"]=="Booted"}; print(json.dumps(devices,sort_keys=True))' > "$WORK_DIR/preexisting-booted-devices.json"
@@ -479,14 +483,14 @@ if [[ "${RC_NATIVE_TEST_FILES:-0}" == "1" ]]; then
 import base64,json,sys
 j=json.load(open(sys.argv[1]))
 report=json.load(open(sys.argv[2]))
-if sys.argv[3]=="1":
+if sys.argv[3] in ("1", "logout"):
     assert report["result"]=="Passed" and report["passedTests"]==1 and report["failedTests"]==report["skippedTests"]==0
     assert len(j["workspaces"])==1 and len(j["intents"])==len(j["outcomes"])==1
     assert j["intents"][0]["kind"]==j["outcomes"][0]["kind"]=="create" and j["intents"][0]["state"]=="completed"
     assert len(j["files"])==1 and j["files"][0]["path"]=="native-preflight.txt" and j["files"][0]["exists"]
     assert base64.b64decode(j["files"][0]["base64"])==b"" and j["files"][0]["sha256"]==j["outcomes"][0]["result_sha256"]
     assert not j["actions"] and j["sessions"]==0 and j["quickCheck"]==[{"quick_check":"ok"}]
-    print("Actual Linux source unchanged; no MOVE/SAVE intent or outcome after changed-draft preflight")
+    print("Actual Linux source unchanged; no MOVE/SAVE intent or outcome after refused preflight")
     sys.exit(0)
 assert report["result"]=="Passed" and report["passedTests"]==5 and report["failedTests"]==0 and report["skippedTests"]==0
 assert j["sessions"]==0 and len(j["actions"])==2

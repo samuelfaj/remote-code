@@ -54,12 +54,19 @@ api.wrap(handler => async (request: Request) => {
     const currentGate = gate;
     let mutationInput: Record<string, unknown> | null = null;
     const suffix = currentGate?.kind === "save" ? "/content" : currentGate?.kind === "move" ? "/move" : "";
+    const filesPath = currentGate && `/api/workspaces/${currentGate.workspaceId}/files`;
+    if (currentGate?.phase === "preflight" && (request.method === "POST" && (url.pathname === filesPath || url.pathname === `${filesPath}/move`) || request.method === "PUT" && url.pathname === `${filesPath}/content`)) {
+      currentGate.mutationPosts++;
+      if (request.method === "PUT") currentGate.savePosts++;
+    }
     if (currentGate && request.method === (currentGate.kind === "save" ? "PUT" : "POST") && url.pathname === `/api/workspaces/${currentGate.workspaceId}/files${suffix}` && sessionUserId(databasePath, request) === currentGate.userId) {
       const body = await request.clone().json() as Record<string, unknown>;
       if ((currentGate.kind === "move" ? body.destinationPath === currentGate.path && body.sourcePath === currentGate.sourcePath : body.path === currentGate.path)) {
         mutationInput = body;
-        currentGate.mutationPosts++;
-        if (currentGate.kind === "save") currentGate.savePosts++;
+        if (currentGate.phase === "mutation") {
+          currentGate.mutationPosts++;
+          if (currentGate.kind === "save") currentGate.savePosts++;
+        }
       }
     }
     if (currentGate && request.method === "GET" && currentGate.requestId && url.pathname === `/api/workspaces/${currentGate.workspaceId}/files/receipts/${currentGate.requestId}` && sessionUserId(databasePath, request) === currentGate.userId) currentGate.receiptGets++;
