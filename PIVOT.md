@@ -1,11 +1,11 @@
 # Pivot policy
 
-## Native MOVE preflight counterexample — locally verified, publication pending — 2026-10-02 (UTC)
+## Native MOVE preflight counterexample — source published and locally verified — 2026-10-02 (UTC)
 
 - **Start / delivery:** Preserve published CRUD source99fd36d and handoff277b1a5. Exercise the shipped MOVE clean-draft guard after a real held folder preflight; production code is unchanged.
 - **Executable proof / result:** Final installed launches18/19 each passed one case with zero failures/skips. The user opens an empty current file, starts MOVE, types X while the actual owner-scoped provisioned-folder GET is held, then releases it. The guard refuses before POST, preserves X, disables MOVE and leaves no pending receipt after relaunch. Actual Linux source/version remain empty/unchanged; destination GET404, only fixture CREATE exists in SQLite, zero MOVE/SAVE/actions/sessions and integrity ok. Normal10s client budget, Elysia/TLS/Eden and native AsyncStorage remain in use.
 - **Failure if / review correction:** Any mutation, lost draft or pending replay would falsify this slice. Initial review01a0fc20 found two concurrent GETs could install separate holds around the JSON await. Parent reserved the first read synchronously and added actual concurrent owner GETs; one release now returns both200. Reviewer01a0fc3b closed the finding. Host metadata confirms chatgpt/gpt-6-sol/medium for both reviews. Run17 predates this correction and is not final proof.
-- **State / next:** Root/owned hashes and actual container/simulator/TLS cleanup match final18/19. Typecheck, shell syntax, whitespace and configured doc links passed. Document/review/publish this bounded proof; then exercise stale workspace/session during native file preflight without a new production fault seam. Full RC-029, Android and Distill approval/refusal remain open. Original Distill outcome stays unknown/untouched; published CRUD proofs retain their original scopes.
+- **State / next:** Root/owned hashes and actual container/simulator/TLS cleanup match final18/19. Typecheck, shell syntax, whitespace and configured doc links passed. Source2302a33 is published/read back with push/PR static/test CI success and clean-source typecheck/build. Publish publication-only handoff; then exercise stale workspace/session during native file preflight without a new production fault seam. Full RC-029, Android and Distill approval/refusal remain open. Original Distill outcome stays unknown/untouched; published CRUD proofs retain their original scopes.
 
 ## Native CREATE/MOVE continuation — active, unaccepted — 2026-10-02 (UTC)
 
