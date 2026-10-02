@@ -2,7 +2,7 @@ import { lstatSync } from "node:fs";
 import { Database } from "bun:sqlite";
 import { createApi } from "../src/app";
 import { sessionUserId } from "../src/features/auth";
-import { validFilePath } from "../../../packages/client/src/files";
+import { fileFolderStateFromValue, validFilePath } from "../../../packages/client/src/files";
 
 const port = Number(process.env.API_PORT);
 const databasePath = process.env.DATABASE_PATH;
@@ -16,7 +16,7 @@ for (const path of [certPath, keyPath]) {
   if (!entry.isFile() || entry.isSymbolicLink() || (entry.mode & 0o077) !== 0) throw new Error("Native file proof TLS material is not a private regular file");
 }
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-type Gate = { userId: string; nonce: string; workspaceId: string; kind: "create" | "save" | "move"; path: string; sourcePath: string | null; requestId: string | null; mutationPosts: number; savePosts: number; receiptGets: number; release: (() => void) | null; held: boolean };
+type Gate = { userId: string; nonce: string; workspaceId: string; kind: "create" | "save" | "move"; phase: "mutation" | "preflight"; preflightGets: number; path: string; sourcePath: string | null; requestId: string | null; mutationPosts: number; savePosts: number; receiptGets: number; release: (() => void) | null; held: boolean };
 let gate: Gate | null = null;
 const api = createApi(databasePath, undefined, { password, webOrigin: "https://localhost" });
 api.wrap(handler => async (request: Request) => {
@@ -30,18 +30,20 @@ api.wrap(handler => async (request: Request) => {
         const nonce = typeof body.nonce === "string" ? body.nonce.toLowerCase() : "";
         const workspaceId = typeof body.workspaceId === "string" ? body.workspaceId : "";
         const kind = body.kind === undefined ? "save" : body.kind;
+        const phase = body.phase === undefined ? "mutation" : body.phase;
         const sourcePath = typeof body.sourcePath === "string" ? body.sourcePath : null;
-        const keys = kind === "move" ? "kind,nonce,path,sourcePath,workspaceId" : body.kind === undefined ? "nonce,path,workspaceId" : "kind,nonce,path,workspaceId";
-        if ((kind !== "save" && kind !== "create" && kind !== "move") || !uuid.test(nonce) || !uuid.test(workspaceId) || !validFilePath(body.path) || Object.keys(body).sort().join(",") !== keys || (kind === "move" && (!validFilePath(sourcePath) || sourcePath === body.path))) return Response.json({ error: "invalid_gate" }, { status: 400 });
+        const baseKeys = kind === "move" ? "kind,nonce,path,sourcePath,workspaceId" : body.kind === undefined ? "nonce,path,workspaceId" : "kind,nonce,path,workspaceId";
+        const keys = body.phase === undefined ? baseKeys : [...baseKeys.split(","), "phase"].sort().join(",");
+        if ((phase !== "mutation" && phase !== "preflight") || (phase === "preflight" && kind !== "move") || (kind !== "save" && kind !== "create" && kind !== "move") || !uuid.test(nonce) || !uuid.test(workspaceId) || !validFilePath(body.path) || Object.keys(body).sort().join(",") !== keys || (kind === "move" && (!validFilePath(sourcePath) || sourcePath === body.path))) return Response.json({ error: "invalid_gate" }, { status: 400 });
         const database = new Database(databasePath, { readonly: true, create: false });
         try {
           if (!database.query("SELECT id FROM workspaces WHERE id = ? AND user_id = ?").get(workspaceId, userId)) return Response.json({ error: "not_found" }, { status: 404 });
         } finally { database.close(); }
-        gate = { userId, nonce, workspaceId, kind, path: body.path, sourcePath, requestId: null, mutationPosts: 0, savePosts: 0, receiptGets: 0, release: null, held: false };
+        gate = { userId, nonce, workspaceId, kind, phase, preflightGets: 0, path: body.path, sourcePath, requestId: null, mutationPosts: 0, savePosts: 0, receiptGets: 0, release: null, held: false };
         return Response.json({ armed: true, nonce });
       }
       if (!gate || gate.userId !== userId) return Response.json({ error: "not_found" }, { status: 404 });
-      if (url.pathname === "/__test__/file-save-loss-diagnostics" && request.method === "GET") return Response.json({ kind: gate.kind, held: gate.held, requestId: gate.requestId, mutationPosts: gate.mutationPosts, savePosts: gate.savePosts, receiptGets: gate.receiptGets });
+      if (url.pathname === "/__test__/file-save-loss-diagnostics" && request.method === "GET") return Response.json({ kind: gate.kind, phase: gate.phase, preflightGets: gate.preflightGets, held: gate.held, requestId: gate.requestId, mutationPosts: gate.mutationPosts, savePosts: gate.savePosts, receiptGets: gate.receiptGets });
       if (url.pathname === "/__test__/file-save-loss-release" && request.method === "POST") {
         if (!gate.release) return Response.json({ error: "not_held" }, { status: 409 });
         gate.release();
@@ -62,10 +64,17 @@ api.wrap(handler => async (request: Request) => {
     }
     if (currentGate && request.method === "GET" && currentGate.requestId && url.pathname === `/api/workspaces/${currentGate.workspaceId}/files/receipts/${currentGate.requestId}` && sessionUserId(databasePath, request) === currentGate.userId) currentGate.receiptGets++;
     const response = await handler(request);
-    if (currentGate && mutationInput && response instanceof Response && response.status === 201 && currentGate.requestId === null) {
-      const receipt = await response.clone().json() as Record<string, unknown>;
-      if (typeof mutationInput.requestId !== "string" || receipt.requestId !== mutationInput.requestId || receipt.workspaceId !== currentGate.workspaceId || receipt.path !== currentGate.path || receipt.kind !== currentGate.kind || (currentGate.kind === "move" && receipt.sourcePath !== currentGate.sourcePath)) throw new Error("Committed fixture receipt is not bound to the scoped request");
-      currentGate.requestId = mutationInput.requestId;
+    const preflight = currentGate?.phase === "preflight" && request.method === "GET" && url.pathname === `/api/workspaces/${currentGate.workspaceId}/folder` && sessionUserId(databasePath, request) === currentGate.userId && currentGate.preflightGets === 0;
+    const committed = currentGate?.phase === "mutation" && mutationInput && response instanceof Response && response.status === 201 && currentGate.requestId === null;
+    if (currentGate && response instanceof Response && (committed || preflight && response.status === 200)) {
+      if (preflight) currentGate.preflightGets++;
+      const value = await response.clone().json() as Record<string, unknown>;
+      if (preflight) {
+        if (fileFolderStateFromValue(value, currentGate.workspaceId) !== "provisioned") throw new Error("Preflight fixture requires the actual provisioned folder result");
+      } else {
+        if (!mutationInput || typeof mutationInput.requestId !== "string" || value.requestId !== mutationInput.requestId || value.workspaceId !== currentGate.workspaceId || value.path !== currentGate.path || value.kind !== currentGate.kind || (currentGate.kind === "move" && value.sourcePath !== currentGate.sourcePath)) throw new Error("Committed fixture receipt is not bound to the scoped request");
+        currentGate.requestId = mutationInput.requestId;
+      }
       currentGate.held = true;
       await new Promise<void>(resolve => {
         const timer = setTimeout(() => { currentGate.release = null; currentGate.held = false; resolve(); }, 35_000);

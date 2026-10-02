@@ -424,6 +424,69 @@ final class RemoteCodeMobileProofUITests: XCTestCase {
     }
 
     @MainActor
+    func testInstalledAppKeepsDraftChangedDuringMovePreflightWithoutSendingPost() async throws {
+        let app = XCUIApplication(bundleIdentifier: "com.remotecode.mobileproof")
+        let observer = URLSession(configuration: .ephemeral)
+        let (api, workspace) = try await fileWorkspace(app, observer: observer, prefix: "native-preflight-")
+        let source = "native-preflight.txt"
+        let destination = "native-preflight-moved.txt"
+        let created = try await observer.createFile(at: api, workspaceId: workspace.id, path: source, content: "")
+        try openNativeFile(source, in: app)
+        let draft = app.textViews["File draft"]
+        XCTAssertEqual(draft.value as? String, "")
+        try app.textFields["Move destination path"].clearAndTypeText(destination, in: app)
+        try await observer.armFileSaveLoss(at: api, nonce: UUID().uuidString, workspaceId: workspace.id, path: destination, kind: "move", sourcePath: source, phase: "preflight")
+        let folderURL = URL(string: "/api/workspaces/\(workspace.id)/folder", relativeTo: api)!
+        async let firstRead = observer.get(folderURL)
+        async let secondRead = observer.get(folderURL)
+        var concurrent = try await observer.fileSaveLossDiagnostics(at: api)
+        for _ in 0..<20 where !concurrent.held {
+            try await Task.sleep(nanoseconds: 100_000_000)
+            concurrent = try await observer.fileSaveLossDiagnostics(at: api)
+        }
+        guard concurrent.held && concurrent.preflightGets == 1 else { XCTFail("Concurrent owner reads must reserve only one preflight hold"); return }
+        try await observer.releaseFileSaveLoss(at: api)
+        let readOne = try await firstRead
+        let readTwo = try await secondRead
+        XCTAssertEqual(readOne.statusCode, 200); XCTAssertEqual(readTwo.statusCode, 200)
+        concurrent = try await observer.fileSaveLossDiagnostics(at: api)
+        XCTAssertEqual(concurrent.preflightGets, 1, "One release must free the single held read without trapping another")
+        try await observer.armFileSaveLoss(at: api, nonce: UUID().uuidString, workspaceId: workspace.id, path: destination, kind: "move", sourcePath: source, phase: "preflight")
+        try tapFileControl("Move file", in: app)
+        var diagnostics = try await observer.fileSaveLossDiagnostics(at: api)
+        for _ in 0..<20 where !diagnostics.held {
+            try await Task.sleep(nanoseconds: 100_000_000)
+            diagnostics = try await observer.fileSaveLossDiagnostics(at: api)
+        }
+        guard diagnostics.held && diagnostics.phase == "preflight" && diagnostics.preflightGets == 1 else { XCTFail("The real folder preflight must be held before typing"); return }
+        draft.tap(); draft.typeText("X")
+        guard (draft.value as? String) == "X" else { XCTFail("The user must change the shipped draft while MOVE waits"); return }
+        try await observer.releaseFileSaveLoss(at: api)
+        let status = app.staticTexts.matching(identifier: "file-status").firstMatch
+        guard status.waitForLabelContaining("same current verified OPEN", timeout: 8) else { XCTFail("Changed draft must stop MOVE before identity or POST"); return }
+        diagnostics = try await observer.fileSaveLossDiagnostics(at: api)
+        XCTAssertEqual(diagnostics.mutationPosts, 0)
+        XCTAssertNil(diagnostics.requestId)
+        XCTAssertEqual(diagnostics.receiptGets, 0)
+        XCTAssertEqual(draft.value as? String, "X", "Refusing MOVE must retain the later user draft")
+        XCTAssertFalse(app.buttons["Check file receipt"].exists)
+        XCTAssertFalse(app.buttons["Move file"].isEnabled)
+        let current = try await observer.openFile(at: api, workspaceId: workspace.id, path: source)
+        XCTAssertEqual(current.content, "")
+        XCTAssertEqual(current.version, created.version)
+        let absent = try await observer.get(URL(string: "/api/workspaces/\(workspace.id)/files/content?path=\(destination)", relativeTo: api)!)
+        XCTAssertEqual(absent.statusCode, 404)
+        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "MOVE stopped after draft changed during actual preflight"; shot.lifetime = .keepAlways; add(shot)
+        app.terminate(); app.launch(); signIn(app)
+        try selectFileWorkspace(workspace.name, in: app)
+        XCTAssertFalse(app.buttons["Check file receipt"].exists, "No unsent MOVE identity may block writes after relaunch")
+        diagnostics = try await observer.fileSaveLossDiagnostics(at: api)
+        XCTAssertEqual(diagnostics.mutationPosts, 0, "Relaunch must not submit the stopped MOVE")
+        app.buttons["Sign out"].tap()
+        XCTAssertTrue(app.staticTexts.matching(identifier: "connection-status").firstMatch.waitForLabel("signed out", timeout: 10))
+    }
+
+    @MainActor
     func testInstalledAppCreatesMovesAndRefusesOccupiedStaleAndDirtyFiles() async throws {
         let app = XCUIApplication(bundleIdentifier: "com.remotecode.mobileproof")
         let observer = URLSession(configuration: .ephemeral)
@@ -1848,6 +1911,8 @@ private struct FileSaveError: Decodable {
 private struct FileLossDiagnostics: Decodable {
     let kind: String
     let mutationPosts: Int
+    let phase: String
+    let preflightGets: Int
     let held: Bool
     let requestId: String?
     let savePosts: Int
@@ -1960,12 +2025,13 @@ private extension URLSession {
         return try JSONDecoder().decode(WorkspaceMetadata.self, from: data)
     }
 
-    func armFileSaveLoss(at baseURL: URL, nonce: String, workspaceId: String, path: String, kind: String = "save", sourcePath: String? = nil) async throws {
+    func armFileSaveLoss(at baseURL: URL, nonce: String, workspaceId: String, path: String, kind: String = "save", sourcePath: String? = nil, phase: String? = nil) async throws {
         var request = URLRequest(url: URL(string: "/__test__/file-save-loss-arm", relativeTo: baseURL)!)
         request.httpMethod = "POST"; request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         var body = ["nonce": nonce, "workspaceId": workspaceId, "path": path]
         if kind != "save" { body["kind"] = kind }
         if let sourcePath { body["sourcePath"] = sourcePath }
+        if let phase { body["phase"] = phase }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         let (_, response) = try await data(for: request)
         XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
