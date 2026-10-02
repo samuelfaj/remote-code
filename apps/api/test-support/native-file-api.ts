@@ -18,7 +18,7 @@ for (const path of [certPath, keyPath]) {
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 type Gate = { userId: string; nonce: string; workspaceId: string; kind: "create" | "save" | "move"; phase: "mutation" | "preflight"; preflightGets: number; path: string; sourcePath: string | null; requestId: string | null; mutationPosts: number; savePosts: number; receiptGets: number; release: (() => void) | null; held: boolean };
 let gate: Gate | null = null;
-const api = createApi(databasePath, undefined, { password, webOrigin: "https://localhost" });
+const api = createApi(databasePath, undefined, { password, webOrigin: process.env.REMOTECODE_WEB_ORIGIN ?? "https://localhost" });
 api.wrap(handler => async (request: Request) => {
     const url = new URL(request.url);
     if (url.pathname.startsWith("/__test__/file-save-loss-")) {

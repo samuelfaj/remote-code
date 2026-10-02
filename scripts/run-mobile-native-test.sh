@@ -21,6 +21,12 @@ if not stat.S_ISDIR(entry.st_mode) or entry.st_uid != os.getuid(): raise SystemE
 PY
 chmod 700 "$WORK_DIR"
 API_PORT="${RC_NATIVE_TEST_API_PORT:-39211}"
+if [[ "${RC_NATIVE_TEST_JOINED_WORKSPACE:-0}" == "1" ]]; then
+  [[ "${RC_NATIVE_TEST_FILES:-0}" == "1" && "$API_PORT" == "39211" ]] || { echo "Joined proof requires FILES mode on API port 39211." >&2; exit 2; }
+  for record in simulator.json joined-volume.json joined-current-container.json joined-evidence.json; do
+    [[ ! -e "$WORK_DIR/$record" ]] || { echo "Use a fresh joined-proof evidence directory." >&2; exit 2; }
+  done
+fi
 if [[ ("${RC_NATIVE_TEST_WORKSPACES:-0}" == "1" || "${RC_NATIVE_TEST_PRIVACY_EXPIRY:-0}" == "1" || "${RC_NATIVE_TEST_PRIVACY_BUSY:-0}" == "1") && "$API_PORT" != "39211" ]]; then
   echo "Selected workspace tests require API port 39211." >&2
   exit 2
@@ -31,6 +37,7 @@ DATABASE_PATH="$WORK_DIR/remotecode-native.sqlite"
 DEVICE_ID="${RC_NATIVE_TEST_DEVICE:-}"
 API_PID=""
 DOCKER_ID=""
+JOINED_VOLUME=""
 API_DATABASE_PATH="$DATABASE_PATH"
 API_TLS_CERT=""
 API_TLS_KEY=""
@@ -44,6 +51,15 @@ DERIVED_ARGS=("-derivedDataPath" "$DERIVED_DATA_PATH")
 cleanup() {
   local status="$1"
   trap - EXIT INT TERM
+  if [[ -n "$JOINED_VOLUME" && -f "$WORK_DIR/joined-current-container.json" ]]; then
+    local current_container
+    if current_container="$(python3 -c 'import json,re,sys;r=json.load(open(sys.argv[1]));assert r["ownedDeviceId"]==sys.argv[2] and r["name"]==sys.argv[3] and re.fullmatch("[0-9a-f]{64}",r["containerId"]);print(r["containerId"],r["name"])' "$WORK_DIR/joined-current-container.json" "$OWNED_DEVICE_ID" "$DOCKER_NAME")"; then
+      read -r DOCKER_ID DOCKER_NAME <<< "$current_container"
+    else
+      printf '{"reason":"current_container_identity_unavailable"}\n' > "$WORK_DIR/retained-linux-container.json"
+      DOCKER_ID=""; TLS_CERT=""; TLS_KEY=""; status=1
+    fi
+  fi
   if [[ "${RC_NATIVE_TEST_STORAGE_FAILURE:-0}" == "1" && -n "$OWNED_DEVICE_ID" ]]; then
     if ! xcrun simctl list devices booted --json | python3 -c 'import json,sys; d=json.load(sys.stdin)["devices"]; raise SystemExit(0 if any(x["udid"]==sys.argv[1] and x["state"]=="Booted" for v in d.values() for x in v) else 1)' "$OWNED_DEVICE_ID"; then
       xcrun simctl boot "$OWNED_DEVICE_ID" || status=1
@@ -56,7 +72,9 @@ cleanup() {
     if [[ "$identity" == "$DOCKER_ID /$DOCKER_NAME $OWNED_DEVICE_ID" ]]; then
       if docker exec "$DOCKER_ID" bun -e 'import{Database}from"bun:sqlite";import{existsSync,readFileSync}from"node:fs";import{createHash}from"node:crypto";if(!existsSync(process.env.DATABASE_PATH)){console.log(JSON.stringify({databasePresent:false}));process.exit(0)}const d=new Database(process.env.DATABASE_PATH,{readonly:true,create:false});const outcomes=d.query("select request_id,workspace_id,kind,result_path,result_sha256 from file_operation_outcomes").all();const files=outcomes.map(r=>{const path="/var/lib/remotecode/workspaces/"+r.workspace_id+"/"+r.result_path;if(!existsSync(path))return{path,exists:false};const b=readFileSync(path);return{path,exists:true,sha256:createHash("sha256").update(b).digest("hex")}});console.log(JSON.stringify({databasePresent:true,outcomes,intents:d.query("select request_id,workspace_id,state from file_operation_intents").all(),files,quickCheck:d.query("pragma quick_check").all()}));d.close()' > "$WORK_DIR/linux-state-on-exit.json" 2> "$WORK_DIR/linux-state-on-exit-error.log" ; then
         docker rm -f "$DOCKER_ID" >/dev/null 2>&1 || status=1
-        if docker ps -a --no-trunc --format '{{.ID}}' | grep -Fqx "$DOCKER_ID"; then echo "Task-owned Linux container remains: $DOCKER_ID" >&2; status=1; fi
+        local remaining_containers
+        remaining_containers="$(docker ps -a --no-trunc --format '{{.ID}}')" || status=1
+        if grep -Fqx "$DOCKER_ID" <<< "$remaining_containers"; then echo "Task-owned Linux container remains: $DOCKER_ID" >&2; status=1; fi
       else
         printf '{"containerId":"%s","reason":"final_state_unavailable"}\n' "$DOCKER_ID" > "$WORK_DIR/retained-linux-container.json"
         echo "Final Linux state unavailable; retaining owned container and TLS material for reconciliation." >&2
@@ -64,7 +82,26 @@ cleanup() {
         status=1
       fi
     else
-      echo "Container ownership mismatch; refusing removal." >&2
+      printf '{"containerId":"%s","reason":"container_identity_unavailable_or_changed"}\n' "$DOCKER_ID" > "$WORK_DIR/retained-linux-container.json"
+      echo "Container ownership unavailable or changed; retaining container and TLS material." >&2
+      TLS_CERT=""; TLS_KEY=""; status=1
+    fi
+  fi
+  if [[ -n "$JOINED_VOLUME" ]]; then
+    if [[ "$status" == "0" && -n "$DOCKER_ID" ]]; then
+      local volume_owner
+      volume_owner="$(docker volume inspect --format '{{index .Labels "remotecode.rc021.joined"}}' "$JOINED_VOLUME")" || status=1
+      if [[ "$volume_owner" == "$OWNED_DEVICE_ID" ]]; then
+        docker volume rm "$JOINED_VOLUME" >/dev/null || status=1
+        local remaining_volumes
+        remaining_volumes="$(docker volume ls --format '{{.Name}}')" || status=1
+        if grep -Fqx "$JOINED_VOLUME" <<< "$remaining_volumes"; then status=1; fi
+        if [[ "$status" == "0" ]]; then printf '{"containerId":"%s","volume":"%s","removed":true}\n' "$DOCKER_ID" "$JOINED_VOLUME" > "$WORK_DIR/joined-cleanup.json"; fi
+      else
+        echo "Volume ownership changed; retaining it." >&2; status=1
+      fi
+    else
+      printf '{"volume":"%s","reason":"joined_proof_not_reconciled"}\n' "$JOINED_VOLUME" > "$WORK_DIR/retained-joined-volume.json"
       status=1
     fi
   fi
@@ -373,6 +410,10 @@ CURL_TLS_ARGS=()
 if [[ "${RC_NATIVE_TEST_FILES:-0}" == "1" ]]; then
   API_WEB_ORIGIN="https://localhost"
   CLIENT_ORIGIN="https://localhost"
+  if [[ "${RC_NATIVE_TEST_JOINED_WORKSPACE:-0}" == "1" ]]; then
+    API_WEB_ORIGIN="http://localhost:${RC_NATIVE_TEST_JOINED_WEB_PORT:-39531}"
+    CLIENT_ORIGIN="$API_WEB_ORIGIN"
+  fi
   CURL_TLS_ARGS=(--cacert "$TLS_CERT")
 fi
 if [[ "${RC_NATIVE_TEST_FILES:-0}" == "1" ]]; then
@@ -388,11 +429,18 @@ PYDEPS
     DEPENDENCY_MOUNT=(--mount "type=bind,src=$DEPENDENCY_PROJECT_ROOT,dst=$DEPENDENCY_PROJECT_ROOT,readonly")
   fi
   DOCKER_NAME="rc029-native-files-$$-$RANDOM"
+  DATA_MOUNT=(--tmpfs /var/lib/remotecode:rw,nosuid,nodev,size=64m,mode=700)
+  if [[ "${RC_NATIVE_TEST_JOINED_WORKSPACE:-0}" == "1" ]]; then
+    JOINED_VOLUME="rc021-joined-data-$$-$RANDOM"
+    docker volume create --label "remotecode.rc021.joined=$OWNED_DEVICE_ID" "$JOINED_VOLUME" >/dev/null
+    DATA_MOUNT=(--mount "type=volume,src=$JOINED_VOLUME,dst=/var/lib/remotecode")
+    printf '{"name":"%s","ownedDeviceId":"%s"}\n' "$JOINED_VOLUME" "$OWNED_DEVICE_ID" > "$WORK_DIR/joined-volume.json"
+  fi
   DOCKER_ID="$(docker create --platform linux/arm64 --pull never --read-only --entrypoint bun --workdir /workspace --name "$DOCKER_NAME" --label "remotecode.rc029.native=$OWNED_DEVICE_ID" -p "127.0.0.1:$API_PORT:$API_PORT" \
     --mount "type=bind,src=$ROOT_DIR,dst=/workspace,readonly" \
     ${DEPENDENCY_MOUNT[@]+"${DEPENDENCY_MOUNT[@]}"} \
     --mount "type=bind,src=$WORK_DIR,dst=/proof,readonly" \
-    --tmpfs /var/lib/remotecode:rw,nosuid,nodev,size=64m,mode=700 \
+    "${DATA_MOUNT[@]}" \
     --tmpfs /tmp:rw,nosuid,nodev,size=64m \
     -e API_PORT="$API_PORT" -e DATABASE_PATH="$API_DATABASE_PATH" \
     -e RC_NATIVE_TEST_TLS_CERT="$API_TLS_CERT" -e RC_NATIVE_TEST_TLS_KEY="$API_TLS_KEY" \
@@ -467,6 +515,14 @@ if [target.get("BuildableName") for target in test_targets] != ["RemoteCodeMobil
 print("Generated scheme includes one UI-test target and retains the app Archive entry.")
 PY
 
+if [[ "${RC_NATIVE_TEST_JOINED_WORKSPACE:-0}" == "1" ]]; then
+  [[ "${RC_NATIVE_TEST_FILES:-0}" == "1" && -n "$JOINED_VOLUME" ]] || { echo "Joined proof requires owned FILES mode and persistent volume." >&2; exit 2; }
+  RC_JOINED_WORK_DIR="$WORK_DIR" RC_JOINED_CONTAINER_ID="$DOCKER_ID" RC_JOINED_VOLUME="$JOINED_VOLUME" RC_JOINED_DEVICE_ID="$DEVICE_ID" \
+    RC_JOINED_API_ORIGIN="$API_ORIGIN" RC_JOINED_WEB_ORIGIN="$CLIENT_ORIGIN" RC_JOINED_PASSWORD="$API_PASSWORD" RC_JOINED_CA="$TLS_CERT" \
+    RC_JOINED_API_PORT="$API_PORT" bun "$ROOT_DIR/scripts/run-joined-workspace-proof.ts"
+  DOCKER_ID="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["containerId"])' "$WORK_DIR/joined-current-container.json")"
+  exit 0
+else
 if ! EXPO_PUBLIC_API_ORIGIN="$API_ORIGIN" \
   EXPO_PUBLIC_CLIENT_ORIGIN="$CLIENT_ORIGIN" \
   xcodebuild \
@@ -475,6 +531,8 @@ if ! EXPO_PUBLIC_API_ORIGIN="$API_ORIGIN" \
     -destination "platform=iOS Simulator,id=$DEVICE_ID" \
     ${DERIVED_ARGS[@]+"${DERIVED_ARGS[@]}"} \
     RC_NATIVE_TEST_API_ORIGIN="$API_ORIGIN" \
+    -skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testInstalledAppJoinsWebCreatedWorkspaceAndSavesSharedLinuxFile \
+    -skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testInstalledAppReadsJoinedWorkspaceAfterAPIContainerRecreationWithoutReplay \
     -only-testing:"$TEST_SELECTION" \
     ${SKIP_TEST_ARG:+"$SKIP_TEST_ARG"} \
     ${EXTRA_SKIP_ARGS[@]+"${EXTRA_SKIP_ARGS[@]}"} \
@@ -485,7 +543,9 @@ if ! EXPO_PUBLIC_API_ORIGIN="$API_ORIGIN" \
   exit 1
 fi
 
-if [[ "${RC_NATIVE_TEST_FILES:-0}" == "1" ]]; then
+fi
+
+if [[ "${RC_NATIVE_TEST_FILES:-0}" == "1" && "${RC_NATIVE_TEST_JOINED_WORKSPACE:-0}" != "1" ]]; then
   if [[ ! -d "$WORK_DIR/NativeTests.xcresult" ]]; then echo "Installed native tests produced no XCResult; proof unverified." >&2; exit 1; fi
   xcrun xcresulttool get test-results summary --path "$WORK_DIR/NativeTests.xcresult" > "$WORK_DIR/xcresult-summary.json"
   docker exec "$DOCKER_ID" bun -e 'import{Database}from"bun:sqlite";import{readFileSync,lstatSync,existsSync}from"node:fs";import{createHash}from"node:crypto";const d=new Database(process.env.DATABASE_PATH,{readonly:true,create:false});const outcomes=d.query("SELECT request_id,kind,workspace_id,source_path,result_path,result_sha256 FROM file_operation_outcomes ORDER BY completed_at").all();const seen=new Set();const files=outcomes.flatMap(r=>{const key=r.workspace_id+"/"+r.result_path;if(seen.has(key))return[];seen.add(key);const path="/var/lib/remotecode/workspaces/"+key;if(!existsSync(path))return[{workspaceId:r.workspace_id,path:r.result_path,exists:false}];const b=readFileSync(path),st=lstatSync(path,{bigint:true});return[{workspaceId:r.workspace_id,path:r.result_path,exists:true,base64:b.toString("base64"),sha256:createHash("sha256").update(b).digest("hex"),device:st.dev.toString(),inode:st.ino.toString(),mode:Number(st.mode&0o777n)}]});console.log(JSON.stringify({outcomes,files,intents:d.query("select request_id,kind,workspace_id,source_path,destination_path,state,source_device,source_inode from file_operation_intents").all(),workspaces:d.query("select id,name from workspaces").all(),actions:d.query("select id,action from actions").all(),sessions:d.query("select count(*) n from sessions").get().n,folders:d.query("select workspace_id,request_id,state from workspace_folder_requests").all(),quickCheck:d.query("pragma quick_check").all()}));d.close()' > "$WORK_DIR/linux-state.json"

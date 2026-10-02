@@ -686,6 +686,98 @@ final class RemoteCodeMobileProofUITests: XCTestCase {
     }
 
     @MainActor
+    func testInstalledAppJoinsWebCreatedWorkspaceAndSavesSharedLinuxFile() async throws {
+        let app = XCUIApplication(bundleIdentifier: "com.remotecode.mobileproof")
+        let observer = URLSession(configuration: .ephemeral)
+        defer { app.terminate(); observer.invalidateAndCancel() }
+        let (api, workspace) = try await joinedFileWorkspace(app, observer: observer)
+        let path = "cross-client.txt"
+        let original = "web created on shared Linux host"
+        let saved = "native save on shared Linux host"
+        try openNativeFile(path, in: app)
+        let status = app.staticTexts.matching(identifier: "file-status").firstMatch
+        guard status.waitForLabelContaining("Text and version read from host", timeout: 15) else { XCTFail("Native must OPEN the web-created file before editing"); return }
+        let draft = app.textViews["File draft"]
+        let opened = try await observer.openFile(at: api, workspaceId: workspace.id, path: path)
+        let originalVersion = try await observer.sha256(original)
+        guard opened.path == path && opened.content == original && opened.version == originalVersion && (draft.value as? String) == opened.content else { XCTFail("Native OPEN and real API bytes/version must match the web-created input"); return }
+        guard app.staticTexts["\(path) · last read version available"].exists && !app.buttons["Check file receipt"].exists && !app.otherElements["pending-file"].exists && !app.staticTexts.matching(identifier: "pending-folder").firstMatch.exists else { XCTFail("SAVE requires a current OPEN without pending file or folder identity"); return }
+        try draft.clearAndTypeText(saved, in: app)
+        guard (draft.value as? String) == saved else { XCTFail("The actual File draft must contain the exact native SAVE proposal"); return }
+        try tapFileControl("Save file", in: app)
+        guard status.waitForLabelContaining("SAVE receipt confirmed", timeout: 15) else { XCTFail("Native SAVE must confirm before any follow-up; an unknown result must not be retried"); return }
+        guard !app.buttons["Check file receipt"].exists && !app.otherElements["pending-file"].exists else { XCTFail("Confirmed SAVE must clear its pending identity"); return }
+        try openNativeFile(path, in: app)
+        guard status.waitForLabelContaining("Current host text read", timeout: 15) else { XCTFail("Historical SAVE receipt must be followed by current OPEN"); return }
+        let actual = try await observer.openFile(at: api, workspaceId: workspace.id, path: path)
+        let savedVersion = try await observer.sha256(saved)
+        guard actual.path == path && actual.content == saved && actual.version == savedVersion && actual.version != opened.version && (draft.value as? String) == actual.content else { XCTFail("Current native OPEN and real API must show exact saved bytes/version"); return }
+        XCTAssertTrue(app.staticTexts["\(path) · last read version available"].exists)
+        XCTAssertFalse(app.staticTexts.matching(identifier: "pending-folder").firstMatch.exists)
+        let rows = try await observer.workspaceList(at: api)
+        let joined = rows.filter { $0.name.hasPrefix("rc021-joined-") }
+        XCTAssertEqual(joined.count, 1)
+        XCTAssertEqual(joined.first?.id, workspace.id)
+        XCTAssertEqual(joined.first?.name, workspace.name)
+    }
+
+    @MainActor
+    func testInstalledAppReadsJoinedWorkspaceAfterAPIContainerRecreationWithoutReplay() async throws {
+        let app = XCUIApplication(bundleIdentifier: "com.remotecode.mobileproof")
+        let observer = URLSession(configuration: .ephemeral)
+        defer { app.terminate(); observer.invalidateAndCancel() }
+        let (api, workspace) = try await joinedFileWorkspace(app, observer: observer)
+        let path = "cross-client.txt"
+        let saved = "native save on shared Linux host"
+        try openNativeFile(path, in: app)
+        let status = app.staticTexts.matching(identifier: "file-status").firstMatch
+        guard status.waitForLabelContaining("Text and version read from host", timeout: 15) else { XCTFail("Relaunched native app must explicitly OPEN current host text/version"); return }
+        let actual = try await observer.openFile(at: api, workspaceId: workspace.id, path: path)
+        let savedVersion = try await observer.sha256(saved)
+        let draft = app.textViews["File draft"]
+        guard actual.path == path && actual.content == saved && actual.version == savedVersion && (draft.value as? String) == actual.content else { XCTFail("Native UI and real API must retain exact native-saved bytes/version after API recreation"); return }
+        XCTAssertTrue(app.staticTexts["\(path) · last read version available"].exists)
+        XCTAssertFalse(app.buttons["Check file receipt"].exists, "Relaunch must not restore a completed SAVE as pending")
+        XCTAssertFalse(app.otherElements["pending-file"].exists)
+        XCTAssertFalse(app.staticTexts.matching(identifier: "pending-folder").firstMatch.exists)
+        XCTAssertFalse(app.buttons["Prepare workspace folder"].exists, "Existing folder must not offer another preparation")
+        XCTAssertFalse(app.buttons["Save file"].isEnabled, "Unchanged current OPEN must not propose another SAVE")
+        let rows = try await observer.workspaceList(at: api)
+        let joined = rows.filter { $0.name.hasPrefix("rc021-joined-") }
+        XCTAssertEqual(joined.count, 1)
+        XCTAssertEqual(joined.first?.id, workspace.id)
+        XCTAssertEqual(joined.first?.name, workspace.name)
+        for _ in 0..<8 where !draft.isHittable {
+            let scroll = app.scrollViews.firstMatch
+            if draft.frame.midY < scroll.frame.minY { scroll.swipeDown() } else { scroll.swipeUp() }
+        }
+        guard draft.isHittable else { XCTFail("Current shared file must be visible in the actual native screenshot"); return }
+        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Joined native current file after API container recreation"; shot.lifetime = .keepAlways; add(shot)
+    }
+
+    @MainActor
+    private func joinedFileWorkspace(_ app: XCUIApplication, observer: URLSession) async throws -> (URL, WorkspaceMetadata) {
+        app.launch()
+        let host = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Host: ")).firstMatch
+        guard host.waitForExistence(timeout: 15) else { throw NSError(domain: "NativeFileProof", code: 10) }
+        let api = try XCTUnwrap(URL(string: String(host.label.dropFirst("Host: ".count))))
+        guard api.scheme == "https" && api.host == "127.0.0.1" else { XCTFail("Joined native observer must use the app's genuine HTTPS loopback origin"); throw NSError(domain: "NativeFileProof", code: 11) }
+        if app.buttons["Sign in to host"].exists || !app.buttons["Sign out"].exists { signIn(app) }
+        guard app.staticTexts.matching(identifier: "connection-status").firstMatch.waitForLabel("connected", timeout: 15) else { throw NSError(domain: "NativeFileProof", code: 12) }
+        try await observer.signIn(at: api, password: password)
+        let rows = try await observer.workspaceList(at: api)
+        let joined = rows.filter { $0.name.hasPrefix("rc021-joined-") }
+        guard joined.count == 1 else { XCTFail("Joined proof requires exactly one existing web-created rc021-joined- workspace; found \(joined.count)"); throw NSError(domain: "NativeFileProof", code: 13) }
+        let workspace = try XCTUnwrap(joined.first)
+        let current = try await observer.workspace(at: api, id: workspace.id)
+        guard current.id == workspace.id && current.name == workspace.name && current.archived == false else { XCTFail("Joined workspace must retain its real ID/name and remain active"); throw NSError(domain: "NativeFileProof", code: 14) }
+        try tapFileControl("Refresh workspaces", in: app)
+        try selectFileWorkspace(workspace.name, in: app)
+        guard app.staticTexts["Selected: \(workspace.name)"].waitForExistence(timeout: 10) && app.staticTexts.matching(identifier: "folder-status").firstMatch.waitForLabel("Folder provisioned on Linux.", timeout: 15) else { throw NSError(domain: "NativeFileProof", code: 15) }
+        return (api, workspace)
+    }
+
+    @MainActor
     private func fileWorkspace(_ app: XCUIApplication, observer: URLSession, prefix: String, prepareInApp: Bool = false) async throws -> (URL, WorkspaceMetadata) {
         app.launch()
         let host = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Host: ")).firstMatch
