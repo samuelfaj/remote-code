@@ -12,10 +12,12 @@ const password = randomBytes(32).toString("base64url");
 const app = createApi(databasePath, undefined, { password, sessionTtlMs: 120_000 });
 
 // Two real sessions for distinct users, seeded like action-requests.test.ts.
+// INSERT OR IGNORE: logout deletes all sessions mid-file, so reseeds after
+// that must not fail on the surviving bob row.
 function seedSession(token: string, userId: string) {
   const database = new Database(databasePath);
   try {
-    database.query("INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)")
+    database.query("INSERT OR IGNORE INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)")
       .run(createHash("sha256").update(token).digest("hex"), userId, Date.now() + 60_000);
   } finally { database.close(); }
 }
@@ -119,7 +121,35 @@ it("denies a valid B session on A's workspace layout and leaves A's row unchange
   expect((await call(`/api/workspaces/${workspaceId}/layout`, cookieA)).body).toEqual({ workspaceId, layout });
 });
 
+it("stops layout access after logout and after session expiry", async () => {
+  const created = await call("/api/workspaces", cookieA, "POST", { name: `layout-g-${randomUUID()}`, requestId: randomUUID() });
+  expect(created.status).toBe(201);
+  const listed = await call("/api/workspaces", cookieA);
+  const workspaceId = listed.body.workspaces.find((row: any) => row.name.startsWith("layout-g-")).id as string;
+  const layout = { tabs: [{ id: "t1", kind: "file", targetId: "a.txt" }], activeTabId: "t1" };
+  expect((await call(`/api/workspaces/${workspaceId}/layout`, cookieA, "PUT", layout)).status).toBe(200);
+  // Logout revokes the session: the same cookie is now unauthorized.
+  const logout = await call("/api/auth/logout", cookieA, "POST", {});
+  expect([200, 204].includes(logout.status)).toBe(true);
+  expect((await call(`/api/workspaces/${workspaceId}/layout`, cookieA)).status).toBe(401);
+  expect((await call(`/api/workspaces/${workspaceId}/layout`, cookieA, "PUT", layout)).status).toBe(401);
+  // Expired session row: same denial without touching the layout row.
+  const stale = `remotecode_session=${"c".repeat(64)}`;
+  const db = new Database(databasePath);
+  try {
+    const { createHash } = await import("node:crypto");
+    db.query("INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)")
+      .run(createHash("sha256").update("c".repeat(64)).digest("hex"), "alice", Date.now() - 1000);
+  } finally { db.close(); }
+  expect((await call(`/api/workspaces/${workspaceId}/layout`, stale)).status).toBe(401);
+  expect((await call(`/api/workspaces/${workspaceId}/layout`, stale, "PUT", layout)).status).toBe(401);
+  // Logout deletes all alice sessions (bob's too if shared); reseed both
+  // before later tests — this file shares one database.
+  seedSession("b".repeat(64), "bob");
+});
+
 it("saves two panes and restores them after reopen without moving the other workspace", async () => {
+  seedSession("a".repeat(64), "alice");
   const created = await call("/api/workspaces", cookieA, "POST", { name: `layout-e-${randomUUID()}`, requestId: randomUUID() });
   expect(created.status).toBe(201);
   const listed = await call("/api/workspaces", cookieA);

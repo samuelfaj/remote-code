@@ -2,7 +2,7 @@ import { Database } from "bun:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { Elysia, t } from "elysia";
-import { sessionUserId } from "./auth";
+import { sessionExpiresAt, sessionTokenHash, sessionUserId } from "./auth";
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const uuidSchema = t.String({ minLength: 36, maxLength: 36 });
@@ -71,6 +71,28 @@ function validLayout(value: unknown): value is WorkspaceLayout {
 // per device — clients must not treat a selection change as another device's
 // focus move; device focus separation is a client concern built on this API.
 export function workspaceLayoutFeature(databasePath: string) {
+  // Like the terminal routes, bind every call to the live session triple
+  // (user, token, expiry): logout, expiry or revocation must stop access
+  // even when the caller still presents a workspace id. userId alone is not
+  // enough — a stale cookie must not keep working.
+  function identity(request: Request): { userId: string; tokenHash: string; expiresAt: number } | null {
+    const userId = sessionUserId(databasePath, request);
+    const tokenHash = sessionTokenHash(request);
+    const expiresAt = sessionExpiresAt(databasePath, request);
+    if (!userId || !tokenHash || !expiresAt) return null;
+    return { userId, tokenHash, expiresAt };
+  }
+
+  function assertSession(owner: { userId: string; tokenHash: string; expiresAt: number }) {
+    const db = new Database(databasePath, { readonly: true, create: false });
+    try {
+      const live = db.query<{ expires_at: number }, [string, string]>(
+        "SELECT expires_at FROM sessions WHERE user_id = ? AND token_hash = ?",
+      ).get(owner.userId, owner.tokenHash);
+      if (!live || live.expires_at !== owner.expiresAt || live.expires_at <= Date.now()) throw new Error("unauthorized");
+    } finally { db.close(); }
+  }
+
   function database<T>(callback: (db: Database) => T): T {
     mkdirSync(dirname(databasePath), { recursive: true });
     const db = new Database(databasePath, { create: true });
@@ -86,8 +108,12 @@ export function workspaceLayoutFeature(databasePath: string) {
 
   const routes = new Elysia()
     .get("/api/workspaces/:workspaceId/layout", ({ params, request, set }) => {
-      const userId = sessionUserId(databasePath, request);
-      if (!userId || !uuid.test(params.workspaceId)) { set.status = userId ? 404 : 401; return { error: userId ? "not_found" : "unauthorized" }; }
+      const owner = identity(request);
+      if (!owner || !uuid.test(params.workspaceId)) { set.status = owner ? 404 : 401; return { error: owner ? "not_found" : "unauthorized" }; }
+      const userId = owner.userId;
+      // Re-check the live session before distinguishing missing workspace
+      // from empty layout, so a revoked session cannot probe existence.
+      try { assertSession(owner); } catch { set.status = 401; return { error: "unauthorized" }; }
       const result = database((db) => {
         const workspace = db.query<{ archived: number }, [string, string]>(
           "SELECT archived FROM workspaces WHERE id = ? AND user_id = ?",
@@ -97,20 +123,35 @@ export function workspaceLayoutFeature(databasePath: string) {
           "SELECT layout FROM workspace_layouts WHERE workspace_id = ? AND user_id = ?",
         ).get(params.workspaceId, userId)?.layout ?? null;
       });
-      if (result === null && database((db) => !db.query("SELECT 1 FROM workspaces WHERE id = ? AND user_id = ?").get(params.workspaceId, userId))) {
-        set.status = 404; return { error: "not_found" };
+      if (result === null) {
+        const missing = database((db) => !db.query("SELECT 1 FROM workspaces WHERE id = ? AND user_id = ?").get(params.workspaceId, userId));
+        // Final session word: revocation between the first check and now
+        // must read as unauthorized, never as existence signal.
+        try { assertSession(owner); } catch { set.status = 401; return { error: "unauthorized" }; }
+        if (missing) { set.status = 404; return { error: "not_found" }; }
+        return { workspaceId: params.workspaceId, layout: null };
       }
-      if (result === null) return { workspaceId: params.workspaceId, layout: null };
+      // Saved layout branch keeps the same final word: re-check before
+      // returning stored contents.
+      try { assertSession(owner); } catch { set.status = 401; return { error: "unauthorized" }; }
       const layout = JSON.parse(result);
       if (!validLayout(layout)) { set.status = 503; return { error: "layout_unavailable" }; }
       return { workspaceId: params.workspaceId, layout };
     }, { params: t.Object({ workspaceId: uuidSchema }) })
     .put("/api/workspaces/:workspaceId/layout", ({ body, params, request, set }) => {
-      const userId = sessionUserId(databasePath, request);
-      if (!userId || !uuid.test(params.workspaceId)) { set.status = userId ? 404 : 401; return { error: userId ? "not_found" : "unauthorized" }; }
+      const owner = identity(request);
+      if (!owner || !uuid.test(params.workspaceId)) { set.status = owner ? 404 : 401; return { error: owner ? "not_found" : "unauthorized" }; }
+      const userId = owner.userId;
       if (!validLayout(body)) { set.status = 422; return { error: "invalid_layout" }; }
       try {
-        database((db) => {
+        database((db) => db.transaction(() => {
+          // Session re-check and write share one immediate transaction: the
+          // write lock is held from the re-check to the read-back, so an
+          // external revocation between them waits rather than slipping in.
+          const live = db.query<{ expires_at: number }, [string, string]>(
+            "SELECT expires_at FROM sessions WHERE user_id = ? AND token_hash = ?",
+          ).get(owner.userId, owner.tokenHash);
+          if (!live || live.expires_at !== owner.expiresAt || live.expires_at <= Date.now()) throw new Error("unauthorized");
           const workspace = db.query<{ archived: number }, [string, string]>(
             "SELECT archived FROM workspaces WHERE id = ? AND user_id = ?",
           ).get(params.workspaceId, userId);
@@ -124,9 +165,10 @@ export function workspaceLayoutFeature(databasePath: string) {
             "SELECT layout FROM workspace_layouts WHERE workspace_id = ? AND user_id = ?",
           ).get(params.workspaceId, userId);
           if (!stored || stored.layout !== JSON.stringify(body)) throw new Error("layout_not_persisted");
-        });
+        }).immediate());
       } catch (error) {
         const message = error instanceof Error ? error.message : "";
+        if (message === "unauthorized") { set.status = 401; return { error: "unauthorized" }; }
         set.status = message === "not_found" ? 404 : message === "workspace_archived" ? 409 : 503;
         return { error: message === "not_found" ? "not_found" : message === "workspace_archived" ? "workspace_archived" : "layout_unavailable" };
       }
