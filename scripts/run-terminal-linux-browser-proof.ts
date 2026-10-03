@@ -228,6 +228,17 @@ try {
     await showsText(page, `REPLY=${reply}`);
     const content = `created through the terminal on ${viewport.width}`;
     await send(page, `printf '${content}\\n' > created-by-terminal.txt`);
+    // Direct keyboard input is proved at component level (forwarder gated
+    // on/off, no backend calls from the fixture) and shares the guarded
+    // send() path with line input, which this journey proves end to end.
+    // Only the toggle attach/detach is asserted here; per-keystroke live
+    // delivery is not (keys typed while the panel is busy are ignored).
+    if (viewport.width === 1440) {
+      await page.getByRole("button", { name: "Turn on direct keyboard input", exact: true }).click();
+      await expect(page.getByRole("button", { name: "Turn off direct keyboard input", exact: true })).toBeVisible();
+      await page.getByRole("button", { name: "Turn off direct keyboard input", exact: true }).click();
+      await expect(page.getByRole("button", { name: "Turn on direct keyboard input", exact: true })).toBeVisible();
+    }
     // The shell writes after input is acknowledged; refresh until the host lists the file.
     await expect(async () => {
       await page.getByRole("button", { name: "Refresh folder and files", exact: true }).click();

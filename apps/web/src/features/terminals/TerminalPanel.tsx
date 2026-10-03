@@ -36,6 +36,7 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
   const [rows, setRows] = useState("24");
   const [gap, setGap] = useState(false);
   const [message, setMessage] = useState("");
+  const [directKeys, setDirectKeys] = useState(false);
   const sameWorkspace = reference?.start.workspaceId === workspace?.id;
   const currentReceipt = receipt?.workspaceId === workspace?.id ? receipt : null;
   const closed = currentReceipt?.cleanup === "removed";
@@ -333,7 +334,7 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
   return <section className="terminal-panel" aria-label="Linux terminal" style={{ border: "1px solid #dce4df", borderRadius: 8, padding: 16, marginTop: 16, maxWidth: "100%" }}>
     <h3>Linux terminal</h3>
     {!workspace ? <p>Select a workspace to use its host terminal.</p> : <>
-      <p>Line input with a read-only terminal screen. Direct keyboard input is not supported yet.</p>
+      <p>Line input with a read-only terminal screen. {directKeys ? "Direct keyboard input is on: typing in the terminal screen sends one keystroke at a time through the same host input queue. Keys typed while the panel is busy (sending or polling) are ignored with no retry; type one key and watch it echo before the next." : "Direct keyboard input is off."}</p>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <button type="button" disabled={busy || blocked || !available || !storageReady || !!reference || workspace.archived} onClick={() => void start()}>Start Linux terminal</button>
         <button type="button" disabled={busy || blocked} onClick={() => void inspect()}>Inspect terminal state</button>
@@ -347,7 +348,13 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
       <p data-testid="terminal-host-state">{currentReceipt ? `Host state: ${currentReceipt.state}; cleanup: ${currentReceipt.cleanup}; ${currentReceipt.cols} columns × ${currentReceipt.rows} rows; resize: ${currentReceipt.resizeState}${currentReceipt.exitCode === null ? "" : `; exit code: ${currentReceipt.exitCode}`}` : "Host terminal state is unconfirmed."}</p>
       {gap ? <p>Earlier output was discarded or is unavailable. Only received bytes are shown.</p> : null}
       {currentReceipt?.flow ? <p data-testid="terminal-flow-state">{`Flow: ${currentReceipt.flow.totalBytes} produced, ${currentReceipt.flow.retainedBytes} retained, ${currentReceipt.flow.droppedBytes} dropped.`}</p> : null}
-      <TerminalScreen ref={screen} size={currentReceipt ? { cols: currentReceipt.cols, rows: currentReceipt.rows } : null} />
+      <TerminalScreen ref={screen} size={currentReceipt ? { cols: currentReceipt.cols, rows: currentReceipt.rows } : null}
+        onKey={directKeys && canInput && !busy && !working.current ? (key) => void send(key) : undefined} />
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+        <button type="button" disabled={busy || blocked || !canInput} onClick={() => { setDirectKeys((value) => !value); if (!directKeys) screen.current?.focus(); }}>
+          {directKeys ? "Turn off direct keyboard input" : "Turn on direct keyboard input"}
+        </button>
+      </div>
       <div className="terminal-resize">
         <label>Columns (2–300)<input type="number" inputMode="numeric" min={2} max={300} step={1} value={cols} onChange={(event) => setCols(event.target.value)} /></label>
         <label>Rows (2–200)<input type="number" inputMode="numeric" min={2} max={200} step={1} value={rows} onChange={(event) => setRows(event.target.value)} /></label>

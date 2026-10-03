@@ -11,6 +11,8 @@ function Harness() {
   const screen = useRef<TerminalScreenHandle>(null);
   const [mounted, setMounted] = useState(true);
   const [settled, setSettled] = useState(0);
+  const [keys, setKeys] = useState<string[]>([]);
+  const [gated, setGated] = useState(false);
   const done = () => setSettled((count) => count + 1);
   const feed = (bytes: Uint8Array) => async () => { await screen.current?.write(bytes); done(); };
   const pending = (after: () => void) => async () => {
@@ -38,9 +40,13 @@ function Harness() {
       <button onClick={feed(text("FRESH"))}>Feed fresh text</button>
       <button onClick={pending(() => screen.current!.reset())}>Pending write then reset</button>
       <button onClick={pending(() => flushSync(() => setMounted(false)))}>Pending write then unmount</button>
+      <button onClick={() => { setGated((value) => !value); done(); }}>Toggle key gate</button>
     </div>
     <output id="settled" data-count={settled}>{settled}</output>
-    {mounted ? <TerminalScreen ref={screen} size={null} /> : <p id="unmounted">Terminal screen unmounted</p>}
+    <output id="keys" data-keys={JSON.stringify(keys)}>{keys.join(",")}</output>
+    <output id="gate" data-gated={String(gated)}>{String(gated)}</output>
+    {mounted ? <TerminalScreen ref={screen} size={null}
+      onKey={gated ? undefined : (key) => setKeys((items) => [...items, key])} /> : <p id="unmounted">Terminal screen unmounted</p>}
   </section>;
 }
 

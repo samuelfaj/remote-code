@@ -92,6 +92,25 @@ test("focusing the screen and typing never calls the backend", async ({ page }) 
   expect(calls).toEqual([]);
 });
 
+test("direct keystrokes forward while gated on, and stay silent while gated off", async ({ page }) => {
+  const calls: string[] = [];
+  page.on("request", (request) => { if (new URL(request.url()).pathname.startsWith("/api")) calls.push(request.url()); });
+  await page.locator(".terminal-screen").click();
+  await page.keyboard.type("ab");
+  await expect(page.locator("#keys")).toHaveAttribute("data-keys", JSON.stringify(["a", "b"]));
+  await feed(page, "Toggle key gate");
+  await expect(page.locator("#gate")).toHaveAttribute("data-gated", "true");
+  await page.locator(".terminal-screen").click();
+  await page.keyboard.type("cd");
+  await expect(page.locator("#keys")).toHaveAttribute("data-keys", JSON.stringify(["a", "b"]));
+  await feed(page, "Toggle key gate");
+  await expect(page.locator("#gate")).toHaveAttribute("data-gated", "false");
+  await page.locator(".terminal-screen").click();
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#keys")).toHaveAttribute("data-keys", JSON.stringify(["a", "b", "\r"]));
+  expect(calls).toEqual([]);
+});
+
 for (const viewport of [{ name: "desktop", width: 1440, height: 1000 }, { name: "mobile", width: 390, height: 844 }]) {
   test(`${viewport.name}: 120 columns overflow locally, not the page`, async ({ page }) => {
     await page.setViewportSize(viewport);
