@@ -1,4 +1,4 @@
-import { chromium, expect, type Page } from "@playwright/test";
+import { chromium, expect, request, type Page } from "@playwright/test";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -23,7 +23,7 @@ function hashPath(path: string): string {
   return hash.digest("hex");
 }
 const hashes = () => Object.fromEntries(paths.map((path) => [path, hashPath(path)]));
-const record: any = { run, volume, image, sourceBefore: hashes(), commands: [], result: "unverified", scope: "Web ANSI renderer, explicit resize and unknown outcomes on the line terminal; not full RC031 acceptance" };
+const record: any = { run, volume, image, sourceBefore: hashes(), commands: [], result: "unverified", scope: "Web terminal disconnect/reconnect, ANSI rendering, explicit resize and unknown outcomes; not full RC031 acceptance" };
 let id = "", vite: ReturnType<typeof Bun.spawn> | undefined, browser: Awaited<ReturnType<typeof chromium.launch>> | undefined, page: Page | undefined;
 let volumeCreated = false, volumeCreateAttempted = false, createAttempted = false, base = "";
 function command(...args: string[]) {
@@ -139,7 +139,7 @@ try {
   browser = await chromium.launch({ headless: true }); record.chromium = browser.version();
   record.cases = [];
   for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844 }]) {
-    const context = await browser.newContext({ viewport }); context.setDefaultTimeout(20000);
+    let context = await browser.newContext({ viewport }); context.setDefaultTimeout(20000);
     page = await context.newPage(); await signIn(page);
     const session = await page.request.get(`${base}/api/auth/session`); if (session.status() !== 200) throw Error("Normal browser session required");
     const userId = (await session.json()).userId;
@@ -284,8 +284,8 @@ try {
     await noRaw();
     const startRef = await readRef();
     const sized = viewport.width === 1440 ? { cols: 120, rows: 40 } : { cols: 40, rows: 18 };
-    const colsInput = page.getByLabel("Columns (2\u2013300)"), rowsInput = page.getByLabel("Rows (2\u2013200)");
-    const apply = page.getByRole("button", { name: "Apply size", exact: true });
+    let colsInput = page.getByLabel("Columns (2\u2013300)"), rowsInput = page.getByLabel("Rows (2\u2013200)");
+    let apply = page.getByRole("button", { name: "Apply size", exact: true });
     // A click during an in-flight state read is ignored by the UI before any POST; re-click only while no resize POST exists.
     const clickApply = async (before: number) => {
       for (let attempt = 0; attempt < 6 && resizeRequests === before; attempt++) {
@@ -346,6 +346,137 @@ try {
     }));
     if (bounded.domRows !== sized.rows || bounded.overflowRows > sized.rows || bounded.items.length > sized.rows || new Set(bounded.items).size !== 1 || bounded.items[0] !== String(1000 + sized.rows)) throw Error("Scrollback/viewport unbounded");
     ansi.overflow = { ...bounded, items: bounded.items.length, setsize: bounded.items[0], gapPoll: ring };
+    const reconnectRef = await readRef();
+    const reconnectStartCount = starts.length, reconnectInputCount = inputs.length;
+    const reconnectInputSequence = terminalRow(reconnectRef.terminalId).input_sequence;
+    const reconnectCookies = await context.storageState();
+    const gateName = `.rc031-reconnect-${randomUUID()}`;
+    await send(page, `while [ ! -f '${gateName}' ]; do sleep 0.05; done; i=0; while [ \"$i\" -lt 12000 ]; do printf 'reconnect-overflow-%06d\\n' \"$i\"; i=$((i+1)); done; printf '\\nRECONNECT-PRODUCER-COMPLETE\\n'`);
+    await expect(page.getByTestId("terminal-status")).toContainText("Input queued by the host.");
+    const mutationCountsBeforeDisconnect = { starts: starts.length, inputs: inputRequests, resizes: resizeRequests };
+    await context.close();
+    page = undefined;
+    const observer = await request.newContext({ storageState: reconnectCookies });
+    const pollPath = `${base}/api/terminals/${reconnectRef.terminalId}`;
+    const snapshotResponse = await observer.get(`${pollPath}?offset=0`);
+    if (snapshotResponse.status() !== 200) throw Error("Authenticated after-close output snapshot unavailable");
+    const afterCloseSnapshot = await snapshotResponse.json();
+    const afterCloseOffset = afterCloseSnapshot.endOffset;
+    const reconnectObservation: any = { terminalId: reconnectRef.terminalId, afterCloseOffset, gateName, mutationCountsBeforeDisconnect };
+    const heldResponse = await observer.get(`${pollPath}?offset=${afterCloseOffset}`);
+    if (heldResponse.status() !== 200 || (await heldResponse.json()).endOffset !== afterCloseOffset) throw Error("Negative control failed: producer advanced before observer released gate");
+    // This owned host-side file write releases test synchronization only; it does not send PTY input or represent a product action.
+    command("docker", "exec", id, "bun", "-e", `import{writeFileSync}from'node:fs';writeFileSync(${JSON.stringify(`/var/lib/remotecode/workspaces/${workspaceId}/${gateName}`)},'release\\n',{mode:0o644})`);
+    let disconnectedText = "", outputOffset = afterCloseOffset, highestOffset = afterCloseOffset;
+    const disconnectedEnd = Date.now() + 30000;
+    while (!disconnectedText.includes("RECONNECT-PRODUCER-COMPLETE") && Date.now() < disconnectedEnd) {
+      const readiness = await observer.get(`${base}/api/health/ready`);
+      if (readiness.status() !== 200) throw Error("API readiness failed while browser was disconnected");
+      const response = await observer.get(`${pollPath}?offset=${outputOffset}`);
+      if (response.status() !== 200) throw Error("Authenticated disconnected output poll failed");
+      const value = await response.json();
+      highestOffset = Math.max(highestOffset, value.endOffset);
+      if (value.gap) outputOffset = value.baseOffset;
+      const chunk = typeof value.outputBase64 === "string" ? Buffer.from(value.outputBase64, "base64") : Buffer.alloc(0);
+      disconnectedText += chunk.toString("utf8");
+      outputOffset = value.nextOffset;
+      if (!disconnectedText.includes("RECONNECT-PRODUCER-COMPLETE")) await delay(100);
+    }
+    await observer.dispose();
+    const disconnectedDelta = highestOffset - afterCloseOffset;
+    if (!disconnectedText.includes("RECONNECT-PRODUCER-COMPLETE") || disconnectedDelta <= 65536) throw Error(`Disconnected producer proof incomplete: marker=${disconnectedText.includes("RECONNECT-PRODUCER-COMPLETE")}, bytes=${disconnectedDelta}`);
+    reconnectObservation.disconnected = { producerComplete: true, afterCloseOffset, finalOffset: highestOffset, bytesProduced: disconnectedDelta, gateReleasedByObserver: true, heldOutputNegativeControl: true, apiReadyThroughout: true };
+    context = await browser.newContext({ viewport, storageState: reconnectCookies }); context.setDefaultTimeout(20000);
+    context.on("request", (request) => {
+      const path = new URL(request.url()).pathname;
+      if (request.method() === "POST" && path === `/api/workspaces/${workspaceId}/terminals`) { starts.push(request.postDataJSON().requestId); }
+      if (request.method() === "POST" && /\/api\/terminals\/[0-9a-f-]+\/resize$/.test(path)) { resizeRequests++; }
+      if (request.method() === "POST" && /\/api\/terminals\/[0-9a-f-]+\/input$/.test(path)) { inputRequests++; inputs.push(request.postDataJSON().sequence); }
+    });
+    context.on("response", async (response) => {
+      if (/\/api\/terminals\/[0-9a-f-]+$/.test(new URL(response.url()).pathname) && response.request().method() === "GET" && response.status() === 200) {
+        const value = await response.json().catch(() => null);
+        if (value) {
+          polls.push({ gap: value.gap, baseOffset: value.baseOffset, endOffset: value.endOffset });
+          const chunk = typeof value.outputBase64 === "string" ? Buffer.from(value.outputBase64, "base64") : Buffer.alloc(0);
+          if (chunk.length) edges.push({ head: chunk.subarray(0, 2).toString("hex"), tail: chunk.subarray(-2).toString("hex"), length: chunk.length });
+        }
+      }
+    });
+    await context.route(`**/api/workspaces/${workspaceId}/terminals`, async (route) => {
+      if (route.request().method() !== "POST") return route.continue();
+      const body = route.request().postDataJSON();
+      const stored = await route.request().frame().evaluate((key) => JSON.parse(sessionStorage.getItem(key) ?? "null"), storageKey);
+      if (stored?.start.requestId !== body.requestId || stored.start.workspaceId !== workspaceId || stored.start.cols !== body.cols || stored.start.rows !== body.rows) throw Error("Start identity was not stored before POST");
+      if (!dropStart) return route.continue();
+      dropStart = false;
+      const response = await route.fetch();
+      if (response.status() !== 201) throw Error("Start drop must follow a real committed start");
+      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "request_outcome_unknown" }) });
+    });
+    await context.route(/\/api\/terminals\/[0-9a-f-]+\/input$/, async (route) => {
+      const body = route.request().postDataJSON();
+      const stored = await route.request().frame().evaluate((key) => JSON.parse(sessionStorage.getItem(key) ?? "null"), storageKey);
+      if (!stored?.inputUncertain || stored.terminalId !== new URL(route.request().url()).pathname.split("/")[3]) throw Error("Input fence missing before POST");
+      if (!dropInput) return route.continue();
+      dropInput = false;
+      const response = await route.fetch();
+      if (response.status() !== 200) throw Error("Input drop must follow actual queued input");
+      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "request_outcome_unknown" }) });
+    });
+    await context.route(/\/api\/terminals\/[0-9a-f-]+\/resize$/, async (route) => {
+      const body = route.request().postDataJSON();
+      const stored = await route.request().frame().evaluate((key) => JSON.parse(sessionStorage.getItem(key) ?? "null"), storageKey);
+      if (!stored?.resizeUncertain || stored.terminalId !== new URL(route.request().url()).pathname.split("/")[3]) throw Error("Resize fence missing before POST");
+      const entry: any = { cols: body.cols, rows: body.rows, fenceBeforePost: true };
+      resizes.push(entry);
+      if (!dropResize && !holdResize) return route.continue();
+      const response = await route.fetch();
+      if (response.status() !== 200) throw Error("Resize drop must follow an actual applied resize");
+      entry.realStatus = 200;
+      if (dropResize) {
+        dropResize = false;
+        return route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "request_outcome_unknown" }) });
+      }
+      holdResize = false; late.real = { status: 200, cols: body.cols, rows: body.rows };
+      await delay(12_000);
+      try { await route.fulfill({ response }); late.delivered = true; } catch (error) { late.rejected = String(error).slice(0, 160); }
+      late.done = true;
+    });
+    page = await context.newPage();
+    await page.goto(base);
+    const resumedSession = await page.request.get(`${base}/api/auth/session`);
+    if (resumedSession.status() !== 200 || (await resumedSession.json()).userId !== userId) throw Error("Original authenticated session did not survive browser context reconnect");
+    await page.evaluate(({ key, value }) => sessionStorage.setItem(key, JSON.stringify(value)), { key: storageKey, value: reconnectRef });
+    await page.reload();
+    await expect(page.getByTestId("connection-status")).toHaveText("Live updates connected");
+    const mutationCountsAfterBootstrap = { starts: starts.length, inputs: inputRequests, resizes: resizeRequests };
+    if (mutationCountsAfterBootstrap.starts !== mutationCountsBeforeDisconnect.starts || mutationCountsAfterBootstrap.inputs !== mutationCountsBeforeDisconnect.inputs || mutationCountsAfterBootstrap.resizes !== mutationCountsBeforeDisconnect.resizes) throw Error("A mutation was submitted while disconnected or during replacement-context bootstrap");
+    reconnectObservation.mutationCountsAfterBootstrap = mutationCountsAfterBootstrap;
+    await page.getByRole("button", { name: `Open workspace ${name}`, exact: true }).click();
+    await expect(page.getByTestId("terminal-host-state")).toContainText("Host state: running");
+    await expect(page.getByText("Earlier output was discarded or is unavailable. Only received bytes are shown.", { exact: true })).toBeVisible();
+    await showsText(page, "reconnect-overflow-011999");
+    const reconnectReady = (await page.request.get(`${base}/api/health/ready`)).status();
+    const resumedRef = await readRef();
+    if (reconnectReady !== 200 || starts.length !== reconnectStartCount || inputs.length !== reconnectInputCount + 1 || resumedRef.terminalId !== reconnectRef.terminalId) throw Error(`Reconnect invariant mismatch: ready=${reconnectReady}, starts=${starts.length}/${reconnectStartCount}, inputs=${inputs.length}/${reconnectInputCount + 1}, terminal=${resumedRef.terminalId}/${reconnectRef.terminalId}`);
+    const reconnectRow = terminalRow(reconnectRef.terminalId);
+    if (!reconnectRow || reconnectRow.state !== "running" || reconnectRow.input_sequence !== reconnectInputSequence + 1) throw Error("Reconnect authoritative terminal state changed");
+    const isolatedName = `reconnect-other-workspace-${viewport.width}-${randomUUID()}`;
+    await page.getByLabel("Workspace name", { exact: true }).fill(isolatedName);
+    await page.getByRole("button", { name: "Create workspace", exact: true }).click();
+    await expect(page.getByTestId("workspace-status")).toContainText("Workspace change confirmed");
+    await page.getByRole("button", { name: `Open workspace ${isolatedName}`, exact: true }).click();
+    await expect(page.getByRole("button", { name: "Send input", exact: true })).toBeDisabled();
+    await screenBlank(page);
+    await expect(page.getByText("Select the original workspace to inspect its terminal reference.", { exact: true })).toBeVisible();
+    const isolatedState = state().terminals.find((row: any) => row.terminal_id === reconnectRef.terminalId);
+    if (isolatedState.input_sequence !== reconnectInputSequence + 1 || inputs.length !== reconnectInputCount + 1 || starts.length !== reconnectStartCount) throw Error("Different workspace read/input caused terminal mutation");
+    await page.getByRole("button", { name: `Open workspace ${name}`, exact: true }).click();
+    await expect(page.getByTestId("terminal-host-state")).toContainText("Host state: running");
+    colsInput = page.getByLabel("Columns (2\u2013300)"); rowsInput = page.getByLabel("Rows (2\u2013200)");
+    apply = page.getByRole("button", { name: "Apply size", exact: true });
+    ansi.reconnect = { ...reconnectObservation, gapDisclosed: true, resumedEndMarker: true, readiness: 200, originalSessionRetained: true, differentWorkspaceHiddenAndInputDisabled: true, startPosts: starts.length, inputPosts: inputs.length, row: reconnectRow };
     dropInput = true;
     const once = `unknown-input-${viewport.width}`;
     await send(page, `printf '${once}\\n' >> input-once.txt`);
@@ -518,9 +649,9 @@ try {
   const createdFiles = final.files.filter((file: any) => file["created-by-terminal.txt"]);
   if (createdFiles.length !== 2) throw Error("Expected two CLI-created files");
   for (const file of createdFiles) if (file["created-by-terminal.txt"].uid !== 65534 || file["created-by-terminal.txt"].gid !== 65534) throw Error("CLI file owner mismatch");
-  record.final = final; record.result = "web_terminal_renderer_resize_and_unknown_outcomes_passed";
+  record.final = final; record.result = "web_terminal_disconnect_reconnect_renderer_resize_and_unknown_outcomes_passed";
 } catch (error) {
-  record.error = String(error).replaceAll(password, "[redacted]"); process.exitCode = 1;
+  record.error = String(error).replaceAll(password, "[redacted]"); record.errorStack = error instanceof Error ? error.stack?.replaceAll(password, "[redacted]") : undefined; process.exitCode = 1;
   if (page) { try { record.visibleFailureText = (await page.locator("body").innerText()).replaceAll(password, "[redacted]"); await page.screenshot({ path: resolve(output, "failure.png"), fullPage: true }); } catch {} }
 } finally {
   record.cleanup = {};
@@ -572,7 +703,7 @@ try {
   if (reconciled && (!id || record.cleanup.api)) for (const name of ["proof-ca.pem", "proof-key.pem"]) { try { unlinkSync(resolve(output, name)); } catch (error: any) { if (error.code !== "ENOENT") { record.cleanup.tlsError = String(error); process.exitCode = 1; } } }
   record.sourceAfter = hashes(); record.sourceUnchanged = JSON.stringify(record.sourceBefore) === JSON.stringify(record.sourceAfter);
   if (!record.sourceUnchanged) { record.result = "invalidated_source_changed"; process.exitCode = 1; }
-  if (process.exitCode && record.result === "web_terminal_renderer_resize_and_unknown_outcomes_passed") record.result = "cleanup_unverified";
+  if (process.exitCode && record.result === "web_terminal_disconnect_reconnect_renderer_resize_and_unknown_outcomes_passed") record.result = "cleanup_unverified";
   writeFileSync(resolve(output, "evidence.json"), JSON.stringify(record, null, 2) + "\n");
   console.log(JSON.stringify({ result: record.result, error: record.error, sourceUnchanged: record.sourceUnchanged, cleanup: record.cleanup, retainedContainer: record.retainedContainer }));
 }

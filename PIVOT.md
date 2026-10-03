@@ -1,5 +1,12 @@
 # Pivot policy
 
+## RC-031 web disconnect/reconnect proof — local checkpoint — 2026-10-03 (UTC)
+
+- **Decision:** Preserve original acceptance criteria and keep RC-031 In Progress. Record corrected run10 evidence as pending parent final verification; do not claim a pass or completion. No runner changes, commit, push, or deployment from this documentation checkpoint.
+- **Evidence boundary:** Browser context was closed while a producer ran; candidate record reports 324,033 bytes before reopen, disclosed gap, resumed marker, and healthy readiness. Reopened browser received the saved terminal reference through explicit `sessionStorage` restoration; automatic product restore is not established. Observer gate releases only test synchronization, never PTY input or a product action.
+- **External publication:** Account interval eligible, but refresh/Post link produced no composer. No text entered or submitted; owned tab close result `closed:false`/`released:true`, `hasTab:false`, physical removal unverified. No new tab opened. Do not count unavailable publication as a rate-limit skip.
+- **Next:** Parent verifies reconnect evidence; then address flow control and normal graceful shutdown with live terminal. Direct keyboard input and native surfaces remain open.
+
 ## RC-031 web ANSI renderer and explicit resize — locally verified bounded slice, full task unaccepted — 2026-10-03 (UTC)
 
 - **Contract:** Render only received terminal bytes with one pinned MIT `@xterm/xterm@6.0.0`; keep bounded retention, line input and explicit Apply size. Persist resize uncertainty before one POST; a readonly poll must not clear it. No direct keyboard input, native UI or full-task acceptance.
