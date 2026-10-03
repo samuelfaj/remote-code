@@ -1,5 +1,13 @@
 # Pivot policy
 
+## RC-031 shared client and web line-terminal slice — locally verified, full task unaccepted — 2026-10-03 (UTC)
+
+- **Contract:** Reuse the shipped Eden/auth/workspace routes. Start only after current owner/folder inspection; persist and read back content-free identity before one POST. Bind every receipt and output page to original request/workspace/dimensions/terminal. Persist an input-uncertainty fence before sending; readonly state must never pretend to confirm that input or resend it after reload. Stop is explicit, and only confirmed cleanup releases the browser reference. The Linux backend alone executes commands.
+- **Smallest delivery:** Shared portable parsers/types plus a workspace-bound web panel for line input, bounded plain-text output, state inspection and stop. Existing transport remains authoritative. Full-screen ANSI, client resize, native UI and broader reconnect/fault acceptance remain open; this slice does not accept full RC-031 or change its original fields/dependencies.
+- **Proof contract:** Exercise normal browser login/create/prepare/start/interactive input/output against the actual pinned Linux TLS API and a unique named volume, on desktop and mobile widths. Drop confirmed start/input responses and verify original-ID receipt recovery, persistent unknown-input blocking and no additional mutation POST after reload. Inspect SQLite, actual CLI-created file bytes/owners and exact actor/resource cleanup; verify surrounding workspace/file/auth journeys and another login's refusal. Parent owns web/runtime/proof; worker owns only shared types/parsers/tests. No provider/Distill request or configuration/cache-home relocation.
+
+- **Observed / next:** Final web5/6 each pass desktop/mobile normal-auth Linux/TLS interactive input/output and unknown-result/no-resend journeys, CLI-file interoperability, another login refusal, workspace switch and pre-POST storage failure. All four actors/exits/session0/integrity and exact own cleanup/source59hashes checked. Cleanup-verdict review finding is fixed and its real failing variant remains unaccepted. Shared/unit/API/Linux/browser checks passed with skips explicit. Publish this slice, then real renderer/client resize, native UI and remaining reconnect/fault journeys; full task remains open.
+
 ## RC-031 protected backend PTY — locally tested backend, full task unaccepted — 2026-10-03 (UTC)
 
 - **Contract:** Build only the backend slice before clients: authenticated start/receipt/status/input/resize/stop, exact login-session and workspace binding, bounded output/input, honest process exit and revocation, and real cross-session refusal. Full RC-031 still requires client/reconnect/flow-control journeys; original fields stay unchanged.

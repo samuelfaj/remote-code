@@ -1,0 +1,21 @@
+.terminal-panel button {
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: #14735a;
+  color: #fff;
+  cursor: pointer;
+}
+
+.terminal-panel button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.terminal-panel textarea {
+  padding: 10px;
+  font: inherit;
+  border: 1px solid #c9d8d1;
+  border-radius: 8px;
+}
