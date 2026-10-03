@@ -914,7 +914,8 @@ export function terminalsFeature(databasePath: string, config?: TerminalConfig) 
     } catch { schemaReady = false; }
   }
 
-  return { routes, workspaceIdentity: cfg && schemaReady && hostReady() ? actor : undefined, revokeSessions, stopAll };
+  return { routes, workspaceIdentity: cfg && schemaReady && hostReady() ? actor : undefined, revokeSessions, stopAll,
+    shutdown: stopAll };
 }
 
 // Runnable local invariant check; no engine, service or process allocation.

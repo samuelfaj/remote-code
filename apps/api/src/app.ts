@@ -49,6 +49,7 @@ export function createApi(
   const actions = actionsFeature(configuredDatabasePath, authConfig.webOrigin ?? "http://localhost:5173");
   const storage = storageFeature(configuredDatabasePath);
   const terminals = terminalsFeature(configuredDatabasePath, terminalConfig);
+  if (configuredDatabasePath === databasePath) registerTerminalsShutdown(terminals.shutdown);
   const workspaceFolders = workspaceFoldersFeature(configuredDatabasePath, undefined, terminals.workspaceIdentity);
   let storageUnavailable = corruptAtStartup(configuredDatabasePath) || !workspaceFolders.isReady() ||
     !fileRequestSchemaReady(configuredDatabasePath);
@@ -100,6 +101,20 @@ export function createApi(
     .use(workspaceFilesFeature(configuredDatabasePath))
     .use(terminals.routes)
     .onStop(() => terminals.stopAll());
+}
+
+let terminalsShutdownHandler: (() => Promise<void>) | null = null;
+
+// Direct terminal shutdown for process signal handlers. Elysia's stop()
+// only fires onStop when app.server is set; a SIGTERM racing server reload
+// would otherwise skip terminals.stopAll and strand live PTY actors.
+export function terminalsShutdown(): Promise<void> {
+  if (!terminalsShutdownHandler) return Promise.resolve();
+  return terminalsShutdownHandler();
+}
+
+export function registerTerminalsShutdown(handler: () => Promise<void>) {
+  terminalsShutdownHandler = handler;
 }
 
 export const app = createApi();

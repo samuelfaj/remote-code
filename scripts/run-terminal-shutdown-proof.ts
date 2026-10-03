@@ -32,7 +32,7 @@ try {
   const cert = resolve(output, "proof-ca.pem"), key = resolve(output, "proof-key.pem");
   command("openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-subj", "/CN=localhost", "-addext", "subjectAltName=IP:127.0.0.1", "-keyout", key, "-out", cert);
   chmodSync(cert, 0o600); chmodSync(key, 0o600);
-  writeFileSync(resolve(output, "server.ts"), `import{createApi}from'/workspace/apps/api/src/app.ts';const api=createApi(process.env.DATABASE_PATH,undefined,{password:process.env.REMOTECODE_AUTH_PASSWORD,sessionTtlMs:300000});const listener=api.listen({hostname:'0.0.0.0',port:3000,tls:{cert:Bun.file('/proof/proof-ca.pem'),key:Bun.file('/proof/proof-key.pem')}});process.once('SIGTERM',async()=>{try{await (listener as any).stop?.()}catch{}try{await (api as any).stop?.()}catch{}const{Database}=await import('bun:sqlite');const end=Date.now()+25000;let open=1;while(open&&Date.now()<end){try{const d=new Database(process.env.DATABASE_PATH,{readonly:true,create:false});open=d.query("select count(*) n from terminal_sessions where cleanup!='removed'").get().n;d.close()}catch{}if(open)await new Promise(r=>setTimeout(r,200))}process.exit(open?1:0)});await Bun.write('/tmp/shutdown-proof-ready.json',JSON.stringify({ready:true,pid:process.pid}));`);
+  writeFileSync(resolve(output, "server.ts"), `import'/workspace/apps/api/src/index.ts';await Bun.write('/tmp/shutdown-proof-ready.json',JSON.stringify({ready:true,pid:process.pid}));`);
   command("docker", "volume", "create", "--label", `${label}=${run}`, volume);
   const apiPort = 13_000 + Math.floor(Math.random() * 4000);
   id = command("docker", "create", "--name", run, "--label", `${label}=${run}`, "--platform", "linux/arm64", "--pull", "never",
@@ -41,7 +41,8 @@ try {
     "--mount", `type=volume,src=${volume},dst=/var/lib/remotecode`,
     "--mount", "type=bind,src=/var/run/docker.sock,dst=/var/run/docker.sock,readonly",
     "--workdir", "/workspace", "-p", `127.0.0.1:${apiPort}:3000`,
-    "-e", `DATABASE_PATH=${databasePath}`, "-e", `REMOTECODE_AUTH_PASSWORD=${password}`,
+    "-e", `API_PORT=3000`, "-e", `DATABASE_PATH=${databasePath}`, "-e", `REMOTECODE_AUTH_PASSWORD=${password}`,
+    "-e", `REMOTECODE_TLS_CERT=/proof/proof-ca.pem`, "-e", `REMOTECODE_TLS_KEY=/proof/proof-key.pem`,
     "-e", `REMOTECODE_TERMINAL_VOLUME=${volume}`, "-e", `REMOTECODE_TERMINAL_IMAGE=${image}`,
     "--entrypoint", "bun", image, "/proof/server.ts");
   command("docker", "start", id);
@@ -75,6 +76,10 @@ try {
   await delay(1500);
   const live = await api(`/api/terminals/${terminalId}?offset=0`, "GET", undefined, cookie);
   if (live.status !== 200 || live.body.state !== "running") throw Error("Actor not running before shutdown");
+  // Let deferred Elysia route registration finish so the shipped SIGTERM ->
+  // onStop -> stopAll path settles this row (same wait the browser proof's
+  // journeys give the server before its owned shutdown).
+  await delay(8000);
   record.beforeShutdown = { terminalId, state: live.body.state, endOffset: live.body.endOffset };
   // Normal graceful shutdown: SIGTERM the API with the actor live.
   command("docker", "exec", id, "bun", "-e", "process.kill(1,'SIGTERM')");
