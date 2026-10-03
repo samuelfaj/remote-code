@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-031 shutdown-slice verdict — wait loop reverted, honest gap kept
+
+- Tried a 30 s `stopAll` wait loop re-polling SQLite rows after `stopContext`. Reasoning review found it adds no shutdown proof (settled contexts already verified; loop only re-reads rows) — reverted without commit. Run4 of unchanged source still passes `web_terminal_disconnect_reconnect_renderer_resize_and_unknown_outcomes_passed` (2 viewports, 6 exited/removed, 0 sessions, integrity ok, cleanup all true); that exercises the runner-owned SIGTERM reconcile path, not an independent graceful-shutdown proof. `plan/tasks.html` RC-031 status updated to match. Typecheck exit 0. Full RC-031, graceful live-actor shutdown, RC-002 unknown, RC-004 gated remain open. No deployment or X post.
+
 ## RC-031 flow totals on committed source — real Linux proof passed
 
 - Baseline run3 of the committed source (`25b794d`, pinned oven/bun image `sha256:87416c9...`, Linux arm64) exits `web_terminal_disconnect_reconnect_renderer_resize_and_unknown_outcomes_passed` on both viewports (1440x1000 and 390x844, 3 starts / 17 inputs each), 6 terminals exited/removed, 0 sessions, integrity ok, all cleanup true. A scratch-only runner variant asserting the new flat flow totals failed on a reordered DOM check (`Scrollback/viewport unbounded`) before reaching its own assertion; the same runner without the variant passes, so the failure is runner-side, not product-side. Runner variant reverted; shipped flow code unchanged. Re-review of the committed fixes closed all four points with no new defect. Graceful live-actor shutdown and full RC-031 acceptance still open; RC-002 unknown, RC-004 gated. No deployment or X post.
