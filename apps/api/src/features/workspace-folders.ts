@@ -1,6 +1,6 @@
 import { dlopen, FFIType } from "bun:ffi";
 import { Database } from "bun:sqlite";
-import { closeSync, constants, fsyncSync, mkdirSync, readFileSync, realpathSync, readdirSync, statSync, writeSync } from "node:fs";
+import { closeSync, constants, fchownSync, fstatSync, fsyncSync, mkdirSync, readFileSync, realpathSync, readdirSync, statSync, writeSync } from "node:fs";
 import { dirname } from "node:path";
 import { Elysia, t } from "elysia";
 import { sessionUserId } from "./auth";
@@ -11,6 +11,9 @@ const requestIdSchema = t.Transform(t.String({ format: "uuid", minLength: 36, ma
   .Encode((value) => value.toLowerCase());
 const folderSchemaVersion = 2;
 const folderMarker = ".remotecode-workspace";
+type WorkspaceIdentity = { uid: number; gid: number };
+const uidColumn = "folder_uid INTEGER CHECK (folder_uid IS NULL OR (typeof(folder_uid) = 'integer' AND folder_uid BETWEEN 0 AND 4294967295))";
+const gidColumn = "folder_gid INTEGER CHECK ((folder_uid IS NULL) = (folder_gid IS NULL) AND (folder_gid IS NULL OR (typeof(folder_gid) = 'integer' AND folder_gid BETWEEN 0 AND 4294967295)))";
 const requiredFolderColumns = ["user_id", "request_id", "workspace_id", "state", "folder_device", "folder_inode"];
 const nativeSymbols = {
   openat: { args: [FFIType.i32, FFIType.ptr, FFIType.i32, FFIType.i32], returns: FFIType.i32 },
@@ -81,9 +84,39 @@ function workspaceRootCurrent(databasePath: string, rootFd: number) {
   }
 }
 
+function validIdentity(identity: WorkspaceIdentity) {
+  // fchown reserves UINT32_MAX for unchanged ownership.
+  return identity !== null && typeof identity === "object" &&
+    Number.isInteger(identity.uid) && identity.uid >= 0 && identity.uid < 0xffffffff &&
+    Number.isInteger(identity.gid) && identity.gid >= 0 && identity.gid < 0xffffffff;
+}
+
+function storedIdentity(uid: number | null, gid: number | null): WorkspaceIdentity {
+  if (uid === null && gid === null) return processIdentity();
+  const identity = { uid: uid!, gid: gid! };
+  if (!validIdentity(identity)) throw new Error("workspace_folder_owner_invalid");
+  return identity;
+}
+
+function identitySchemaMatches(database: Database) {
+  const columns = database.query<{ name: string; type: string; notnull: number; dflt_value: string | null }, []>(
+    "PRAGMA table_info(workspace_folder_requests)",
+  ).all();
+  const sql = database.query<{ sql: string }, []>(
+    "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'workspace_folder_requests'",
+  ).get()?.sql.replace(/\s+/g, " ");
+  if (![uidColumn, gidColumn].every((definition) => sql?.includes(definition))) return false;
+  if (!["folder_uid", "folder_gid"].every((name) => columns.some((column) =>
+    column.name === name && column.type === "INTEGER" && column.notnull === 0 && column.dflt_value === null))) return false;
+  return !database.query(`SELECT 1 FROM workspace_folder_requests WHERE
+    (folder_uid IS NULL) != (folder_gid IS NULL) OR
+    (folder_uid IS NOT NULL AND (typeof(folder_uid) != 'integer' OR folder_uid NOT BETWEEN 0 AND 4294967294)) OR
+    (folder_gid IS NOT NULL AND (typeof(folder_gid) != 'integer' OR folder_gid NOT BETWEEN 0 AND 4294967294)) LIMIT 1`).get();
+}
+
 function folderSchemaMatches(database: Database) {
   const version = database.query<{ user_version: number }, []>("PRAGMA user_version").get()?.user_version;
-  if (version !== folderSchemaVersion || !fileRequestSchemaMatches(database)) return false;
+  if (version !== folderSchemaVersion || !fileRequestSchemaMatches(database) || !identitySchemaMatches(database)) return false;
   const columns = database.query<{ name: string }, []>("PRAGMA table_info(workspace_folder_requests)").all();
   if (requiredFolderColumns.some((name) => !columns.some((column) => column.name === name))) return false;
   database.query(`SELECT ${requiredFolderColumns.join(", ")} FROM workspace_folder_requests LIMIT 0`).get();
@@ -147,6 +180,20 @@ function initializeFolderSchema(databasePath: string) {
         database!.exec(`PRAGMA user_version = ${folderSchemaVersion}`);
       }).immediate();
     }
+    if (database.query<{ user_version: number }, []>("PRAGMA user_version").get()?.user_version === folderSchemaVersion &&
+      fileRequestSchemaMatches(database)) {
+      database.transaction(() => {
+        const columns = database!.query<{ name: string }, []>("PRAGMA table_info(workspace_folder_requests)").all();
+        if (requiredFolderColumns.some((name) => !columns.some((column) => column.name === name))) {
+          throw new Error("Workspace folder schema is invalid");
+        }
+        if (!columns.some((column) => column.name === "folder_uid" || column.name === "folder_gid")) {
+          database!.exec(`ALTER TABLE workspace_folder_requests ADD COLUMN ${uidColumn}`);
+          database!.exec(`ALTER TABLE workspace_folder_requests ADD COLUMN ${gidColumn}`);
+        }
+        if (!identitySchemaMatches(database!)) throw new Error("Workspace folder identity schema is invalid");
+      }).immediate();
+    }
     return folderSchemaMatches(database);
   } catch {
     return false;
@@ -162,23 +209,21 @@ function processIdentity() {
   return { uid: process.getuid(), gid: process.getgid() };
 }
 
-function validateDirectory(fd: number, mode: number) {
-  const info = statSync(`/proc/self/fd/${fd}`);
-  const owner = processIdentity();
+function validateDirectory(fd: number, mode: number, owner = processIdentity()) {
+  const info = fstatSync(fd);
   if (!info.isDirectory() || info.uid !== owner.uid || info.gid !== owner.gid || (info.mode & 0o777) !== mode) {
     throw new Error("workspace_folder_directory_invalid");
   }
   return info;
 }
 
-function validateMarker(libc: NativeLibrary, workspaceFd: number, requestId: string) {
+function validateMarker(libc: NativeLibrary, workspaceFd: number, requestId: string, owner: WorkspaceIdentity) {
   const flags = constants.O_NOFOLLOW | constants.O_NONBLOCK | 0x80000;
   const markerFd = ffiOpenAt(libc, workspaceFd, folderMarker, flags);
   if (markerFd < 0) throw new Error("workspace_folder_marker_unavailable");
   try {
-    const markerStat = statSync(`/proc/self/fd/${markerFd}`);
-    const owner = processIdentity();
-    if (!markerStat.isFile() || markerStat.uid !== owner.uid || markerStat.gid !== owner.gid ||
+    const markerStat = fstatSync(markerFd);
+    if (!markerStat.isFile() || markerStat.dev !== fstatSync(workspaceFd).dev || markerStat.nlink !== 1 || markerStat.size !== 37 || markerStat.uid !== owner.uid || markerStat.gid !== owner.gid ||
       (markerStat.mode & 0o777) !== 0o600 || readFileSync(`/proc/self/fd/${markerFd}`, "utf8") !== `${requestId}\n`) {
       throw new Error("workspace_folder_marker_invalid");
     }
@@ -189,11 +234,20 @@ function validateMarker(libc: NativeLibrary, workspaceFd: number, requestId: str
 
 type SyncDirectory = (fd: number) => void;
 
-function createMarker(libc: NativeLibrary, workspaceFd: number, requestId: string) {
+function createMarker(libc: NativeLibrary, workspaceFd: number, requestId: string, owner: WorkspaceIdentity) {
   const flags = constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW | 0x80000;
   const markerFd = ffiOpenAt(libc, workspaceFd, folderMarker, flags, 0o600);
   if (markerFd < 0) throw new Error("workspace_folder_marker_create_failed");
   try {
+    const info = fstatSync(markerFd);
+    const current = processIdentity();
+    if (!info.isFile() || info.nlink !== 1 || info.dev !== fstatSync(workspaceFd).dev ||
+      info.uid !== current.uid || info.gid !== current.gid || (info.mode & 0o777) !== 0o600) {
+      throw new Error("workspace_folder_marker_invalid");
+    }
+    if (owner.uid !== current.uid || owner.gid !== current.gid) fchownSync(markerFd, owner.uid, owner.gid);
+    const owned = fstatSync(markerFd);
+    if (owned.uid !== owner.uid || owned.gid !== owner.gid) throw new Error("workspace_folder_marker_invalid");
     const content = Buffer.from(`${requestId}\n`);
     writeSync(markerFd, content, 0, content.length, 0);
     fsyncSync(markerFd);
@@ -210,6 +264,7 @@ function provisionFolder(
   expectedDevice: string | null,
   expectedInode: string | null,
   syncDirectory: SyncDirectory,
+  owner: WorkspaceIdentity,
 ) {
   if (process.platform !== "linux" || rootFd < 0) throw new Error("linux_folder_boundary_required");
   const libc = openNativeLibrary();
@@ -226,17 +281,23 @@ function provisionFolder(
     if (state === "pending") created = ffiMkdirAt(libc, workspacesFd, workspaceId, 0o700) === 0;
     workspaceFd = ffiOpenAt(libc, workspacesFd, workspaceId, directoryFlags);
     if (workspaceFd < 0) throw new Error("workspace_folder_unavailable");
-    const info = validateDirectory(workspaceFd, 0o700);
+    if (created) {
+      const current = validateDirectory(workspaceFd, 0o700);
+      if (readdirSync(`/proc/self/fd/${workspaceFd}`).length !== 0) throw new Error("workspace_folder_state_conflict");
+      if (owner.uid !== current.uid || owner.gid !== current.gid) fchownSync(workspaceFd, owner.uid, owner.gid);
+    }
+    const info = validateDirectory(workspaceFd, 0o700, owner);
 
     if (state === "provisioned") {
       if (expectedDevice === null || expectedInode === null || String(info.dev) !== expectedDevice || String(info.ino) !== expectedInode) {
         throw new Error("workspace_folder_identity_unavailable");
       }
-      validateMarker(libc, workspaceFd, requestId);
+      validateMarker(libc, workspaceFd, requestId, owner);
     } else if (created) {
-      createMarker(libc, workspaceFd, requestId);
+      createMarker(libc, workspaceFd, requestId, owner);
+      validateMarker(libc, workspaceFd, requestId, owner);
     } else {
-      validateMarker(libc, workspaceFd, requestId);
+      validateMarker(libc, workspaceFd, requestId, owner);
       if (readdirSync(`/proc/self/fd/${workspaceFd}`).some((name) => name !== folderMarker)) {
         throw new Error("workspace_folder_state_conflict");
       }
@@ -250,6 +311,8 @@ function provisionFolder(
         throw new Error("workspace_folder_sync_unknown");
       }
     }
+    validateDirectory(workspaceFd, 0o700, owner);
+    validateMarker(libc, workspaceFd, requestId, owner);
     return { device: String(info.dev), inode: String(info.ino) };
   } finally {
     if (workspaceFd >= 0) libc.symbols.close(workspaceFd);
@@ -262,7 +325,7 @@ export function withProvisionedWorkspaceFolder<T>(
   databasePath: string,
   userId: string,
   workspaceId: string,
-  callback: (folderFd: number, openAt: (parentFd: number, name: string, flags: number, mode?: number) => number, close: (fd: number) => void) => T,
+  callback: (folderFd: number, openAt: (parentFd: number, name: string, flags: number, mode?: number) => number, close: (fd: number) => void, owner: WorkspaceIdentity) => T,
 ): { kind: "not_found" } | { kind: "unavailable" } | { kind: "opened"; value: T } {
   if (process.platform !== "linux") return { kind: "unavailable" };
   let database: Database | undefined;
@@ -274,9 +337,9 @@ export function withProvisionedWorkspaceFolder<T>(
     if (!workspaceRootCurrent(databasePath, rootFd) || !workspaceFolderSchemaReady(databasePath)) return { kind: "unavailable" };
     database = new Database(databasePath, { readonly: true, create: false });
     const accepted = database.query<{
-      requestId: string; state: string; device: string | null; inode: string | null;
+      requestId: string; state: string; device: string | null; inode: string | null; uid: number | null; gid: number | null;
     }, [string, string]>(`
-      SELECT f.request_id AS requestId, f.state, f.folder_device AS device, f.folder_inode AS inode
+      SELECT f.request_id AS requestId, f.state, f.folder_device AS device, f.folder_inode AS inode, f.folder_uid AS uid, f.folder_gid AS gid
       FROM workspaces w JOIN workspace_folder_requests f ON f.workspace_id = w.id
       WHERE w.id = ? AND w.user_id = ?
     `).get(workspaceId, userId);
@@ -290,11 +353,12 @@ export function withProvisionedWorkspaceFolder<T>(
     validateDirectory(workspacesFd, 0o700);
     workspaceFd = ffiOpenAt(libc, workspacesFd, workspaceId, directoryFlags);
     if (workspaceFd < 0) return { kind: "unavailable" };
-    const info = validateDirectory(workspaceFd, 0o700);
+    const owner = storedIdentity(accepted.uid, accepted.gid);
+    const info = validateDirectory(workspaceFd, 0o700, owner);
     if (String(info.dev) !== accepted.device || String(info.ino) !== accepted.inode) return { kind: "unavailable" };
-    validateMarker(libc, workspaceFd, accepted.requestId);
+    validateMarker(libc, workspaceFd, accepted.requestId, owner);
     const value = callback(workspaceFd, (parentFd, name, flags, mode = 0) => ffiOpenAt(libc!, parentFd, name, flags, mode),
-      (fd) => { libc!.symbols.close(fd); });
+      (fd) => { libc!.symbols.close(fd); }, owner);
     return { kind: "opened", value };
   } catch {
     return { kind: "unavailable" };
@@ -306,15 +370,17 @@ export function withProvisionedWorkspaceFolder<T>(
   }
 }
 
-export function workspaceFoldersFeature(databasePath: string, syncDirectory: SyncDirectory = fsyncSync) {
-  const schemaReady = initializeFolderSchema(databasePath);
+export function workspaceFoldersFeature(databasePath: string, syncDirectory: SyncDirectory = fsyncSync, identity?: WorkspaceIdentity) {
+  const identityReady = identity === undefined || validIdentity(identity);
+  const plannedIdentity = identityReady && identity !== undefined ? { uid: identity.uid, gid: identity.gid } : undefined;
+  const schemaReady = identityReady && initializeFolderSchema(databasePath);
   let workspaceRootFd = -1;
   try {
     workspaceRootFd = openWorkspaceRoot(databasePath);
   } catch {
     workspaceRootFd = -1;
   }
-  const isReady = () => (schemaReady || workspaceFolderSchemaReady(databasePath)) &&
+  const isReady = () => identityReady && (schemaReady || workspaceFolderSchemaReady(databasePath)) &&
     workspaceRootCurrent(databasePath, workspaceRootFd);
 
   const routes = new Elysia().get("/api/workspaces/:workspaceId/folder", ({ params, request, set }) => {
@@ -331,18 +397,19 @@ export function workspaceFoldersFeature(databasePath: string, syncDirectory: Syn
         if (process.platform !== "linux") return { error: "workspace_folders_require_linux" as const };
         if (!isReady() || !workspaceFolderSchemaReady(databasePath)) throw new Error("storage_unavailable");
         const current = database!.query<{
-          userId: string; requestId: string; state: string; device: string | null; inode: string | null;
+          userId: string; requestId: string; state: string; device: string | null; inode: string | null; uid: number | null; gid: number | null;
         }, [string]>(`
-          SELECT user_id AS userId, request_id AS requestId, state, folder_device AS device, folder_inode AS inode
+          SELECT user_id AS userId, request_id AS requestId, state, folder_device AS device, folder_inode AS inode, folder_uid AS uid, folder_gid AS gid
           FROM workspace_folder_requests WHERE workspace_id = ?
         `).get(params.workspaceId);
         if (current) {
           if (current.userId !== userId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(current.requestId)) {
             throw new Error("workspace_folder_identity_unavailable");
           }
+          storedIdentity(current.uid, current.gid);
           if (current.state === "pending") return { workspaceId: params.workspaceId, state: "unknown" as const, requestId: current.requestId };
           if (current.state !== "provisioned") throw new Error("workspace_folder_state_unavailable");
-          provisionFolder(workspaceRootFd, params.workspaceId, current.requestId, "provisioned", current.device, current.inode, syncDirectory);
+          provisionFolder(workspaceRootFd, params.workspaceId, current.requestId, "provisioned", current.device, current.inode, syncDirectory, storedIdentity(current.uid, current.gid));
           return { workspaceId: params.workspaceId, state: "provisioned" as const, requestId: current.requestId };
         }
         if (workspace.archived) return { error: "workspace_archived" as const };
@@ -391,9 +458,9 @@ export function workspaceFoldersFeature(databasePath: string, syncDirectory: Syn
         if (!workspace) return { kind: "not_found" as const };
         if (workspace.archived) return { kind: "workspace_archived" as const };
         const existing = database.query<{
-          requestId: string; state: "pending" | "provisioned"; device: string | null; inode: string | null;
+          requestId: string; state: "pending" | "provisioned"; device: string | null; inode: string | null; uid: number | null; gid: number | null;
         }, [string]>(`
-          SELECT request_id AS requestId, state, folder_device AS device, folder_inode AS inode
+          SELECT request_id AS requestId, state, folder_device AS device, folder_inode AS inode, folder_uid AS uid, folder_gid AS gid
           FROM workspace_folder_requests WHERE workspace_id = ?
         `).get(params.workspaceId);
         if (existing) {
@@ -406,10 +473,24 @@ export function workspaceFoldersFeature(databasePath: string, syncDirectory: Syn
         ).get(userId, body.requestId);
         if (duplicateRequest) return { kind: "request_id_conflict" as const };
         if (process.platform !== "linux") return { kind: "unsupported" as const };
+        const libc = openNativeLibrary();
+        let parentFd = -1;
+        try {
+          if (readdirSync(`/proc/self/fd/${workspaceRootFd}`).includes("workspaces")) {
+            parentFd = ffiOpenAt(libc, workspaceRootFd, "workspaces", constants.O_DIRECTORY | constants.O_NOFOLLOW | 0x80000);
+            if (parentFd < 0) throw new Error("workspace_root_unavailable");
+            validateDirectory(parentFd, 0o700);
+            if (readdirSync(`/proc/self/fd/${parentFd}`).includes(params.workspaceId)) throw new Error("workspace_folder_identity_unavailable");
+          }
+        } finally {
+          if (parentFd >= 0) libc.symbols.close(parentFd);
+          libc.close();
+        }
+        const owner = plannedIdentity ?? processIdentity();
         database.query(`
-          INSERT INTO workspace_folder_requests (user_id, request_id, workspace_id, state)
-          VALUES (?, ?, ?, 'pending')
-        `).run(userId, body.requestId, params.workspaceId);
+          INSERT INTO workspace_folder_requests (user_id, request_id, workspace_id, state, folder_uid, folder_gid)
+          VALUES (?, ?, ?, 'pending', ?, ?)
+        `).run(userId, body.requestId, params.workspaceId, owner.uid, owner.gid);
         return { kind: "created" as const, state: "pending" as const, device: null, inode: null };
       }).immediate();
       if (result.kind === "not_found") {
@@ -446,14 +527,14 @@ export function workspaceFoldersFeature(databasePath: string, syncDirectory: Syn
         if (!workspace) return { error: "not_found" as const };
         if (workspace.archived) return { error: "workspace_archived" as const };
         const intent = database.query<{
-          state: "pending" | "provisioned"; device: string | null; inode: string | null;
+          state: "pending" | "provisioned"; device: string | null; inode: string | null; uid: number | null; gid: number | null;
         }, [string, string, string]>(`
-          SELECT state, folder_device AS device, folder_inode AS inode FROM workspace_folder_requests
+          SELECT state, folder_device AS device, folder_inode AS inode, folder_uid AS uid, folder_gid AS gid FROM workspace_folder_requests
           WHERE user_id = ? AND request_id = ? AND workspace_id = ?
         `).get(userId, body.requestId, params.workspaceId);
         if (!intent) throw new Error("workspace_folder_outcome_unavailable");
         const folder = provisionFolder(workspaceRootFd, params.workspaceId, body.requestId,
-          intent.state, intent.device, intent.inode, syncDirectory);
+          intent.state, intent.device, intent.inode, syncDirectory, storedIdentity(intent.uid, intent.gid));
         if (intent.state === "pending") {
           const update = database.query(`
             UPDATE workspace_folder_requests SET state = 'provisioned', folder_device = ?, folder_inode = ?

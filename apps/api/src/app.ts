@@ -6,6 +6,7 @@ import { compatibilityFeature } from "./features/compatibility";
 import { storageFeature } from "./features/storage";
 import { fileRequestSchemaReady } from "./features/file-requests";
 import { workspaceFilesFeature } from "./features/workspace-files";
+import { terminalsFeature } from "./features/terminals";
 import { workspaceFolderSchemaReady, workspaceFoldersFeature } from "./features/workspace-folders";
 import { checkDatabase, healthFeature, initializeDatabase, type ReadinessCheck } from "./features/health";
 
@@ -39,10 +40,16 @@ export function createApi(
       : undefined,
     webOrigin: process.env.REMOTECODE_WEB_ORIGIN ?? "http://localhost:5173",
   },
+  terminalConfig: Parameters<typeof terminalsFeature>[1] =
+    process.env.REMOTECODE_TERMINAL_VOLUME && process.env.REMOTECODE_TERMINAL_IMAGE
+      ? { volumeName: process.env.REMOTECODE_TERMINAL_VOLUME, image: process.env.REMOTECODE_TERMINAL_IMAGE }
+      : undefined,
 ) {
   initializeDatabase(configuredDatabasePath);
   const actions = actionsFeature(configuredDatabasePath, authConfig.webOrigin ?? "http://localhost:5173");
-  const workspaceFolders = workspaceFoldersFeature(configuredDatabasePath);
+  const storage = storageFeature(configuredDatabasePath);
+  const terminals = terminalsFeature(configuredDatabasePath, terminalConfig);
+  const workspaceFolders = workspaceFoldersFeature(configuredDatabasePath, undefined, terminals.workspaceIdentity);
   let storageUnavailable = corruptAtStartup(configuredDatabasePath) || !workspaceFolders.isReady() ||
     !fileRequestSchemaReady(configuredDatabasePath);
   let probe: Promise<boolean> | null = null;
@@ -83,11 +90,16 @@ export function createApi(
     })
     .use(compatibilityFeature())
     .use(healthFeature(observeReadiness))
-    .use(authFeature(configuredDatabasePath, authConfig, actions.revokeSessions))
+    .use(authFeature(configuredDatabasePath, authConfig, (userId, tokenHash) => {
+      actions.revokeSessions(userId, tokenHash);
+      terminals.revokeSessions(userId, tokenHash);
+    }))
     .use(actions.routes)
-    .use(storageFeature(configuredDatabasePath))
+    .use(storage)
     .use(workspaceFolders.routes)
-    .use(workspaceFilesFeature(configuredDatabasePath));
+    .use(workspaceFilesFeature(configuredDatabasePath))
+    .use(terminals.routes)
+    .onStop(() => terminals.stopAll());
 }
 
 export const app = createApi();

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { dlopen, FFIType } from "bun:ffi";
 import { Database } from "bun:sqlite";
-import { closeSync, constants, fchmodSync, fsyncSync, fstatSync, readFileSync, readSync, readdirSync, statSync, writeSync } from "node:fs";
+import { closeSync, constants, fchmodSync, fchownSync, fsyncSync, fstatSync, readFileSync, readSync, readdirSync, statSync, writeSync } from "node:fs";
 import { Elysia, t } from "elysia";
 import { sessionUserId } from "./auth";
 import { fileRequestSchemaMatches } from "./file-requests";
@@ -29,6 +29,7 @@ const renameNoReplace = 1;
 const renameExchange = 2;
 const libc = process.platform === "linux" ? dlopen("libc.so.6", nativeSymbols) : undefined;
 
+type WorkspaceIdentity = { uid: number; gid: number };
 type Entry = { name: string; type: "file" | "directory"; size: number };
 type FileContent = { path: string; content: string; version: string };
 type DirectoryListing = { path: string; entries: Entry[] };
@@ -62,11 +63,18 @@ function openDirectoryPath(
   components: string[],
   openAt: (parentFd: number, name: string, flags: number) => number,
   close: (fd: number) => void,
+  owner: WorkspaceIdentity,
 ): number {
   let current = folderFd;
   for (const component of components) {
     const next = openAt(current, component, directoryFlags);
     if (next < 0) {
+      if (current !== folderFd) close(current);
+      return -1;
+    }
+    const info = fstatSync(next);
+    if (info.uid !== owner.uid || info.gid !== owner.gid) {
+      close(next);
       if (current !== folderFd) close(current);
       return -1;
     }
@@ -81,8 +89,9 @@ function readContent(
   components: string[],
   openAt: (parentFd: number, name: string, flags: number) => number,
   close: (fd: number) => void,
+  owner: WorkspaceIdentity,
 ): ReadResult<FileContent> {
-  const parent = openDirectoryPath(folderFd, components.slice(0, -1), openAt, close);
+  const parent = openDirectoryPath(folderFd, components.slice(0, -1), openAt, close, owner);
   if (parent < 0) return { status: 404, body: { error: "file_not_found" } };
   const fileFd = openAt(parent, components.at(-1)!, fileFlags);
   if (parent !== folderFd) close(parent);
@@ -90,6 +99,7 @@ function readContent(
   try {
     const info = statSync(`/proc/self/fd/${fileFd}`);
     if (!info.isFile()) return { status: 415, body: { error: "unsupported_file_type" } };
+    if (info.uid !== owner.uid || info.gid !== owner.gid) return { status: 409, body: { error: "file_unavailable" } };
     if (info.size > maxContentBytes) return { status: 413, body: { error: "file_too_large" } };
     const bytes = Buffer.alloc(maxContentBytes + 1);
     let length = 0;
@@ -99,6 +109,8 @@ function readContent(
       length += count;
     }
     if (length > maxContentBytes) return { status: 413, body: { error: "file_too_large" } };
+    const afterRead = fstatSync(fileFd);
+    if (afterRead.uid !== owner.uid || afterRead.gid !== owner.gid) return { status: 409, body: { error: "file_unavailable" } };
     const contentBytes = bytes.subarray(0, length);
     if (contentBytes.includes(0)) return { status: 415, body: { error: "unsupported_file_type" } };
     let content: string;
@@ -112,8 +124,9 @@ function listDirectory(
   components: string[],
   openAt: (parentFd: number, name: string, flags: number) => number,
   close: (fd: number) => void,
+  owner: WorkspaceIdentity,
 ): ReadResult<DirectoryListing> {
-  const directoryFd = openDirectoryPath(folderFd, components, openAt, close);
+  const directoryFd = openDirectoryPath(folderFd, components, openAt, close, owner);
   if (directoryFd < 0) return { status: 404, body: { error: "directory_not_found" } };
   try {
     const names = readdirSync(`/proc/self/fd/${directoryFd}`);
@@ -125,6 +138,7 @@ function listDirectory(
       if (fd < 0) continue;
       try {
         const info = statSync(`/proc/self/fd/${fd}`);
+        if (info.uid !== owner.uid || info.gid !== owner.gid) continue;
         if (info.isDirectory()) entries.push({ name, type: "directory", size: 0 });
         else if (info.isFile()) entries.push({ name, type: "file", size: info.size });
       } finally { close(fd); }
@@ -149,7 +163,7 @@ export function workspaceFilesFeature(databasePath: string, syncDirectory: (fd: 
     const components = relativeComponents(query.path, false);
     if (components === null) { set.status = 400; return { error: "invalid_path" as const }; }
     const result = withProvisionedWorkspaceFolder(databasePath, userId, params.workspaceId,
-      (folderFd, openAt, close) => listDirectory(folderFd, components, openAt, close));
+      (folderFd, openAt, close, owner) => listDirectory(folderFd, components, openAt, close, owner));
     if (result.kind !== "opened") {
       set.status = result.kind === "not_found" ? 404 : process.platform === "linux" ? 503 : 501;
       return { error: result.kind === "not_found" ? "not_found" : process.platform === "linux" ? "workspace_folder_unavailable" : "workspace_files_require_linux" };
@@ -165,7 +179,7 @@ export function workspaceFilesFeature(databasePath: string, syncDirectory: (fd: 
     const components = relativeComponents(query.path, true);
     if (!components) { set.status = 400; return { error: "invalid_path" as const }; }
     const result = withProvisionedWorkspaceFolder(databasePath, userId, params.workspaceId,
-      (folderFd, openAt, close) => readContent(folderFd, components, openAt, close));
+      (folderFd, openAt, close, owner) => readContent(folderFd, components, openAt, close, owner));
     if (result.kind !== "opened") {
       set.status = result.kind === "not_found" ? 404 : process.platform === "linux" ? 503 : 501;
       return { error: result.kind === "not_found" ? "not_found" : process.platform === "linux" ? "workspace_folder_unavailable" : "workspace_files_require_linux" };
@@ -217,8 +231,8 @@ export function workspaceFilesFeature(databasePath: string, syncDirectory: (fd: 
         if (recovered) { set.status = 200; return recovered; }
         set.status = 503; return { error: "outcome_unknown" as const };
       }
-      const preflight = withProvisionedWorkspaceFolder(databasePath, userId, params.workspaceId, (folderFd, openAt, close) => {
-        const parent = openDirectoryPath(folderFd, path.slice(0, -1), openAt, close);
+      const preflight = withProvisionedWorkspaceFolder(databasePath, userId, params.workspaceId, (folderFd, openAt, close, owner) => {
+        const parent = openDirectoryPath(folderFd, path.slice(0, -1), openAt, close, owner);
         if (parent < 0) return "parent_missing";
         try { return pathExists(parent, path.at(-1)!, openAt, close) ? "target_exists" : "clear"; }
         finally { if (parent !== folderFd) close(parent); }
@@ -235,9 +249,9 @@ export function workspaceFilesFeature(databasePath: string, syncDirectory: (fd: 
         return "accepted";
       }).immediate();
       if (accepted !== "accepted") { set.status = accepted === "foreign_workspace" ? 404 : 409; return { error: accepted } as const; }
-      const created = withProvisionedWorkspaceFolder(databasePath, userId, params.workspaceId, (folderFd, openAt, close) => {
+      const created = withProvisionedWorkspaceFolder(databasePath, userId, params.workspaceId, (folderFd, openAt, close, owner) => {
         try { return { kind: "created" as const, result: writeOnce(db!, folderFd, path, bytes, digest, id, params.workspaceId, userId, libc!, openAt, close, syncDirectory,
-          { kind: "create", expectedVersion: null, sourceDevice: null, sourceInode: null, mode: 0o600 }) }; }
+          { kind: "create", expectedVersion: null, sourceDevice: null, sourceInode: null, mode: 0o600 }, owner) }; }
         catch (error) { return { kind: "error" as const, error }; }
       });
       if (created.kind !== "opened") throw new Error(created.kind === "not_found" ? "foreign_workspace" : "workspace_unavailable");
@@ -299,7 +313,7 @@ export function workspaceFilesFeature(databasePath: string, syncDirectory: (fd: 
         set.status = 503; return { error: "outcome_unknown" as const };
       }
       const preflight = withProvisionedWorkspaceFolder(databasePath, userId, params.workspaceId,
-        (folderFd, openAt, close) => inspectSaveTarget(folderFd, path, openAt, close));
+        (folderFd, openAt, close, owner) => inspectSaveTarget(folderFd, path, openAt, close, owner));
       if (preflight.kind !== "opened") {
         set.status = preflight.kind === "not_found" ? 404 : 503;
         return { error: "workspace_folder_unavailable" as const };
@@ -315,7 +329,7 @@ export function workspaceFilesFeature(databasePath: string, syncDirectory: (fd: 
         if (!current) return "foreign_workspace";
         if (current.archived) return "workspace_archived";
         const checked = withProvisionedWorkspaceFolder(databasePath, userId, params.workspaceId,
-          (folderFd, openAt, close) => inspectSaveTarget(folderFd, path, openAt, close));
+          (folderFd, openAt, close, owner) => inspectSaveTarget(folderFd, path, openAt, close, owner));
         if (checked.kind !== "opened" || checked.value.status !== 200) return "workspace_folder_unavailable";
         const now = checked.value.value;
         if (now.version !== expectedVersion || now.device !== source.device || now.inode !== source.inode) return "version_conflict";
@@ -329,9 +343,9 @@ export function workspaceFilesFeature(databasePath: string, syncDirectory: (fd: 
         set.status = accepted === "foreign_workspace" ? 404 : accepted === "workspace_archived" ? 409 : accepted === "version_conflict" ? 409 : 503;
         return { error: accepted === "version_conflict" ? "version_conflict" : accepted } as const;
       }
-      const saved = withProvisionedWorkspaceFolder(databasePath, userId, params.workspaceId, (folderFd, openAt, close) => {
+      const saved = withProvisionedWorkspaceFolder(databasePath, userId, params.workspaceId, (folderFd, openAt, close, owner) => {
         try { return { kind: "saved" as const, result: writeOnce(db!, folderFd, path, bytes, digest, id, params.workspaceId, userId, libc!, openAt, close, syncDirectory,
-          { kind: "save", expectedVersion, sourceDevice: source.device, sourceInode: source.inode, mode: source.mode }) }; }
+          { kind: "save", expectedVersion, sourceDevice: source.device, sourceInode: source.inode, mode: source.mode }, owner) }; }
         catch (error) { return { kind: "error" as const, error }; }
       });
       if (saved.kind !== "opened") throw new Error(saved.kind === "not_found" ? "foreign_workspace" : "workspace_unavailable");
@@ -393,7 +407,7 @@ export function workspaceFilesFeature(databasePath: string, syncDirectory: (fd: 
         set.status = 503; return { error: "outcome_unknown" as const };
       }
       const preflight = withProvisionedWorkspaceFolder(databasePath, userId, params.workspaceId,
-        (folderFd, openAt, close) => inspectMovePaths(folderFd, source, destination, openAt, close));
+        (folderFd, openAt, close, owner) => inspectMovePaths(folderFd, source, destination, openAt, close, owner));
       if (preflight.kind !== "opened") {
         set.status = preflight.kind === "not_found" ? 404 : 503;
         return { error: "workspace_folder_unavailable" as const };
@@ -409,7 +423,7 @@ export function workspaceFilesFeature(databasePath: string, syncDirectory: (fd: 
         if (!current) return "foreign_workspace";
         if (current.archived) return "workspace_archived";
         const checked = withProvisionedWorkspaceFolder(databasePath, userId, params.workspaceId,
-          (folderFd, openAt, close) => inspectMovePaths(folderFd, source, destination, openAt, close));
+          (folderFd, openAt, close, owner) => inspectMovePaths(folderFd, source, destination, openAt, close, owner));
         if (checked.kind !== "opened" || checked.value.status !== 200) return "workspace_folder_unavailable";
         if (checked.value.value.version !== expectedVersion || checked.value.value.device !== sourceWitness.device ||
           checked.value.value.inode !== sourceWitness.inode) return "version_conflict";
@@ -423,9 +437,9 @@ export function workspaceFilesFeature(databasePath: string, syncDirectory: (fd: 
         set.status = accepted === "foreign_workspace" ? 404 : accepted === "workspace_archived" || accepted === "version_conflict" ? 409 : 503;
         return { error: accepted === "version_conflict" ? "version_conflict" : accepted } as const;
       }
-      const moved = withProvisionedWorkspaceFolder(databasePath, userId, params.workspaceId, (folderFd, openAt, close) => {
+      const moved = withProvisionedWorkspaceFolder(databasePath, userId, params.workspaceId, (folderFd, openAt, close, owner) => {
         try { return { kind: "moved" as const, result: moveOnce(db!, folderFd, source, destination, sourceWitness, expectedVersion, id,
-          params.workspaceId, userId, libc!, openAt, close) }; }
+          params.workspaceId, userId, libc!, openAt, close, owner) }; }
         catch (error) { return { kind: "error" as const, error }; }
       });
       if (moved.kind !== "opened") throw new Error(moved.kind === "not_found" ? "foreign_workspace" : "workspace_unavailable");
@@ -492,22 +506,22 @@ function fileInputDigest(kind: "create" | "save" | "move", workspaceId: string, 
 
 type SaveTargetResult = { status: 200; value: SaveTarget } | { status: 404 | 409 | 413 | 415; error: string };
 function inspectSaveTarget(
-  folderFd: number, components: string[], openAt: (parentFd: number, name: string, flags: number) => number, close: (fd: number) => void,
+  folderFd: number, components: string[], openAt: (parentFd: number, name: string, flags: number) => number, close: (fd: number) => void, owner: WorkspaceIdentity,
 ): SaveTargetResult {
-  const parent = openDirectoryPath(folderFd, components.slice(0, -1), openAt, close);
+  const parent = openDirectoryPath(folderFd, components.slice(0, -1), openAt, close, owner);
   if (parent < 0) return { status: 404, error: "parent_directory_not_found" };
-  try { return readSaveTarget(parent, components.at(-1)!, openAt, close); }
+  try { return readSaveTarget(parent, components.at(-1)!, openAt, close, owner); }
   finally { if (parent !== folderFd) close(parent); }
 }
 
-function readOpenFile(fd: number): SaveTargetResult {
+function readOpenFile(fd: number, owner: WorkspaceIdentity): SaveTargetResult {
   const info = fstatSync(fd, { bigint: true });
   if (!info.isFile()) return { status: 415, error: "unsupported_file_type" };
-  if (info.uid !== BigInt(process.getuid?.() ?? -1) || info.gid !== BigInt(process.getgid?.() ?? -1)) return { status: 409, error: "file_unavailable" };
+  if (info.uid !== BigInt(owner.uid) || info.gid !== BigInt(owner.gid)) return { status: 409, error: "file_unavailable" };
   if (info.size > BigInt(maxContentBytes)) return { status: 413, error: "file_too_large" };
   const bytes = readBounded(fd, maxContentBytes);
   const afterRead = fstatSync(fd, { bigint: true });
-  if (BigInt(bytes.length) !== info.size || afterRead.dev !== info.dev || afterRead.ino !== info.ino || afterRead.size !== info.size || afterRead.mode !== info.mode) {
+  if (BigInt(bytes.length) !== info.size || afterRead.dev !== info.dev || afterRead.ino !== info.ino || afterRead.size !== info.size || afterRead.mode !== info.mode || afterRead.uid !== info.uid || afterRead.gid !== info.gid) {
     return { status: 409, error: "file_changed" };
   }
   if (bytes.includes(0)) return { status: 415, error: "unsupported_file_type" };
@@ -516,29 +530,29 @@ function readOpenFile(fd: number): SaveTargetResult {
 }
 
 function readSaveTarget(
-  parent: number, name: string, openAt: (parentFd: number, name: string, flags: number) => number, close: (fd: number) => void,
+  parent: number, name: string, openAt: (parentFd: number, name: string, flags: number) => number, close: (fd: number) => void, owner: WorkspaceIdentity,
 ): SaveTargetResult {
   const fd = openAt(parent, name, fileFlags);
   if (fd < 0) return { status: 404, error: "file_not_found" };
-  try { return readOpenFile(fd); }
+  try { return readOpenFile(fd, owner); }
   finally { close(fd); }
 }
 
 function inspectMovePaths(
   folderFd: number, source: string[], destination: string[],
-  openAt: (parentFd: number, name: string, flags: number) => number, close: (fd: number) => void,
+  openAt: (parentFd: number, name: string, flags: number) => number, close: (fd: number) => void, owner: WorkspaceIdentity,
 ): SaveTargetResult {
-  const sourceParent = openDirectoryPath(folderFd, source.slice(0, -1), openAt, close);
+  const sourceParent = openDirectoryPath(folderFd, source.slice(0, -1), openAt, close, owner);
   if (sourceParent < 0) return { status: 404, error: "source_parent_not_found" };
   let destinationParent = -1;
   try {
     const sourceFd = openAt(sourceParent, source.at(-1)!, fileFlags);
     if (sourceFd < 0) return { status: 404, error: "file_not_found" };
     let sourceResult: SaveTargetResult;
-    try { sourceResult = readOpenFile(sourceFd); }
+    try { sourceResult = readOpenFile(sourceFd, owner); }
     finally { close(sourceFd); }
     if (sourceResult.status !== 200) return sourceResult;
-    destinationParent = openDirectoryPath(folderFd, destination.slice(0, -1), openAt, close);
+    destinationParent = openDirectoryPath(folderFd, destination.slice(0, -1), openAt, close, owner);
     if (destinationParent < 0) return { status: 404, error: "destination_parent_not_found" };
     if (pathExists(destinationParent, destination.at(-1)!, openAt, close)) return { status: 409, error: "target_exists" };
     return sourceResult;
@@ -620,8 +634,9 @@ function writeOnce(
   close: (fd: number) => void,
   syncDirectory: (fd: number) => void,
   operation: WriteOperation,
+  owner: WorkspaceIdentity,
 ): ReadResult<FileReceipt> {
-  const parent = openDirectoryPath(folderFd, components.slice(0, -1), openAt, close);
+  const parent = openDirectoryPath(folderFd, components.slice(0, -1), openAt, close, owner);
   if (parent < 0) throw new Error("parent_directory_not_found");
   const stage = `${stagePrefix}${requestId}`;
   const publishName = `${stage}-publish`;
@@ -634,12 +649,19 @@ function writeOnce(
       if (!workspace) throw new Error("foreign_workspace");
       if (workspace.archived) throw new Error("workspace_archived");
       if (operation.kind === "save") {
-        const current = inspectSaveTarget(folderFd, components, openAt, close);
+        const current = inspectSaveTarget(folderFd, components, openAt, close, owner);
         if (current.status !== 200 || current.value.version !== operation.expectedVersion ||
           current.value.device !== operation.sourceDevice || current.value.inode !== operation.sourceInode || current.value.mode !== operation.mode) throw new Error("version_conflict");
       }
       stageFd = openAt(parent, stage, stageFlags, 0o600);
       if (stageFd < 0) throw new Error("stage_create_failed");
+      const initial = fstatSync(stageFd);
+      if (!initial.isFile() || initial.nlink !== 1 || initial.uid !== process.getuid?.() || initial.gid !== process.getgid?.()) {
+        throw new Error("stage_witness_mismatch");
+      }
+      if (initial.uid !== owner.uid || initial.gid !== owner.gid) fchownSync(stageFd, owner.uid, owner.gid);
+      const owned = fstatSync(stageFd);
+      if (owned.uid !== owner.uid || owned.gid !== owner.gid) throw new Error("stage_witness_mismatch");
       let written = 0;
       while (written < bytes.length) written += writeSync(stageFd, bytes, written, bytes.length - written);
       fchmodSync(stageFd, operation.mode);
@@ -659,12 +681,13 @@ function writeOnce(
       const folderRequest = db.query<{ request_id: string; device: string; inode: string }, [string, string]>(`SELECT request_id, folder_device AS device, folder_inode AS inode
         FROM workspace_folder_requests WHERE user_id = ? AND workspace_id = ? AND state = 'provisioned'`).get(userId, workspaceId);
       const folderIdentity = statSync(`/proc/self/fd/${folderFd}`, { bigint: true });
-      if (!folderRequest || String(folderIdentity.dev) !== folderRequest.device || String(folderIdentity.ino) !== folderRequest.inode) throw new Error("workspace_folder_unavailable");
+      if (!folderRequest || !folderIdentity.isDirectory() || folderIdentity.uid !== BigInt(owner.uid) || folderIdentity.gid !== BigInt(owner.gid) ||
+        (folderIdentity.mode & 0o777n) !== 0o700n || String(folderIdentity.dev) !== folderRequest.device || String(folderIdentity.ino) !== folderRequest.inode) throw new Error("workspace_folder_unavailable");
       const markerFd = openAt(folderFd, markerName, fileFlags);
       if (markerFd < 0) throw new Error("workspace_marker_unavailable");
       try {
         const marker = statSync(`/proc/self/fd/${markerFd}`);
-        if (!marker.isFile() || marker.uid !== process.getuid?.() || marker.gid !== process.getgid?.() || (marker.mode & 0o777) !== 0o600 ||
+        if (!marker.isFile() || BigInt(marker.dev) !== folderIdentity.dev || marker.nlink !== 1 || marker.size !== 37 || marker.uid !== owner.uid || marker.gid !== owner.gid || (marker.mode & 0o777) !== 0o600 ||
           readFileSync(`/proc/self/fd/${markerFd}`, "utf8") !== `${folderRequest.request_id}\n`) throw new Error("workspace_marker_invalid");
       } finally { close(markerFd); }
       const sourcePath = operation.kind === "create" ? "" : components.join("/");
@@ -677,7 +700,7 @@ function writeOnce(
       if (operation.kind === "create") {
         if (pathExists(parent, targetName, openAt, close)) throw new Error("target_exists");
       } else {
-        const currentTarget = readSaveTarget(parent, targetName, openAt, close);
+        const currentTarget = readSaveTarget(parent, targetName, openAt, close, owner);
         if (currentTarget.status !== 200 || currentTarget.value.version !== operation.expectedVersion ||
           currentTarget.value.device !== operation.sourceDevice || currentTarget.value.inode !== operation.sourceInode || currentTarget.value.mode !== operation.mode) {
           throw new Error("version_conflict");
@@ -685,7 +708,7 @@ function writeOnce(
       }
       const current = fstatSync(stageFd, { bigint: true });
       if (!current.isFile() || String(current.dev) !== intent.stage_device || String(current.ino) !== intent.stage_inode ||
-        current.uid !== BigInt(process.getuid?.() ?? -1) || current.gid !== BigInt(process.getgid?.() ?? -1) || (current.mode & 0o777n) !== BigInt(operation.mode) ||
+        current.uid !== BigInt(owner.uid) || current.gid !== BigInt(owner.gid) || (current.mode & 0o777n) !== BigInt(operation.mode) ||
         current.size !== BigInt(bytes.length) || createHash("sha256").update(readBounded(stageFd, maxContentBytes)).digest("hex") !== intent.stage_digest) {
         throw new Error("stage_witness_mismatch");
       }
@@ -698,7 +721,7 @@ function writeOnce(
           throw new Error("file_publish_failed");
         }
         syncDirectory(parent);
-        const recheckedTarget = readSaveTarget(parent, targetName, openAt, close);
+        const recheckedTarget = readSaveTarget(parent, targetName, openAt, close, owner);
         if (recheckedTarget.status !== 200 || recheckedTarget.value.version !== operation.expectedVersion ||
           recheckedTarget.value.device !== operation.sourceDevice || recheckedTarget.value.inode !== operation.sourceInode ||
           recheckedTarget.value.mode !== operation.mode) {
@@ -709,8 +732,8 @@ function writeOnce(
           unlinkPathIfMatches(libcHandle, parent, publishName, intent.stage_device, intent.stage_inode, openAt, close);
           throw new Error("version_conflict");
         }
-        const published = readSaveTarget(parent, targetName, openAt, close);
-        const previous = readSaveTarget(parent, publishName, openAt, close);
+        const published = readSaveTarget(parent, targetName, openAt, close, owner);
+        const previous = readSaveTarget(parent, publishName, openAt, close, owner);
         if (published.status !== 200 || published.value.device !== intent.stage_device || published.value.inode !== intent.stage_inode ||
           published.value.version !== digest || published.value.mode !== operation.mode || previous.status !== 200 ||
           previous.value.device !== operation.sourceDevice || previous.value.inode !== operation.sourceInode ||
@@ -740,10 +763,11 @@ function moveOnce(
   db: Database, folderFd: number, source: string[], destination: string[], witness: SaveTarget, expectedVersion: string,
   requestId: string, workspaceId: string, userId: string, libcHandle: ReturnType<typeof dlopen<typeof nativeSymbols>>,
   openAt: (parentFd: number, name: string, flags: number, mode?: number) => number, close: (fd: number) => void,
+  owner: WorkspaceIdentity,
 ): ReadResult<FileReceipt> {
-  const sourceParent = openDirectoryPath(folderFd, source.slice(0, -1), openAt, close);
+  const sourceParent = openDirectoryPath(folderFd, source.slice(0, -1), openAt, close, owner);
   if (sourceParent < 0) throw new Error("parent_directory_not_found");
-  const destinationParent = openDirectoryPath(folderFd, destination.slice(0, -1), openAt, close);
+  const destinationParent = openDirectoryPath(folderFd, destination.slice(0, -1), openAt, close, owner);
   if (destinationParent < 0) { if (sourceParent !== folderFd) close(sourceParent); throw new Error("parent_directory_not_found"); }
   const sourceName = source.at(-1)!;
   const destinationName = destination.at(-1)!;
@@ -756,7 +780,7 @@ function moveOnce(
       const workspace = db.query<{ archived: number }, [string, string]>("SELECT archived FROM workspaces WHERE id = ? AND user_id = ?").get(workspaceId, userId);
       if (!workspace) throw new Error("foreign_workspace");
       if (workspace.archived) throw new Error("workspace_archived");
-      const current = inspectMovePaths(folderFd, source, destination, openAt, close);
+      const current = inspectMovePaths(folderFd, source, destination, openAt, close, owner);
       if (current.status !== 200 || current.value.version !== expectedVersion || current.value.device !== witness.device ||
         current.value.inode !== witness.inode || current.value.mode !== witness.mode) throw new Error("version_conflict");
       const intent = db.query<FileIntentRow, [string, string]>("SELECT * FROM file_operation_intents WHERE user_id = ? AND request_id = ?").get(userId, requestId);
@@ -765,7 +789,7 @@ function moveOnce(
         intent.source_device !== witness.device || intent.source_inode !== witness.inode || intent.input_digest !== inputDigest) throw new Error("intent_state_unknown");
       sourceFd = openAt(sourceParent, sourceName, fileFlags);
       if (sourceFd < 0) throw new Error("version_conflict");
-      const opened = readOpenFile(sourceFd);
+      const opened = readOpenFile(sourceFd, owner);
       if (opened.status !== 200 || opened.value.version !== expectedVersion || opened.value.device !== witness.device ||
         opened.value.inode !== witness.inode || opened.value.mode !== witness.mode) throw new Error("version_conflict");
       const prepared = db.query("UPDATE file_operation_intents SET state = 'prepared' WHERE user_id = ? AND request_id = ? AND state = 'pending'")
@@ -780,12 +804,13 @@ function moveOnce(
       const folderRequest = db.query<{ request_id: string; device: string; inode: string }, [string, string]>(`SELECT request_id, folder_device AS device, folder_inode AS inode
         FROM workspace_folder_requests WHERE user_id = ? AND workspace_id = ? AND state = 'provisioned'`).get(userId, workspaceId);
       const folderIdentity = statSync(`/proc/self/fd/${folderFd}`, { bigint: true });
-      if (!folderRequest || String(folderIdentity.dev) !== folderRequest.device || String(folderIdentity.ino) !== folderRequest.inode) throw new Error("workspace_folder_unavailable");
+      if (!folderRequest || !folderIdentity.isDirectory() || folderIdentity.uid !== BigInt(owner.uid) || folderIdentity.gid !== BigInt(owner.gid) ||
+        (folderIdentity.mode & 0o777n) !== 0o700n || String(folderIdentity.dev) !== folderRequest.device || String(folderIdentity.ino) !== folderRequest.inode) throw new Error("workspace_folder_unavailable");
       const markerFd = openAt(folderFd, markerName, fileFlags);
       if (markerFd < 0) throw new Error("workspace_marker_unavailable");
       try {
         const marker = statSync(`/proc/self/fd/${markerFd}`);
-        if (!marker.isFile() || marker.uid !== process.getuid?.() || marker.gid !== process.getgid?.() || (marker.mode & 0o777) !== 0o600 ||
+        if (!marker.isFile() || BigInt(marker.dev) !== folderIdentity.dev || marker.nlink !== 1 || marker.size !== 37 || marker.uid !== owner.uid || marker.gid !== owner.gid || (marker.mode & 0o777) !== 0o600 ||
           readFileSync(`/proc/self/fd/${markerFd}`, "utf8") !== `${folderRequest.request_id}\n`) throw new Error("workspace_marker_invalid");
       } finally { close(markerFd); }
       if (!intent || intent.kind !== "move" || intent.workspace_id !== workspaceId || intent.state !== "prepared" ||
@@ -793,13 +818,13 @@ function moveOnce(
         intent.source_device !== witness.device || intent.source_inode !== witness.inode || intent.input_digest !== inputDigest ||
         intent.stage_device !== null || intent.stage_inode !== null || intent.stage_digest !== null) throw new Error("intent_state_unknown");
       fsyncSync(sourceFd);
-      const held = readOpenFile(sourceFd);
+      const held = readOpenFile(sourceFd, owner);
       if (held.status !== 200 || held.value.version !== expectedVersion || held.value.device !== witness.device ||
         held.value.inode !== witness.inode || held.value.mode !== witness.mode) throw new Error("version_conflict");
       const namedFd = openAt(sourceParent, sourceName, fileFlags);
       if (namedFd < 0) throw new Error("version_conflict");
       try {
-        const named = readOpenFile(namedFd);
+        const named = readOpenFile(namedFd, owner);
         if (named.status !== 200 || named.value.version !== expectedVersion || named.value.device !== witness.device ||
           named.value.inode !== witness.inode || named.value.mode !== witness.mode) throw new Error("version_conflict");
       } finally { close(namedFd); }
@@ -811,7 +836,7 @@ function moveOnce(
       const destinationFd = openAt(destinationParent, destinationName, fileFlags);
       if (destinationFd < 0) throw new Error("move_witness_unknown");
       try {
-        const moved = readOpenFile(destinationFd);
+        const moved = readOpenFile(destinationFd, owner);
         if (moved.status !== 200 || moved.value.device !== witness.device || moved.value.inode !== witness.inode ||
           moved.value.version !== expectedVersion || moved.value.mode !== witness.mode) throw new Error("move_witness_unknown");
         fsyncSync(destinationFd);
@@ -861,24 +886,25 @@ function recoverOnly(
       (intent.kind === "move" && (!sourceComponents || sourceComponents.join("/") !== intent.source_path)) ||
       fileInputDigest(intent.kind, workspaceId, intent.destination_path, intent.stage_digest ?? intent.expected_sha256 ?? "", intent.expected_sha256,
         intent.kind === "move" ? intent.source_path : undefined) !== intent.input_digest) return null;
-    const witnessed = withProvisionedWorkspaceFolder(databasePath, userId, workspaceId, (folderFd, openAt, close) => {
+    const witnessed = withProvisionedWorkspaceFolder(databasePath, userId, workspaceId, (folderFd, openAt, close, owner) => {
       const folder = db.query<{ request_id: string; device: string; inode: string }, [string, string]>(`SELECT request_id, folder_device AS device, folder_inode AS inode
         FROM workspace_folder_requests WHERE user_id = ? AND workspace_id = ? AND state = 'provisioned'`).get(userId, workspaceId);
       const folderIdentity = statSync(`/proc/self/fd/${folderFd}`, { bigint: true });
-      if (!folder || String(folderIdentity.dev) !== folder.device || String(folderIdentity.ino) !== folder.inode) return null;
+      if (!folder || !folderIdentity.isDirectory() || folderIdentity.uid !== BigInt(owner.uid) || folderIdentity.gid !== BigInt(owner.gid) ||
+        (folderIdentity.mode & 0o777n) !== 0o700n || String(folderIdentity.dev) !== folder.device || String(folderIdentity.ino) !== folder.inode) return null;
       const currentIntent = db.query<FileIntentRow, [string, string]>("SELECT * FROM file_operation_intents WHERE user_id = ? AND request_id = ?")
         .get(userId, requestId);
       if (!currentIntent || currentIntent.state !== "prepared" || currentIntent.kind !== intent.kind ||
         currentIntent.stage_device !== intent.stage_device || currentIntent.stage_inode !== intent.stage_inode || currentIntent.stage_digest !== intent.stage_digest ||
         currentIntent.source_path !== intent.source_path || currentIntent.destination_path !== intent.destination_path || currentIntent.expected_sha256 !== intent.expected_sha256 ||
         currentIntent.source_device !== intent.source_device || currentIntent.source_inode !== intent.source_inode) return null;
-      const parent = openDirectoryPath(folderFd, components.slice(0, -1), openAt, close);
+      const parent = openDirectoryPath(folderFd, components.slice(0, -1), openAt, close, owner);
       if (parent < 0) return null;
       let sourceParent = -1;
       let target = -1;
       try {
         if (intent.kind === "move") {
-          sourceParent = openDirectoryPath(folderFd, sourceComponents!.slice(0, -1), openAt, close);
+          sourceParent = openDirectoryPath(folderFd, sourceComponents!.slice(0, -1), openAt, close, owner);
           if (sourceParent < 0 || pathExists(sourceParent, sourceComponents!.at(-1)!, openAt, close)) return null;
         }
         target = openAt(parent, components.at(-1)!, fileFlags);
@@ -889,14 +915,14 @@ function recoverOnly(
         const expectedDigest = intent.kind === "move" ? intent.expected_sha256 : intent.stage_digest;
         const expectedMode = intent.kind === "create" ? 0o600n : null;
         if (!witnessDevice || !witnessInode || !expectedDigest || !info.isFile() || String(info.dev) !== witnessDevice ||
-          String(info.ino) !== witnessInode || info.uid !== BigInt(process.getuid?.() ?? -1) || info.gid !== BigInt(process.getgid?.() ?? -1) ||
+          String(info.ino) !== witnessInode || info.uid !== BigInt(owner.uid) || info.gid !== BigInt(owner.gid) ||
           (expectedMode !== null && (info.mode & 0o777n) !== expectedMode) || info.size > BigInt(maxContentBytes)) return null;
         const bytes = readBounded(target, maxContentBytes);
         const afterRead = fstatSync(target, { bigint: true });
         if (BigInt(bytes.length) !== info.size || afterRead.dev !== info.dev || afterRead.ino !== info.ino || afterRead.size !== info.size ||
-          afterRead.mode !== info.mode || createHash("sha256").update(bytes).digest("hex") !== expectedDigest) return null;
+          afterRead.mode !== info.mode || afterRead.uid !== info.uid || afterRead.gid !== info.gid || createHash("sha256").update(bytes).digest("hex") !== expectedDigest) return null;
         if (intent.kind === "save") {
-          const previous = readSaveTarget(parent, `${stagePrefix}${requestId}-publish`, openAt, close);
+          const previous = readSaveTarget(parent, `${stagePrefix}${requestId}-publish`, openAt, close, owner);
           if (previous.status !== 200 || previous.value.device !== intent.source_device || previous.value.inode !== intent.source_inode ||
             previous.value.version !== intent.expected_sha256 || BigInt(previous.value.mode) !== (info.mode & 0o777n)) return null;
         }
