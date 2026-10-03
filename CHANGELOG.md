@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-033 tabs + panes + valid-B isolation — Linux proof passed
+
+- Owner-scoped `GET/PUT /api/workspaces/:workspaceId/layout` now stores tabs plus one-level split panes (dense orders, tab refs, pane-gated active selection). Verified: unit 4/4 (per-workspace save/reopen/switch without moving B, valid-B-session PUT/GET 404 with pane payload and Alice row unchanged, pane save/reopen/switch with B null, 422 matrix incl orphan-pane-active and gapped orders), Linux proof run3 `workspace_layout_slice_passed` on pinned oven/bun arm64 (exact pane save/reopen/switch read-back, B null throughout; API/volume cleaned), typecheck exit 0, doc links pass. Review corrections applied: active selection is shared server state per workspace (per-device focus separation is a client concern, not claimed here); runner now reads back the final switch. Full RC-033 (mobile focus journey) still open. No deployment. X post skipped (extension down).
+
 ## RC-033 tab-layout slice — save/open per workspace, no cross-workspace moves
 
 - New owner-scoped `GET/PUT /api/workspaces/:workspaceId/layout` (tabs max 32, activeTabId must reference a tab; archived workspaces refuse writes; anonymous/invalid-session 401, foreign workspace 404, bad shape 422). Verified: unit 2/2 (save/reopen/switch without moving B, authoritative SQLite read-back, rejection without effect), Linux proof run1 `workspace_layout_slice_passed` on pinned oven/bun arm64 (two workspaces, save A, B stays null, reopen A, switch active tab, B still null; API/volume cleaned), typecheck exit 0, doc links pass. Review found no defect; cross-user test note corrected (single-local-user auth model, isolation via workspace ownership). Panes, mobile focus separation, full RC-033 acceptance still open. RC-030 blocked: pinned image has no git binary (exit 127), slice reverted. No deployment. X post skipped (extension down).

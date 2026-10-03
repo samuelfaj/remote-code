@@ -6,18 +6,26 @@ import { sessionUserId } from "./auth";
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const uuidSchema = t.String({ minLength: 36, maxLength: 36 });
-// ponytail: layout starts with tabs only; panes/split state comes as a later slice.
+// ponytail: layout stores tabs plus optional one-level split panes;
+// deeper nesting comes as a later slice.
 const tabSchema = t.Object({
   id: t.String({ minLength: 1, maxLength: 64 }),
   kind: t.Union([t.Literal("file"), t.Literal("terminal"), t.Literal("thread")]),
   targetId: t.String({ minLength: 1, maxLength: 128 }),
 });
+const paneSchema = t.Object({
+  id: t.String({ minLength: 1, maxLength: 64 }),
+  tabId: t.String({ minLength: 1, maxLength: 64 }),
+  order: t.Integer({ minimum: 0, maximum: 31 }),
+});
 const layoutSchema = t.Object({
   tabs: t.Array(tabSchema, { maxItems: 32 }),
   activeTabId: t.Union([t.String({ minLength: 1, maxLength: 64 }), t.Null()]),
+  panes: t.Optional(t.Array(paneSchema, { maxItems: 32 })),
+  activePaneId: t.Optional(t.Union([t.String({ minLength: 1, maxLength: 64 }), t.Null()])),
 });
 
-export type WorkspaceLayout = { tabs: { id: string; kind: "file" | "terminal" | "thread"; targetId: string }[]; activeTabId: string | null };
+export type WorkspaceLayout = { tabs: { id: string; kind: "file" | "terminal" | "thread"; targetId: string }[]; activeTabId: string | null; panes?: { id: string; tabId: string; order: number }[]; activePaneId?: string | null };
 
 function validLayout(value: unknown): value is WorkspaceLayout {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
@@ -33,11 +41,35 @@ function validLayout(value: unknown): value is WorkspaceLayout {
     ids.add(t.id);
   }
   if (row.activeTabId !== null && (typeof row.activeTabId !== "string" || !ids.has(row.activeTabId))) return false;
+  const panes = (row as { panes?: unknown }).panes;
+  const activePaneId = (row as { activePaneId?: unknown }).activePaneId;
+  if (panes !== undefined) {
+    if (!Array.isArray(panes) || panes.length > 32) return false;
+    const paneIds = new Set<string>();
+    for (const pane of panes) {
+      if (!pane || typeof pane !== "object" || Array.isArray(pane)) return false;
+      const p = pane as Record<string, unknown>;
+      if (typeof p.id !== "string" || p.id.length < 1 || p.id.length > 64 || paneIds.has(p.id)) return false;
+      if (typeof p.tabId !== "string" || !ids.has(p.tabId)) return false;
+      if (!Number.isInteger(p.order) || (p.order as number) < 0 || (p.order as number) > 31) return false;
+      paneIds.add(p.id);
+    }
+    // One client's pane selection is stored, not broadcast: the active
+    // pane must belong to this layout. Per-device focus separation is a
+    // client concern; the server only guarantees cross-workspace isolation.
+    if (activePaneId !== undefined && activePaneId !== null &&
+      (typeof activePaneId !== "string" || !paneIds.has(activePaneId))) return false;
+    // Panes render side by side in order; orders must be dense from zero.
+    const orders = (panes as { order: number }[]).map((p) => p.order).sort((a, b) => a - b);
+    if (orders.some((order, index) => order !== index)) return false;
+  } else if (activePaneId !== undefined) return false;
   return true;
 }
 
 // Owner-scoped per-workspace layout: opening another workspace never changes
-// this one, and one client's tab selection never moves another device.
+// this one. Note: active tab/pane is shared server state per workspace, not
+// per device — clients must not treat a selection change as another device's
+// focus move; device focus separation is a client concern built on this API.
 export function workspaceLayoutFeature(databasePath: string) {
   function database<T>(callback: (db: Database) => T): T {
     mkdirSync(dirname(databasePath), { recursive: true });

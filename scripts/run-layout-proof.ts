@@ -78,7 +78,23 @@ try {
   if (moved.status !== 200) throw Error("Tab switch not saved");
   const stillB = await api(`/api/workspaces/${workspaceB}/layout`, "GET", undefined, cookie);
   if (stillB.body.layout !== null) throw Error("Tab switch on A moved B");
-  record.layout = { workspaceA, workspaceB, saved: layoutA, switched };
+  // Two panes on A: save, reopen, switch active pane; B stays null throughout.
+  const panes = {
+    tabs: layoutA.tabs, activeTabId: "tab-1",
+    panes: [{ id: "pane-1", tabId: "tab-1", order: 0 }, { id: "pane-2", tabId: "tab-1", order: 1 }],
+    activePaneId: "pane-2",
+  };
+  const paned = await api(`/api/workspaces/${workspaceA}/layout`, "PUT", panes, cookie);
+  if (paned.status !== 200 || JSON.stringify(paned.body.layout) !== JSON.stringify(panes)) throw Error("Pane save mismatch");
+  const reopenPanes = await api(`/api/workspaces/${workspaceA}/layout`, "GET", undefined, cookie);
+  if (reopenPanes.status !== 200 || JSON.stringify(reopenPanes.body.layout) !== JSON.stringify(panes)) throw Error("Panes did not return after reopen");
+  const paneSwitch = { ...panes, activePaneId: "pane-1" };
+  if ((await api(`/api/workspaces/${workspaceA}/layout`, "PUT", paneSwitch, cookie)).status !== 200) throw Error("Pane switch not saved");
+  const reopenSwitch = await api(`/api/workspaces/${workspaceA}/layout`, "GET", undefined, cookie);
+  if (reopenSwitch.status !== 200 || JSON.stringify(reopenSwitch.body.layout) !== JSON.stringify(paneSwitch)) throw Error("Pane switch did not persist");
+  const finalB = await api(`/api/workspaces/${workspaceB}/layout`, "GET", undefined, cookie);
+  if (finalB.body.layout !== null) throw Error("Pane switch on A moved B");
+  record.layout = { workspaceA, workspaceB, saved: layoutA, switched, panes: paneSwitch };
   record.result = "workspace_layout_slice_passed";
 } catch (error) {
   record.error = String(error).replaceAll(password, "[redacted]");
