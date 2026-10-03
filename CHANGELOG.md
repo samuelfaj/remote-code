@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-031 live-actor shutdown proof — API-driven settlement verified, honest limits
+
+- New `scripts/run-terminal-shutdown-proof.ts` starts one PTY via shipped HTTP routes, keeps it producing, SIGTERMs the API, and reads back via a separate container: state `exited`, cleanup `removed`, exit 137, actor container absent by exact `--no-trunc` ID check, volume/API cleaned. Run4 passes `terminal_graceful_live_actor_shutdown_passed` on pinned oven/bun `sha256:87416c9` Linux arm64. Reasoning review limits kept: (a) runner's generated SIGTERM bridge reaches the shipped `onStop -> stopAll` path, but the shipped `index.ts` entry has no SIGTERM handler — normal production SIGTERM handling is NOT proved; (b) exit 137 means Docker stop/SIGKILL escalation settled the actor — API-driven cleanup/removal is proved, graceful actor exit without SIGKILL is NOT claimed. No product code changed; typecheck exit 0. Full RC-031, RC-002 unknown, RC-004 gated still open. No deployment or X post (extension down).
+
 ## RC-031 shutdown-slice verdict — wait loop reverted, honest gap kept
 
 - Tried a 30 s `stopAll` wait loop re-polling SQLite rows after `stopContext`. Reasoning review found it adds no shutdown proof (settled contexts already verified; loop only re-reads rows) — reverted without commit. Run4 of unchanged source still passes `web_terminal_disconnect_reconnect_renderer_resize_and_unknown_outcomes_passed` (2 viewports, 6 exited/removed, 0 sessions, integrity ok, cleanup all true); that exercises the runner-owned SIGTERM reconcile path, not an independent graceful-shutdown proof. `plan/tasks.html` RC-031 status updated to match. Typecheck exit 0. Full RC-031, graceful live-actor shutdown, RC-002 unknown, RC-004 gated remain open. No deployment or X post.
