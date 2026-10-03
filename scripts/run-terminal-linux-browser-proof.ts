@@ -228,14 +228,18 @@ try {
     await showsText(page, `REPLY=${reply}`);
     const content = `created through the terminal on ${viewport.width}`;
     await send(page, `printf '${content}\\n' > created-by-terminal.txt`);
-    // Direct keyboard input is proved at component level (forwarder gated
-    // on/off, no backend calls from the fixture) and shares the guarded
-    // send() path with line input, which this journey proves end to end.
-    // Only the toggle attach/detach is asserted here; per-keystroke live
-    // delivery is not (keys typed while the panel is busy are ignored).
+    // Direct keyboard input queues each keystroke client-side and drains
+    // them in order through the guarded send() path. Prove one full word
+    // typed fast into the focused screen reaches the shell through it.
     if (viewport.width === 1440) {
       await page.getByRole("button", { name: "Turn on direct keyboard input", exact: true }).click();
       await expect(page.getByRole("button", { name: "Turn off direct keyboard input", exact: true })).toBeVisible();
+      await send(page, `read direct; printf '\\nDIRECT=%s\\n' "$direct"`);
+      await page.locator(".terminal-screen").click();
+      await expect(page.getByRole("textbox", { name: "Terminal screen focus" })).toBeFocused();
+      await page.keyboard.type("direct-key-typed");
+      await page.keyboard.press("Enter");
+      await showsText(page, "DIRECT=direct-key-typed");
       await page.getByRole("button", { name: "Turn off direct keyboard input", exact: true }).click();
       await expect(page.getByRole("button", { name: "Turn on direct keyboard input", exact: true })).toBeVisible();
     }

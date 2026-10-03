@@ -37,6 +37,8 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
   const [gap, setGap] = useState(false);
   const [message, setMessage] = useState("");
   const [directKeys, setDirectKeys] = useState(false);
+  const [queuedKeys, setQueuedKeys] = useState(0);
+  const keyQueue = useRef<string[]>([]);
   const sameWorkspace = reference?.start.workspaceId === workspace?.id;
   const currentReceipt = receipt?.workspaceId === workspace?.id ? receipt : null;
   const closed = currentReceipt?.cleanup === "removed";
@@ -216,7 +218,7 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
             : "Terminal state read from the host. Input acknowledgements are not command results.");
         }
         catch { if (current()) { setReceipt(null); setMessage("Terminal state is unconfirmed. Input is disabled; only state reads retry automatically."); } }
-        finally { if (current()) { working.current = false; setBusy(false); } }
+        finally { if (current()) { working.current = false; setBusy(false); drainKeys(); } }
       }
       if (!cancelled && current()) timer = setTimeout(tick, 750);
     };
@@ -251,9 +253,16 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
 
   async function send(text: string, proposal?: string) {
     const saved = referenceRef.current;
-    if (!saved?.terminalId || !canInput || working.current) return;
+    if (!saved?.terminalId || !canInput) return;
     const encoded = new TextEncoder().encode(text);
     if (!encoded.length || encoded.length > 4096 || new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(encoded) !== text) { setMessage("Input must be valid UTF-8, at most 4096 bytes."); return; }
+    if (working.current) {
+      // Direct keystrokes queue while a send or state poll holds the lock;
+      // the queue drains in order once the lock releases. Line input keeps
+      // its old behavior: the Send buttons disable while busy.
+      if (proposal === undefined) enqueueKey(text);
+      return;
+    }
     const current = currentCheck(); const end = Date.now() + budgetMs;
     working.current = true; setBusy(true);
     let sent = false;
@@ -275,11 +284,40 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
       writeReference(saved, next);
       if (proposal !== undefined && draftRef.current === proposal) setDraft("");
       setReceipt(null);
-      setMessage("Input queued by the host. This is not confirmation that the command succeeded.");
+      setMessage(keyQueue.current.length > 0 ? `Input queued by the host. ${keyQueue.current.length} keystroke(s) waiting.` : "Input queued by the host. This is not confirmation that the command succeeded.");
     } catch {
       if (current()) { setReceipt(null); setMessage(sent ? "Input delivery is unknown. Further input is blocked, including after reload. State reads never resend input; inspect or stop the terminal." : "Input preflight or storage failed. No input was sent. Inspect the host before trying again."); }
-    } finally { if (current()) { working.current = false; setBusy(false); } }
+      if (keyQueue.current.length > 0) {
+        const dropped = keyQueue.current.length;
+        keyQueue.current = []; setQueuedKeys(0);
+        if (current()) setMessage((prior) => `${prior} ${dropped} queued keystroke(s) discarded unsent.`);
+      }
+    } finally { if (current()) { working.current = false; setBusy(false); drainKeys(); } }
   }
+
+  // Direct-keystroke queue: keys typed while a send or poll holds the lock
+  // wait here instead of being dropped. The queue drains one key per send()
+  // round-trip; a failed or uncertain send keeps the fence (input stays
+  // blocked) and drops the queue so no key is silently reordered past it.
+  function enqueueKey(text: string) {
+    const encoded = new TextEncoder().encode(text);
+    if (!encoded.length || encoded.length > 4096) return;
+    const queuedBytes = new TextEncoder().encode(keyQueue.current.join("")).length;
+    if (queuedBytes + encoded.length > 4096) return;
+    keyQueue.current.push(text);
+    setQueuedKeys(keyQueue.current.length);
+  }
+
+  function drainKeys() {
+    const saved = referenceRef.current;
+    if (!saved?.terminalId || working.current || keyQueue.current.length === 0) { setQueuedKeys(keyQueue.current.length); return; }
+    if (!canInput) { keyQueue.current = []; setQueuedKeys(0); return; }
+    const next = keyQueue.current.shift()!;
+    setQueuedKeys(keyQueue.current.length);
+    void send(next);
+  }
+
+  function clearKeys() { keyQueue.current = []; setQueuedKeys(0); }
 
   async function resize() {
     const saved = referenceRef.current;
@@ -334,7 +372,7 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
   return <section className="terminal-panel" aria-label="Linux terminal" style={{ border: "1px solid #dce4df", borderRadius: 8, padding: 16, marginTop: 16, maxWidth: "100%" }}>
     <h3>Linux terminal</h3>
     {!workspace ? <p>Select a workspace to use its host terminal.</p> : <>
-      <p>Line input with a read-only terminal screen. {directKeys ? "Direct keyboard input is on: typing in the terminal screen sends one keystroke at a time through the same host input queue. Keys typed while the panel is busy (sending or polling) are ignored with no retry; type one key and watch it echo before the next." : "Direct keyboard input is off."}</p>
+      <p>Line input with a read-only terminal screen. {directKeys ? `Direct keyboard input is on: typing in the terminal screen queues each keystroke and sends them in order through the same host input queue.${queuedKeys > 0 ? ` ${queuedKeys} waiting.` : ""}` : "Direct keyboard input is off."}</p>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <button type="button" disabled={busy || blocked || !available || !storageReady || !!reference || workspace.archived} onClick={() => void start()}>Start Linux terminal</button>
         <button type="button" disabled={busy || blocked} onClick={() => void inspect()}>Inspect terminal state</button>
@@ -349,9 +387,9 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
       {gap ? <p>Earlier output was discarded or is unavailable. Only received bytes are shown.</p> : null}
       {currentReceipt?.flow ? <p data-testid="terminal-flow-state">{`Flow: ${currentReceipt.flow.totalBytes} produced, ${currentReceipt.flow.retainedBytes} retained, ${currentReceipt.flow.droppedBytes} dropped.`}</p> : null}
       <TerminalScreen ref={screen} size={currentReceipt ? { cols: currentReceipt.cols, rows: currentReceipt.rows } : null}
-        onKey={directKeys && canInput && !busy && !working.current ? (key) => void send(key) : undefined} />
+        onKey={directKeys && canInput ? (key) => void send(key) : undefined} />
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
-        <button type="button" disabled={busy || blocked || !canInput} onClick={() => { setDirectKeys((value) => !value); if (!directKeys) screen.current?.focus(); }}>
+        <button type="button" disabled={busy || blocked || !canInput} onClick={() => { clearKeys(); setDirectKeys((value) => !value); if (!directKeys) screen.current?.focus(); }}>
           {directKeys ? "Turn off direct keyboard input" : "Turn on direct keyboard input"}
         </button>
       </div>

@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-031 queued direct keyboard input — no key lost, live-shell delivery proved
+
+- Direct keystrokes now queue client-side while a send or state poll holds the lock and drain in order, one per `send()` round-trip; failure clears the queue with an explicit discarded-count message. Review fixes applied: poll `finally` also drains (keys queued during polling no longer strand), queue cap measured in UTF-8 bytes, validation runs before the busy check so oversize/invalid keys never queue. Verified: full Linux proof run12 `web_terminal_disconnect_reconnect_renderer_resize_and_unknown_outcomes_passed` (2 cases, desktop 3 starts / 35 inputs incl fast-typed `direct-key-typed` + Enter delivered as `DIRECT=direct-key-typed` through the queue, 6 exited/removed, cleanup all true, source unchanged), component spec 10/10, typecheck exit 0, doc links pass. Full RC-031 (native surfaces, broader faults), RC-002 unknown, RC-004 gated still open. No deployment. X post skipped (extension down).
+
 ## RC-031 direct keyboard input — opt-in slice, honest limits
 
 - Terminal screen now forwards keystrokes (`disableStdin: false` + `onKey`) only while an opt-in toggle and the full `canInput` guard hold; each keystroke reuses the guarded `send()` path with the input-uncertainty fence. UI copy discloses the limit: keys typed while busy are ignored with no retry. Verified: component spec 10/10 (new gate test: forwards on, silent off, Enter forwards, no `/api` calls from fixture), full Linux proof run9 `web_terminal_disconnect_reconnect_renderer_resize_and_unknown_outcomes_passed` (2 cases, 6 exited/removed, cleanup all true, source unchanged), typecheck exit 0, doc links pass. Reasoning review closed with one copy fix applied; per-keystroke live-shell delivery and client-side key buffering remain open by design. Full RC-031 (native surfaces, broader faults), RC-002 unknown, RC-004 gated still open. No deployment. X post skipped (extension down).
