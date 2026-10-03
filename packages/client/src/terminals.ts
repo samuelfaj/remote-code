@@ -22,9 +22,10 @@ export type TerminalReceipt = {
   resizeState: "idle" | "unknown" | "applied";
   inputSequence: number;
   inputState: TerminalInputState | null;
+  flow?: { totalBytes: number; retainedBytes: number; droppedBytes: number; polledOffset: number };
 };
 export type TerminalPoll = TerminalReceipt & (
-  | { outputAvailable: true; baseOffset: number; offset: number; nextOffset: number; endOffset: number; gap: boolean; outputBase64: string }
+  | { outputAvailable: true; baseOffset: number; offset: number; nextOffset: number; endOffset: number; gap: boolean; outputBase64: string; retainedBytes: number; totalBytes: number; droppedBytes: number }
   | { outputAvailable: false; gap: true }
 );
 export type TerminalInputAck = { terminalId: string; sequence: number; state: TerminalInputState };
@@ -79,7 +80,10 @@ export function terminalReferenceFromValue(value: unknown): TerminalReference | 
 export function terminalReceiptFromValue(value: unknown, pending: PendingTerminalStart, expectedTerminalId?: string | null): TerminalReceipt | null {
   const start = pendingTerminalStartFromValue(pending);
   const row = terminalRow(value);
-  if (!start || !row || Object.keys(row).sort().join(",") !== receiptKeys ||
+  const { flow: flowValue, ...rest } = row ?? {};
+  const parsedFlow = flow(flowValue);
+  if (!start || !row || parsedFlow === null ||
+    Object.keys(rest).sort().join(",") !== receiptKeys ||
     !terminalUuid(row.terminalId) ||
     (expectedTerminalId !== undefined && expectedTerminalId !== null && row.terminalId !== expectedTerminalId) ||
     row.requestId !== start.requestId || row.workspaceId !== start.workspaceId ||
@@ -96,7 +100,19 @@ export function terminalReceiptFromValue(value: unknown, pending: PendingTermina
   return { terminalId: row.terminalId, requestId: start.requestId, workspaceId: start.workspaceId,
     state: row.state, cols: row.cols, rows: row.rows, initialCols: start.cols, initialRows: start.rows,
     exitCode: row.exitCode as number | null, cleanup: row.cleanup, resizeState: row.resizeState,
-    inputSequence: row.inputSequence, inputState: row.inputState as TerminalInputState | null };
+    inputSequence: row.inputSequence, inputState: row.inputState as TerminalInputState | null,
+    ...(parsedFlow === undefined ? {} : { flow: parsedFlow }) };
+}
+
+function flow(value: unknown): TerminalReceipt["flow"] | null | undefined {
+  if (value === undefined) return undefined;
+  const row = terminalRow(value);
+  if (!row || Object.keys(row).sort().join(",") !== "droppedBytes,polledOffset,retainedBytes,totalBytes" ||
+    !offset(row.totalBytes) || !offset(row.retainedBytes) || !offset(row.droppedBytes) || !offset(row.polledOffset) ||
+    row.retainedBytes > 64 * 1024 || row.totalBytes - row.retainedBytes !== row.droppedBytes ||
+    row.polledOffset > row.totalBytes) return null;
+  return { totalBytes: row.totalBytes, retainedBytes: row.retainedBytes,
+    droppedBytes: row.droppedBytes, polledOffset: row.polledOffset };
 }
 
 function base64ByteLength(value: unknown): number | null {
@@ -113,7 +129,8 @@ export function terminalPollFromValue(value: unknown, expected: TerminalReferenc
   const reference = terminalReferenceFromValue(expected);
   const row = terminalRow(value);
   if (!reference?.terminalId || !row || !offset(requestedOffset)) return null;
-  const { baseOffset, offset: from, nextOffset, endOffset, gap, outputBase64, outputAvailable, ...receiptValue } = row;
+  const { baseOffset, offset: from, nextOffset, endOffset, gap, outputBase64, outputAvailable,
+    retainedBytes, totalBytes, droppedBytes, ...receiptValue } = row;
   const receipt = terminalReceiptFromValue(receiptValue, reference.start, reference.terminalId);
   if (!receipt) return null;
   if (outputAvailable === false) {
@@ -121,14 +138,16 @@ export function terminalPollFromValue(value: unknown, expected: TerminalReferenc
     return { ...receipt, outputAvailable: false, gap: true };
   }
   if (outputAvailable !== true || Object.keys(row).sort().join(",") !==
-    `${receiptKeys},baseOffset,offset,nextOffset,endOffset,gap,outputBase64,outputAvailable`.split(",").sort().join(",") ||
+    `${receiptKeys},baseOffset,droppedBytes,endOffset,gap,nextOffset,offset,outputAvailable,outputBase64,retainedBytes,totalBytes`.split(",").sort().join(",") ||
     !offset(baseOffset) || !offset(from) || !offset(nextOffset) || !offset(endOffset) ||
+    !offset(retainedBytes) || !offset(totalBytes) || !offset(droppedBytes) ||
     baseOffset > from || from > nextOffset || nextOffset > endOffset || endOffset - baseOffset > 64 * 1024 ||
+    endOffset !== totalBytes || retainedBytes !== endOffset - baseOffset || droppedBytes !== baseOffset ||
     requestedOffset > endOffset || from !== Math.max(requestedOffset, baseOffset) || gap !== (requestedOffset < baseOffset)) return null;
   const length = base64ByteLength(outputBase64);
   if (length === null || nextOffset - from !== length || length !== Math.min(endOffset - from, 16 * 1024)) return null;
   return { ...receipt, outputAvailable: true, baseOffset, offset: from, nextOffset, endOffset,
-    gap, outputBase64: outputBase64 as string };
+    gap, outputBase64: outputBase64 as string, retainedBytes, totalBytes, droppedBytes };
 }
 
 export function terminalInputAckFromValue(value: unknown, expectedTerminalId: string, expectedSequence: number): TerminalInputAck | null {

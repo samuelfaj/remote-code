@@ -23,6 +23,7 @@ type TerminalRow = {
 type TerminalContext = {
   row: TerminalRow; socket?: Socket; closing: boolean; launching: boolean; allocationAttempted: boolean;
   output: Buffer; offset: number; outputAvailable: boolean; backpressured: boolean; inputPending: boolean;
+  droppedBytes: number; polledOffset: number;
   readyBytes: Buffer; ready: boolean; resolveReady?: () => void; rejectReady?: (error: Error) => void;
   launch?: Promise<void>; stop?: Promise<void>; watching: boolean;
   watch?: ReturnType<typeof setInterval>; expiry?: ReturnType<typeof setTimeout>;
@@ -72,6 +73,10 @@ function finished(row: TerminalRow) { return row.state === "exited" || row.state
 function appendOutput(context: TerminalContext, bytes: Buffer) {
   if (context.offset + bytes.length > Number.MAX_SAFE_INTEGER) throw new TerminalError(503, "terminal_offset_exhausted");
   context.offset += bytes.length;
+  // Bounded ring: the producer never blocks; retained bytes stay readable and the dropped count stays observable.
+  const retained = context.output.length + bytes.length > outputLimit
+    ? context.output.length + bytes.length - outputLimit : 0;
+  if (retained > 0) context.droppedBytes += retained;
   context.output = bytes.length >= outputLimit ? Buffer.from(bytes.subarray(bytes.length - outputLimit)) :
     Buffer.concat([context.output.subarray(Math.max(0, context.output.length + bytes.length - outputLimit)), bytes]);
 }
@@ -80,10 +85,13 @@ function outputSnapshot(context: TerminalContext | undefined, offset: number) {
   const end = context?.offset ?? 0;
   const base = end - (context?.output.length ?? 0);
   if (offset > end) throw new TerminalError(409, "terminal_offset_ahead");
+  if (context) context.polledOffset = Math.max(context.polledOffset, Math.min(end, Math.max(offset, base) + pollLimit));
   const from = Math.max(offset, base);
   const next = Math.min(end, from + pollLimit);
   return {
     baseOffset: base, offset: from, nextOffset: next, endOffset: end, gap: offset < base,
+    // Retained bytes, cumulative producer total, dropped total, and highest delivered offset make flow visible.
+    retainedBytes: context?.output.length ?? 0, totalBytes: end, droppedBytes: context?.droppedBytes ?? 0,
     outputBase64: context?.output.subarray(from - base, next - base).toString("base64") ?? "",
     outputAvailable: context !== undefined,
   };
@@ -409,6 +417,7 @@ export function terminalsFeature(databasePath: string, config?: TerminalConfig) 
     if (contexts.size >= maxRetained) throw new TerminalError(503, "terminal_capacity");
     const context: TerminalContext = { row, closing: !launching, launching, allocationAttempted: !launching,
       output: Buffer.alloc(0), offset: 0, outputAvailable: launching, backpressured: false, inputPending: false,
+      droppedBytes: 0, polledOffset: 0,
       readyBytes: Buffer.alloc(0), ready: false, watching: false };
     contexts.set(row.terminal_id, context);
     return context;
@@ -436,7 +445,9 @@ export function terminalsFeature(databasePath: string, config?: TerminalConfig) 
       state: !context && !finished(row) ? "unknown" : row.state,
       cols: row.current_cols, rows: row.current_rows, initialCols: row.cols, initialRows: row.rows,
       exitCode: row.exit_code, cleanup: row.cleanup,
-      resizeState: row.resize_state, inputSequence: row.input_sequence, inputState: row.input_state };
+      resizeState: row.resize_state, inputSequence: row.input_sequence, inputState: row.input_state,
+      flow: context ? { totalBytes: context.offset, retainedBytes: context.output.length,
+        droppedBytes: context.droppedBytes, polledOffset: context.polledOffset } : undefined };
   }
 
   async function inspect(context: TerminalContext) {
@@ -905,13 +916,15 @@ export function terminalsFeature(databasePath: string, config?: TerminalConfig) 
 
 // Runnable local invariant check; no engine, service or process allocation.
 if (import.meta.main) {
-  const context = { output: Buffer.alloc(0), offset: 0 } as TerminalContext;
+  const context = { output: Buffer.alloc(0), offset: 0, droppedBytes: 0, polledOffset: 0 } as TerminalContext;
   appendOutput(context, Buffer.alloc(outputLimit + 17, 0x61));
   appendOutput(context, Buffer.from("end"));
   const snapshot = outputSnapshot(context, 0);
   if (context.output.length !== outputLimit || snapshot.baseOffset !== 20 || !snapshot.gap ||
     snapshot.nextOffset - snapshot.offset !== pollLimit || Buffer.from(snapshot.outputBase64, "base64").length !== pollLimit ||
-    context.offset !== outputLimit + 20 || context.output.subarray(-3).toString("utf8") !== "end") throw new Error("terminal_ring_check_failed");
+    context.offset !== outputLimit + 20 || context.output.subarray(-3).toString("utf8") !== "end" ||
+    snapshot.retainedBytes !== outputLimit || snapshot.totalBytes !== outputLimit + 20 ||
+    snapshot.droppedBytes !== 20 || context.polledOffset !== snapshot.nextOffset) throw new Error("terminal_ring_check_failed");
   for (const text of ["", "a".repeat(inputLimit + 1), "\ud800", "é".repeat(inputLimit / 2 + 1)]) {
     let rejected = false;
     try { inputBytes(text); } catch { rejected = true; }

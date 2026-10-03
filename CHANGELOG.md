@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-031 observable flow control — source slice, unaccepted
+
+- Backend ring now exposes produced/retained/dropped/delivered totals on every poll and receipt flow object; producer never blocks, older bytes drop with disclosed gap, client validators enforce total-retained=dropped and 64 KiB bound. Web shows `Flow: N produced, M retained, K dropped` beside gap notice. Verified: ring invariant passes, full typecheck exit 0, client 9/9 pass, API/client suites 45/45 pass, docs links exit 0. Linux Docker PTY overflow proof and graceful live-actor shutdown still open; RC-031 stays In Progress, RC-002 unknown, RC-004 gated. No deployment or X post.
+
 ## RC-031 web disconnect/reconnect — locally verified bounded slice
 
 - Verified candidate run10 evidence against the recorded repository baseline: both desktop 1440x1000 and mobile 390x844 report 324,033 bytes produced while the browser context was closed, end marker resumed, scrollback gap disclosed, readiness 200, original session retained, different workspace hidden with input disabled, and unchanged mutation counts across reconnect bootstrap (1 start, 15 inputs, 1 resize). Final readback: 6 terminals exited/removed, 0 sessions, integrity ok, all cleanup true, source unchanged. Reopened browser explicitly restores the saved `sessionStorage` reference (manual saved-reference restoration, not automatic product restore). Observer gate releases test synchronization only, not PTY input. Advisor consult attempted via sam-claude-advisor (opus/high) but blocked by weekly Claude limit; recorded as unresolved, not as review. RC-031 remains In Progress; flow control, graceful live-actor shutdown, direct keyboard, and native surfaces stay open. Source publication pending; no deployment. X handled separately per one-hour rule with mac-use cleanup.

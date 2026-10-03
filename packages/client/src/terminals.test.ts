@@ -14,7 +14,7 @@ const reference: TerminalReference = { start, terminalId, inputUncertain: false,
 const receipt: TerminalReceipt = { terminalId, requestId, workspaceId, state: "running", cols: 80, rows: 24,
   initialCols: 80, initialRows: 24, exitCode: null, cleanup: "pending", resizeState: "idle", inputSequence: 0, inputState: null };
 const poll = { ...receipt, outputAvailable: true, baseOffset: 0, offset: 0, nextOffset: 4, endOffset: 4,
-  gap: false, outputBase64: "8J+MjQ==" } satisfies TerminalPoll;
+  gap: false, outputBase64: "8J+MjQ==", retainedBytes: 4, totalBytes: 4, droppedBytes: 0 } satisfies TerminalPoll;
 
 it("keeps persisted references limited to canonical start identity and exact boolean flags", () => {
   expect(pendingTerminalStartFromValue(start)).toEqual(start);
@@ -110,13 +110,17 @@ it("preserves backend uncertainty and rejects contradictory exit, cleanup and in
 it("binds polling to known terminal and requested byte cursor, never character counts", () => {
   expect(terminalPollFromValue(poll, reference, 0)).toEqual(poll);
   expect(terminalPollFromValue({ ...poll, nextOffset: 1, endOffset: 1 }, reference, 0)).toBeNull();
-  const gap = { ...poll, baseOffset: 10, offset: 10, nextOffset: 14, endOffset: 14, gap: true };
+  const gap = { ...poll, baseOffset: 10, offset: 10, nextOffset: 14, endOffset: 14, gap: true,
+    retainedBytes: 4, totalBytes: 14, droppedBytes: 10 };
   expect(terminalPollFromValue(gap, reference, 3)).toEqual(gap);
   expect(terminalPollFromValue({ ...gap, gap: false }, reference, 3)).toBeNull();
   expect(terminalPollFromValue({ ...gap, gap: false }, reference, 10)?.gap).toBe(false);
   const empty = { ...poll, offset: 4, nextOffset: 4, outputBase64: "" };
   expect(terminalPollFromValue(empty, reference, 4)).toEqual(empty);
   expect(terminalPollFromValue(empty, reference, 5)).toBeNull();
+  expect(terminalPollFromValue({ ...poll, droppedBytes: 1 }, reference, 0)).toBeNull();
+  expect(terminalPollFromValue({ ...poll, totalBytes: 5 }, reference, 0)).toBeNull();
+  expect(terminalPollFromValue({ ...poll, retainedBytes: 5 }, reference, 0)).toBeNull();
   expect(terminalPollFromValue(poll, { ...reference, terminalId: null }, 0)).toBeNull();
   expect(terminalPollFromValue(poll, { ...reference, terminalId: otherId }, 0)).toBeNull();
   expect(terminalPollFromValue(poll, { ...reference, start: { ...start, requestId: otherId } }, 0)).toBeNull();
@@ -131,14 +135,27 @@ it("binds polling to known terminal and requested byte cursor, never character c
     expect(terminalPollFromValue(poll, reference, cursor)).toBeNull();
   }
   const end = Number.MAX_SAFE_INTEGER;
-  const high = { ...poll, baseOffset: end - 4, offset: end - 4, nextOffset: end, endOffset: end };
+  const high = { ...poll, baseOffset: end - 4, offset: end - 4, nextOffset: end, endOffset: end,
+    retainedBytes: 4, totalBytes: end, droppedBytes: end - 4 };
   expect(terminalPollFromValue(high, reference, end - 4)).toEqual(high);
+});
+
+it("exposes bounded-ring flow totals without fabricating output", () => {
+  const flow = { totalBytes: 14, retainedBytes: 4, droppedBytes: 10, polledOffset: 14 };
+  expect(terminalReceiptFromValue({ ...receipt, flow }, start)).toEqual({ ...receipt, flow });
+  expect(terminalReceiptFromValue(receipt, start)).toEqual(receipt);
+  // Retained never exceeds the 64 KiB bound; total minus retained must equal dropped.
+  expect(terminalReceiptFromValue({ ...receipt, flow: { ...flow, retainedBytes: 65537 } }, start)).toBeNull();
+  expect(terminalReceiptFromValue({ ...receipt, flow: { ...flow, droppedBytes: 9 } }, start)).toBeNull();
+  expect(terminalReceiptFromValue({ ...receipt, flow: { ...flow, polledOffset: 15 } }, start)).toBeNull();
 });
 
 it("accepts canonical binary base64 up to 16 KiB and rejects noncanonical padding or hidden bytes", () => {
   for (const text of ["", "\xff", "\x00\xff", "\x00\x80\xff", "a".repeat(16384)]) {
     const outputBase64 = btoa(text);
-    const snapshot = { ...poll, outputBase64, nextOffset: text.length, endOffset: text.length };
+    const length = text.length;
+    const snapshot = { ...poll, outputBase64, offset: 0, baseOffset: 0, nextOffset: length, endOffset: length,
+      retainedBytes: length, totalBytes: length, droppedBytes: 0 };
     expect(terminalPollFromValue(snapshot, reference, 0)).toEqual(snapshot);
   }
   for (const outputBase64 of ["Zg", "Zg=", "Zg===", "Zh==", "Zm9=", " Zg==", "Zg==\n", "_w==", "-w==", "!!!!", 1, null]) {
@@ -148,8 +165,9 @@ it("accepts canonical binary base64 up to 16 KiB and rejects noncanonical paddin
   expect(terminalPollFromValue({ ...poll, outputBase64: "Zm9=", nextOffset: 2, endOffset: 2 }, reference, 0)).toBeNull();
   const outputBase64 = btoa("a".repeat(16385));
   expect(terminalPollFromValue({ ...poll, outputBase64, nextOffset: 16385, endOffset: 16385 }, reference, 0)).toBeNull();
-  const page = { ...poll, outputBase64: btoa("a".repeat(16384)), nextOffset: 16384, endOffset: 20000 };
-  expect(terminalPollFromValue(page, reference, 0)).toEqual(page);
+  const page = { ...poll, outputBase64: btoa("a".repeat(16384)), offset: 3616, nextOffset: 20000, endOffset: 20000,
+    baseOffset: 3616, retainedBytes: 16384, totalBytes: 20000, droppedBytes: 3616 };
+  expect(terminalPollFromValue(page, reference, 3616)).toEqual(page);
   expect(terminalPollFromValue({ ...poll, endOffset: 20000 }, reference, 0)).toBeNull();
 });
 

@@ -144,7 +144,8 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
     } else clearScreen(true);
     const { outputAvailable, ...fields } = confirmed;
     const canonical = terminalReceiptFromValue(Object.fromEntries(Object.entries(fields).filter(([name]) =>
-      !["baseOffset", "offset", "nextOffset", "endOffset", "gap", "outputBase64"].includes(name))), expected.start, expected.terminalId);
+      !["baseOffset", "offset", "nextOffset", "endOffset", "gap", "outputBase64",
+        "retainedBytes", "totalBytes", "droppedBytes"].includes(name))), expected.start, expected.terminalId);
     if (!canonical) throw new Error("Invalid terminal state");
     acceptReceipt(canonical, expected);
     return canonical;
@@ -345,6 +346,7 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
       {reference?.stopRequested ? <p>Stop is unconfirmed. Input stays disabled until the host confirms cleanup.</p> : null}
       <p data-testid="terminal-host-state">{currentReceipt ? `Host state: ${currentReceipt.state}; cleanup: ${currentReceipt.cleanup}; ${currentReceipt.cols} columns × ${currentReceipt.rows} rows; resize: ${currentReceipt.resizeState}${currentReceipt.exitCode === null ? "" : `; exit code: ${currentReceipt.exitCode}`}` : "Host terminal state is unconfirmed."}</p>
       {gap ? <p>Earlier output was discarded or is unavailable. Only received bytes are shown.</p> : null}
+      {currentReceipt?.flow ? <p data-testid="terminal-flow-state">{`Flow: ${currentReceipt.flow.totalBytes} produced, ${currentReceipt.flow.retainedBytes} retained, ${currentReceipt.flow.droppedBytes} dropped.`}</p> : null}
       <TerminalScreen ref={screen} size={currentReceipt ? { cols: currentReceipt.cols, rows: currentReceipt.rows } : null} />
       <div className="terminal-resize">
         <label>Columns (2–300)<input type="number" inputMode="numeric" min={2} max={300} step={1} value={cols} onChange={(event) => setCols(event.target.value)} /></label>
