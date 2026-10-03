@@ -14,9 +14,9 @@ gates:
       required: true
 authority:
     write_repository: true
-    network: false
-    commit: false
-    push: false
+    network: true
+    commit: true
+    push: true
     release: false
     deploy: false
 evidence:
@@ -46,10 +46,11 @@ migration:
     reconciliation_gate: false
     restore_test: false
 design:
-    applicable: false
-    browser_proof: false
-    human_labels: false
-    accessibility: false
+    applicable: true
+    source_of_truth: plan/mockups.html recovery interaction and the interaction and failure contracts in plan/tasks.html
+    browser_proof: true
+    human_labels: true
+    accessibility: true
     localization: false
 governance:
     approvers:

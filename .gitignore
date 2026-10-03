@@ -4,3 +4,9 @@
 # sam-harness:start
 .sam-harness/evidence/
 # sam-harness:end
+node_modules/
+apps/web/dist/
+apps/mobile/.expo/
+apps/mobile/ios/
+playwright-report/
+test-results/

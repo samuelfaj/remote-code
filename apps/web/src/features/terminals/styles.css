@@ -1,0 +1,52 @@
+.terminal-panel button {
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: #14735a;
+  color: #fff;
+  cursor: pointer;
+}
+
+.terminal-panel button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.terminal-panel textarea {
+  padding: 10px;
+  font: inherit;
+  border: 1px solid #c9d8d1;
+  border-radius: 8px;
+}
+
+.terminal-panel .terminal-screen {
+  box-sizing: border-box;
+  max-width: 100%;
+  max-height: 420px;
+  overflow: auto;
+  padding: 8px;
+  background: #000;
+  border-radius: 6px;
+}
+
+.terminal-panel .terminal-screen .xterm-viewport {
+  background: transparent !important;
+}
+
+.terminal-panel .terminal-resize {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: end;
+}
+
+.terminal-panel .terminal-resize input {
+  box-sizing: border-box;
+  width: 96px;
+  min-height: 44px;
+  padding: 8px;
+  font: inherit;
+  border: 1px solid #c9d8d1;
+  border-radius: 8px;
+}

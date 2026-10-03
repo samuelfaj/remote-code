@@ -1,0 +1,13 @@
+.git
+.grok
+**/.grok
+.env
+**/.env
+*.log
+node_modules
+**/node_modules
+**/dist
+**/test-results
+**/playwright-report
+plan/archive
+plan/output
