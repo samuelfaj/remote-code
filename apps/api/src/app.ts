@@ -6,6 +6,7 @@ import { compatibilityFeature } from "./features/compatibility";
 import { storageFeature } from "./features/storage";
 import { fileRequestSchemaReady } from "./features/file-requests";
 import { workspaceFilesFeature } from "./features/workspace-files";
+import { workspaceLayoutFeature } from "./features/workspace-layout";
 import { terminalsFeature } from "./features/terminals";
 import { workspaceFolderSchemaReady, workspaceFoldersFeature } from "./features/workspace-folders";
 import { checkDatabase, healthFeature, initializeDatabase, type ReadinessCheck } from "./features/health";
@@ -99,6 +100,7 @@ export function createApi(
     .use(storage)
     .use(workspaceFolders.routes)
     .use(workspaceFilesFeature(configuredDatabasePath))
+    .use(workspaceLayoutFeature(configuredDatabasePath).routes)
     .use(terminals.routes)
     .onStop(() => terminals.stopAll());
 }

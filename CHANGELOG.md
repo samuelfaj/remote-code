@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-033 tab-layout slice — save/open per workspace, no cross-workspace moves
+
+- New owner-scoped `GET/PUT /api/workspaces/:workspaceId/layout` (tabs max 32, activeTabId must reference a tab; archived workspaces refuse writes; anonymous/invalid-session 401, foreign workspace 404, bad shape 422). Verified: unit 2/2 (save/reopen/switch without moving B, authoritative SQLite read-back, rejection without effect), Linux proof run1 `workspace_layout_slice_passed` on pinned oven/bun arm64 (two workspaces, save A, B stays null, reopen A, switch active tab, B still null; API/volume cleaned), typecheck exit 0, doc links pass. Review found no defect; cross-user test note corrected (single-local-user auth model, isolation via workspace ownership). Panes, mobile focus separation, full RC-033 acceptance still open. RC-030 blocked: pinned image has no git binary (exit 127), slice reverted. No deployment. X post skipped (extension down).
+
 ## RC-031 queued direct keyboard input — keys survive busy, live-shell delivery proved
 
 - Direct keystrokes queue client-side while a send or state poll holds the lock and drain in order, one per `send()` round-trip (4096-byte UTF-8 cap; excess keys refused with no retry); failure clears the queue with an explicit discarded-count message. Verified: full Linux proof run12 `web_terminal_disconnect_reconnect_renderer_resize_and_unknown_outcomes_passed` (2 cases, desktop 3 starts / 35 inputs incl fast-typed `direct-key-typed` + Enter delivered as `DIRECT=direct-key-typed` through the queue, 6 exited/removed, cleanup all true, source unchanged), component spec 10/10, typecheck exit 0, doc links pass. Full RC-031 (native surfaces, broader faults), RC-002 unknown, RC-004 gated still open. No deployment. X post skipped (extension down).
