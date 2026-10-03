@@ -4,6 +4,7 @@ export type TerminalReference = {
   terminalId: string | null;
   inputUncertain: boolean;
   stopRequested: boolean;
+  resizeUncertain: boolean;
 };
 export type TerminalState = "reserved" | "starting" | "running" | "closing" | "unknown" | "exited" | "not_started";
 export type TerminalInputState = "unknown" | "queued" | "written";
@@ -29,6 +30,7 @@ export type TerminalPoll = TerminalReceipt & (
 export type TerminalInputAck = { terminalId: string; sequence: number; state: TerminalInputState };
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const referenceKeys = "inputUncertain,start,stopRequested,terminalId";
 const receiptKeys = "cleanup,cols,exitCode,initialCols,initialRows,inputSequence,inputState,requestId,resizeState,rows,state,terminalId,workspaceId";
 
 function terminalRow(value: unknown): Record<string, unknown> | null {
@@ -60,14 +62,18 @@ export function pendingTerminalStartFromValue(value: unknown): PendingTerminalSt
   return { requestId: row.requestId, workspaceId: row.workspaceId, cols: row.cols, rows: row.rows };
 }
 
+// Legacy persisted references have no resizeUncertain key and mean false.
 export function terminalReferenceFromValue(value: unknown): TerminalReference | null {
   const row = terminalRow(value);
-  if (!row || Object.keys(row).sort().join(",") !== "inputUncertain,start,stopRequested,terminalId" ||
+  const keys = row ? Object.keys(row).sort().join(",") : "";
+  if (!row || (keys !== referenceKeys && keys !== "inputUncertain,resizeUncertain,start,stopRequested,terminalId") ||
     (row.terminalId !== null && !terminalUuid(row.terminalId)) ||
-    typeof row.inputUncertain !== "boolean" || typeof row.stopRequested !== "boolean") return null;
+    typeof row.inputUncertain !== "boolean" || typeof row.stopRequested !== "boolean" ||
+    (keys !== referenceKeys && typeof row.resizeUncertain !== "boolean")) return null;
   const start = pendingTerminalStartFromValue(row.start);
   if (!start) return null;
-  return { start, terminalId: row.terminalId, inputUncertain: row.inputUncertain, stopRequested: row.stopRequested };
+  return { start, terminalId: row.terminalId, inputUncertain: row.inputUncertain, stopRequested: row.stopRequested,
+    resizeUncertain: keys === referenceKeys ? false : row.resizeUncertain as boolean };
 }
 
 export function terminalReceiptFromValue(value: unknown, pending: PendingTerminalStart, expectedTerminalId?: string | null): TerminalReceipt | null {

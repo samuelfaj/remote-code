@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import "./styles.css";
+import { TerminalScreen, type TerminalScreenHandle } from "./TerminalScreen";
 import {
   createApiClient, fileFolderStateFromValue, terminalInputAckFromValue, terminalPollFromValue,
   terminalReceiptFromValue, terminalReferenceFromValue, workspaceErrorStatus, workspaceFromValue,
@@ -10,7 +11,7 @@ type Props = { userId: string; workspace: Workspace | null; blocked: boolean; on
 const budgetMs = 10_000;
 const outputLimit = 64 * 1024;
 
-// ponytail: Line input and bounded plain text; add a terminal renderer for full-screen ANSI programs.
+// Line input; output is parsed by a read-only xterm emulator from validated byte pages.
 export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Props) {
   const origin = window.location.origin;
   const key = `remotecode.terminal:${JSON.stringify([origin, userId])}`;
@@ -22,6 +23,7 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
   const referenceRef = useRef<TerminalReference | null>(null);
   const cursor = useRef(0);
   const bytes = useRef(new Uint8Array(0));
+  const screen = useRef<TerminalScreenHandle>(null);
   const [reference, setReference] = useState<TerminalReference | null>(null);
   const [receipt, setReceipt] = useState<TerminalReceipt | null>(null);
   const [storageReady, setStorageReady] = useState(false);
@@ -30,15 +32,24 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
   const [draft, setDraft] = useState("");
   const draftRef = useRef(draft);
   draftRef.current = draft;
-  const [output, setOutput] = useState("");
+  const [cols, setCols] = useState("80");
+  const [rows, setRows] = useState("24");
   const [gap, setGap] = useState(false);
   const [message, setMessage] = useState("");
   const sameWorkspace = reference?.start.workspaceId === workspace?.id;
   const currentReceipt = receipt?.workspaceId === workspace?.id ? receipt : null;
   const closed = currentReceipt?.cleanup === "removed";
   const canInput = !blocked && !workspace?.archived && storageReady && sameWorkspace &&
-    !!reference?.terminalId && !reference.inputUncertain && !reference.stopRequested &&
+    !!reference?.terminalId && !reference.inputUncertain && !reference.stopRequested && !reference.resizeUncertain &&
     currentReceipt?.state === "running" && (currentReceipt.inputState === null || currentReceipt.inputState === "written");
+  const canResize = !blocked && !workspace?.archived && storageReady && sameWorkspace &&
+    !!reference?.terminalId && !reference.inputUncertain && !reference.stopRequested && !reference.resizeUncertain &&
+    currentReceipt?.state === "running" && currentReceipt.resizeState !== "unknown";
+  const colsValue = /^\d+$/.test(cols) ? Number(cols) : NaN;
+  const rowsValue = /^\d+$/.test(rows) ? Number(rows) : NaN;
+  const validSize = colsValue >= 2 && colsValue <= 300 && rowsValue >= 2 && rowsValue <= 200;
+
+  function clearScreen(withGap: boolean) { screen.current?.reset(); bytes.current = new Uint8Array(0); cursor.current = 0; setGap(withGap); }
 
   function readReference() {
     const raw = sessionStorage.getItem(key);
@@ -113,23 +124,24 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
     if (!current() || Date.now() >= end) throw new Error("Terminal context expired");
     if (result.error) {
       if (workspaceErrorStatus(result.error) === 401) onUnauthorized();
-      if (workspaceErrorStatus(result.error) === 404) { bytes.current = new Uint8Array(0); cursor.current = 0; setOutput(""); setGap(true); }
+      if (workspaceErrorStatus(result.error) === 404) clearScreen(true);
       throw new Error("Terminal state unavailable for this login");
     }
     const confirmed = terminalPollFromValue(result.data, expected, offset);
     if (!confirmed) throw new Error("Invalid terminal poll");
+    screen.current?.resize(confirmed.cols, confirmed.rows);
     if (confirmed.outputAvailable) {
+      if (confirmed.gap) clearScreen(true);
       const chunk = Uint8Array.from(atob(confirmed.outputBase64), (character) => character.charCodeAt(0));
-      if (confirmed.gap) { bytes.current = new Uint8Array(0); setGap(true); }
       const joined = new Uint8Array(bytes.current.length + chunk.length);
       joined.set(bytes.current); joined.set(chunk, bytes.current.length);
-      if (joined.length > outputLimit) setGap(true);
+      const truncated = joined.length > outputLimit;
       bytes.current = joined.slice(-outputLimit);
+      if (truncated) { screen.current?.reset(); setGap(true); }
       cursor.current = confirmed.nextOffset;
-      setOutput(new TextDecoder("utf-8", { ignoreBOM: true }).decode(bytes.current));
-    } else {
-      bytes.current = new Uint8Array(0); cursor.current = 0; setOutput(""); setGap(true);
-    }
+      if (chunk.length) await screen.current?.write(truncated ? bytes.current : chunk);
+      if (!current() || Date.now() >= end) throw new Error("Terminal rendering context expired");
+    } else clearScreen(true);
     const { outputAvailable, ...fields } = confirmed;
     const canonical = terminalReceiptFromValue(Object.fromEntries(Object.entries(fields).filter(([name]) =>
       !["baseOffset", "offset", "nextOffset", "endOffset", "gap", "outputBase64"].includes(name))), expected.start, expected.terminalId);
@@ -179,7 +191,7 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
 
   useLayoutEffect(() => {
     epoch.current++; working.current = false; setBusy(false); setReceipt(null); setAvailable(false);
-    bytes.current = new Uint8Array(0); cursor.current = 0; setOutput(""); setGap(false); setDraft("");
+    clearScreen(false); setDraft("");
     if (workspace && !blocked) void inspect();
   }, [userId, workspace?.id, workspace?.archived, blocked]);
 
@@ -213,9 +225,9 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
   async function start() {
     if (!workspace || blocked || workspace.archived || !storageReady || referenceRef.current || working.current || !available) return;
     const current = currentCheck(); const end = Date.now() + budgetMs;
-    const value: TerminalReference = { start: { requestId: crypto.randomUUID(), workspaceId: workspace.id, cols: 80, rows: 24 }, terminalId: null, inputUncertain: false, stopRequested: false };
+    const value: TerminalReference = { start: { requestId: crypto.randomUUID(), workspaceId: workspace.id, cols: 80, rows: 24 }, terminalId: null, inputUncertain: false, stopRequested: false, resizeUncertain: false };
     working.current = true; setBusy(true); setMessage("Checking the current login and folder…");
-    bytes.current = new Uint8Array(0); cursor.current = 0; setOutput(""); setGap(false);
+    clearScreen(false);
     let sent = false;
     try {
       await preflight(end, current, true);
@@ -267,6 +279,35 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
     } finally { if (current()) { working.current = false; setBusy(false); } }
   }
 
+  async function resize() {
+    const saved = referenceRef.current;
+    if (!saved?.terminalId || !canResize || working.current || !validSize) return;
+    const wantCols = colsValue, wantRows = rowsValue;
+    const current = currentCheck(); const end = Date.now() + budgetMs;
+    working.current = true; setBusy(true);
+    let sent = false;
+    try {
+      const owned = await preflight(end, current);
+      if (owned.archived) throw new Error("Workspace archived");
+      const fresh = await poll(end, current, saved);
+      if (!current() || fresh.state !== "running" || fresh.resizeState === "unknown") throw new Error("Resize is not ready");
+      const next = { ...saved, resizeUncertain: true };
+      writeReference(next, saved);
+      if (!current() || Date.now() >= end) { writeReference(saved, next); return; }
+      sent = true;
+      const result = await client(end).api.terminals({ terminalId: saved.terminalId }).resize.post({ cols: wantCols, rows: wantRows });
+      if (!current() || Date.now() >= end) throw new Error("Resize outcome unknown");
+      if (workspaceErrorStatus(result.error) === 401) onUnauthorized();
+      const confirmed = result.error ? null : terminalReceiptFromValue(result.data, saved.start, saved.terminalId);
+      if (!confirmed || confirmed.resizeState !== "applied" || confirmed.cols !== wantCols || confirmed.rows !== wantRows) throw new Error("Resize outcome unknown");
+      writeReference(saved, next);
+      acceptReceipt(confirmed, saved);
+      setMessage(`Host confirms ${confirmed.cols} columns × ${confirmed.rows} rows.`);
+    } catch {
+      if (current()) { setReceipt(null); setMessage(sent ? "Resize outcome is unknown. Further input and resize are blocked, including after reload. Stop the terminal to release it." : "Resize preflight or storage failed. No resize was sent. Inspect the host before trying again."); }
+    } finally { if (current()) { working.current = false; setBusy(false); } }
+  }
+
   async function stop() {
     const saved = referenceRef.current;
     if (!saved?.terminalId || saved.start.workspaceId !== workspace?.id || blocked || !storageReady || saved.stopRequested || working.current) return;
@@ -291,7 +332,7 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
   return <section className="terminal-panel" aria-label="Linux terminal" style={{ border: "1px solid #dce4df", borderRadius: 8, padding: 16, marginTop: 16, maxWidth: "100%" }}>
     <h3>Linux terminal</h3>
     {!workspace ? <p>Select a workspace to use its host terminal.</p> : <>
-      <p>Line input and bounded plain text. Full-screen ANSI programs and client resize controls are not supported yet.</p>
+      <p>Line input with a read-only terminal screen. Direct keyboard input is not supported yet.</p>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <button type="button" disabled={busy || blocked || !available || !storageReady || !!reference || workspace.archived} onClick={() => void start()}>Start Linux terminal</button>
         <button type="button" disabled={busy || blocked} onClick={() => void inspect()}>Inspect terminal state</button>
@@ -300,10 +341,16 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
       <p role="status" data-testid="terminal-status">{message}</p>
       {reference && !sameWorkspace ? <p>Select the original workspace to inspect its terminal reference.</p> : null}
       {reference?.inputUncertain ? <p role="alert">Input delivery remains unknown. No input will be resent automatically.</p> : null}
+      {reference?.resizeUncertain ? <p role="alert">Resize outcome remains unknown. The terminal size is unconfirmed and input is blocked; Stop the terminal to release it.</p> : null}
       {reference?.stopRequested ? <p>Stop is unconfirmed. Input stays disabled until the host confirms cleanup.</p> : null}
-      <p data-testid="terminal-host-state">{currentReceipt ? `Host state: ${currentReceipt.state}; cleanup: ${currentReceipt.cleanup}; ${currentReceipt.cols} columns × ${currentReceipt.rows} rows${currentReceipt.exitCode === null ? "" : `; exit code: ${currentReceipt.exitCode}`}` : "Host terminal state is unconfirmed."}</p>
+      <p data-testid="terminal-host-state">{currentReceipt ? `Host state: ${currentReceipt.state}; cleanup: ${currentReceipt.cleanup}; ${currentReceipt.cols} columns × ${currentReceipt.rows} rows; resize: ${currentReceipt.resizeState}${currentReceipt.exitCode === null ? "" : `; exit code: ${currentReceipt.exitCode}`}` : "Host terminal state is unconfirmed."}</p>
       {gap ? <p>Earlier output was discarded or is unavailable. Only received bytes are shown.</p> : null}
-      <pre aria-label="Terminal output" tabIndex={0} style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", overflow: "auto", maxHeight: 280, minHeight: 80, padding: 12, background: "#12201a", color: "#f4f7f5", borderRadius: 6 }}>{output}</pre>
+      <TerminalScreen ref={screen} size={currentReceipt ? { cols: currentReceipt.cols, rows: currentReceipt.rows } : null} />
+      <div className="terminal-resize">
+        <label>Columns (2–300)<input type="number" inputMode="numeric" min={2} max={300} step={1} value={cols} onChange={(event) => setCols(event.target.value)} /></label>
+        <label>Rows (2–200)<input type="number" inputMode="numeric" min={2} max={200} step={1} value={rows} onChange={(event) => setRows(event.target.value)} /></label>
+        <button type="button" disabled={busy || !canResize || !validSize} onClick={() => void resize()}>Apply size</button>
+      </div>
       <label style={{ display: "block" }}>Terminal input<textarea aria-label="Terminal input" value={draft} onChange={(event) => setDraft(event.target.value)} spellCheck={false} autoCorrect="off" autoCapitalize="off" style={{ boxSizing: "border-box", width: "100%", minHeight: 72 }} /></label>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <button type="button" disabled={busy || !canInput || !draft} onClick={() => void send(draft.endsWith("\n") ? draft : `${draft}\n`, draft)}>Send input</button>

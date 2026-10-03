@@ -1,5 +1,9 @@
 # Changelog
 
+## Terminal ANSI renderer and safe resize slice
+
+- Added a read-only ANSI terminal screen (pinned `@xterm/xterm@6.0.0`) and an explicit Apply size action with durable resize uncertainty. Two consecutive real Linux ARM64/TLS runs of unchanged source passed desktop and mobile, with confirmed 120×40 and 40×18 sizes read back inside the shell, lost-response blocking, another-login refusal and all cleanup true. A negative run with a rejected late delivery exited 1 as unverified with cleanup true. Mac regression 163 pass/63 skips/0 fail/2050 assertions, browser 97 pass/3 skips, typecheck and documentation links exit 0; independent review found no material findings in the latest runner fixes. Earlier failed runner attempts remain recorded as failures. RC-031 stays In Progress: native UI, direct keyboard input, flow control and reconnect are unaccepted, and normal backend graceful shutdown with a live actor is unverified. RC-002 stays unknown with no retry; RC-004 stays gated. Source is uncommitted; nothing is deployed or published.
+
 ## Session resume
 
 - Reconciled the current terminal-client checkpoint `0bd3c926e72cb5fa46269d35c125d2fe0bdc40c1` against fresh remote/PR/CI observations. Historical runtime artifacts were not recreated after their scratch directory disappeared. Updated the single live next action to ANSI rendering and guarded explicit resize; native and broader terminal acceptance remain open. Used existing Command Line Tools Git to bypass the Xcode-license launcher without accepting licenses or changing global configuration. No new runtime acceptance, X post, deployment or release is claimed.

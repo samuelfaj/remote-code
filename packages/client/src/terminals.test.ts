@@ -10,7 +10,7 @@ const workspaceId = "123e4567-e89b-42d3-a456-426614174001";
 const terminalId = "123e4567-e89b-42d3-a456-426614174002";
 const otherId = "123e4567-e89b-42d3-a456-426614174003";
 const start: PendingTerminalStart = { requestId, workspaceId, cols: 80, rows: 24 };
-const reference: TerminalReference = { start, terminalId, inputUncertain: false, stopRequested: false };
+const reference: TerminalReference = { start, terminalId, inputUncertain: false, stopRequested: false, resizeUncertain: false };
 const receipt: TerminalReceipt = { terminalId, requestId, workspaceId, state: "running", cols: 80, rows: 24,
   initialCols: 80, initialRows: 24, exitCode: null, cleanup: "pending", resizeState: "idle", inputSequence: 0, inputState: null };
 const poll = { ...receipt, outputAvailable: true, baseOffset: 0, offset: 0, nextOffset: 4, endOffset: 4,
@@ -29,11 +29,13 @@ it("keeps persisted references limited to canonical start identity and exact boo
   for (const terminalId of [null, reference.terminalId]) {
     for (const inputUncertain of [false, true]) {
       for (const stopRequested of [false, true]) {
-        const stored = { ...reference, terminalId, inputUncertain, stopRequested };
-        const parsed = terminalReferenceFromValue(JSON.parse(JSON.stringify(stored)));
-        expect(parsed).toEqual(stored);
-        expect(parsed).not.toBe(stored);
-        expect(parsed?.start).not.toBe(stored.start);
+        for (const resizeUncertain of [false, true]) {
+          const stored = { ...reference, terminalId, inputUncertain, stopRequested, resizeUncertain };
+          const parsed = terminalReferenceFromValue(JSON.parse(JSON.stringify(stored)));
+          expect(parsed).toEqual(stored);
+          expect(parsed).not.toBe(stored);
+          expect(parsed?.start).not.toBe(stored.start);
+        }
       }
     }
   }
@@ -41,11 +43,24 @@ it("keeps persisted references limited to canonical start identity and exact boo
     { terminalId: "bad" }, { terminalId: terminalId.toUpperCase() }, { terminalId: `${terminalId}\n` }, { terminalId: undefined },
     { inputUncertain: "false" }, { stopRequested: 0 }, { input: "secret" }, { output: "secret" },
     { credential: "secret" }, { start: { ...start, text: "secret" } },
+    { resizeUncertain: "false" }, { resizeUncertain: 0 }, { resizeUncertain: null }, { resizeUncertain: undefined },
   ]) expect(terminalReferenceFromValue({ ...reference, ...changed })).toBeNull();
   for (const value of [null, [], "{}", 1]) {
     expect(pendingTerminalStartFromValue(value)).toBeNull();
     expect(terminalReferenceFromValue(value)).toBeNull();
   }
+});
+
+it("reads a legacy four-field reference as resize-certain and writes only the canonical five fields", () => {
+  const { resizeUncertain: _omitted, ...legacy } = reference;
+  expect(terminalReferenceFromValue(legacy)).toEqual(reference);
+  expect(Object.keys(terminalReferenceFromValue({ ...legacy, inputUncertain: true })!).sort())
+    .toEqual(["inputUncertain", "resizeUncertain", "start", "stopRequested", "terminalId"]);
+  // A legacy shape with any other key, or a five-field shape missing another key, is not a reference.
+  expect(terminalReferenceFromValue({ ...legacy, extra: true })).toBeNull();
+  expect(terminalReferenceFromValue({ ...legacy, resizeUncertain: undefined })).toBeNull();
+  const { stopRequested: _stop, ...missing } = reference;
+  expect(terminalReferenceFromValue(missing)).toBeNull();
 });
 
 it("binds receipts to original request, workspace, initial dimensions and known terminal", () => {
