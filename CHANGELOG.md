@@ -1,6 +1,8 @@
 # Changelog
 
-## RC-031 queued direct keyboard input — no key lost, live-shell delivery proved
+## RC-031 queued direct keyboard input — keys survive busy, live-shell delivery proved
+
+- Direct keystrokes queue client-side while a send or state poll holds the lock and drain in order, one per `send()` round-trip (4096-byte UTF-8 cap; excess keys refused with no retry); failure clears the queue with an explicit discarded-count message. Verified: full Linux proof run12 `web_terminal_disconnect_reconnect_renderer_resize_and_unknown_outcomes_passed` (2 cases, desktop 3 starts / 35 inputs incl fast-typed `direct-key-typed` + Enter delivered as `DIRECT=direct-key-typed` through the queue, 6 exited/removed, cleanup all true, source unchanged), component spec 10/10, typecheck exit 0, doc links pass. Full RC-031 (native surfaces, broader faults), RC-002 unknown, RC-004 gated still open. No deployment. X post skipped (extension down).
 
 - Direct keystrokes now queue client-side while a send or state poll holds the lock and drain in order, one per `send()` round-trip; failure clears the queue with an explicit discarded-count message. Review fixes applied: poll `finally` also drains (keys queued during polling no longer strand), queue cap measured in UTF-8 bytes, validation runs before the busy check so oversize/invalid keys never queue. Verified: full Linux proof run12 `web_terminal_disconnect_reconnect_renderer_resize_and_unknown_outcomes_passed` (2 cases, desktop 3 starts / 35 inputs incl fast-typed `direct-key-typed` + Enter delivered as `DIRECT=direct-key-typed` through the queue, 6 exited/removed, cleanup all true, source unchanged), component spec 10/10, typecheck exit 0, doc links pass. Full RC-031 (native surfaces, broader faults), RC-002 unknown, RC-004 gated still open. No deployment. X post skipped (extension down).
 
