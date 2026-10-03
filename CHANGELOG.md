@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-033 web layout slice — load on switch, merge-save terminal tab, no stale overwrite
+
+- Terminal panel loads the workspace layout on every workspace switch and offers Save layout, which reloads stored state first and merges only the terminal tab (file/thread tabs and valid panes kept; panes of dropped terminal tabs pruned; active selection follows surviving panes). Stale in-flight reads never overwrite a confirmed save (`>=` timestamp guard). Shared client validators accept the server's panes-without-activePaneId shape. Verified: client layout 2/2, API layout 4/4 (57 expects), typecheck exit 0, web 22/22, Linux backend proof run3 `workspace_layout_slice_passed` (backend scope unchanged), doc links pass. Two reasoning rounds: first found blind-replace/stale-read/parity gaps (fixed), second confirmed fixes and found dangling-pane + clock-tie gaps (fixed). Full RC-033 (mobile focus journey), RC-002 unknown, RC-004 gated still open. No deployment. X post skipped (extension down).
+
 ## RC-033 tabs + panes + valid-B isolation — Linux proof passed
 
 - Owner-scoped `GET/PUT /api/workspaces/:workspaceId/layout` now stores tabs plus one-level split panes (dense orders, tab refs, pane-gated active selection). Verified: unit 4/4 (per-workspace save/reopen/switch without moving B, valid-B-session PUT/GET 404 with pane payload and Alice row unchanged, pane save/reopen/switch with B null, 422 matrix incl orphan-pane-active and gapped orders), Linux proof run3 `workspace_layout_slice_passed` on pinned oven/bun arm64 (exact pane save/reopen/switch read-back, B null throughout; API/volume cleaned), typecheck exit 0, doc links pass. Review corrections applied: active selection is shared server state per workspace (per-device focus separation is a client concern, not claimed here); runner now reads back the final switch. Full RC-033 (mobile focus journey) still open. No deployment. X post skipped (extension down).

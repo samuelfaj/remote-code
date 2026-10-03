@@ -4,7 +4,8 @@ import { TerminalScreen, type TerminalScreenHandle } from "./TerminalScreen";
 import {
   createApiClient, fileFolderStateFromValue, terminalInputAckFromValue, terminalPollFromValue,
   terminalReceiptFromValue, terminalReferenceFromValue, workspaceErrorStatus, workspaceFromValue,
-  type TerminalReceipt, type TerminalReference, type Workspace,
+  workspaceLayoutFromValue, workspaceLayoutResponseFromValue,
+  type TerminalReceipt, type TerminalReference, type Workspace, type WorkspaceLayout,
 } from "@remotecode/client";
 
 type Props = { userId: string; workspace: Workspace | null; blocked: boolean; onUnauthorized: () => void };
@@ -38,6 +39,9 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
   const [message, setMessage] = useState("");
   const [directKeys, setDirectKeys] = useState(false);
   const [queuedKeys, setQueuedKeys] = useState(0);
+  const [layout, setLayout] = useState<WorkspaceLayout | null>(null);
+  const [layoutMessage, setLayoutMessage] = useState("");
+  const layoutSavedAt = useRef(0);
   const keyQueue = useRef<string[]>([]);
   const sameWorkspace = reference?.start.workspaceId === workspace?.id;
   const currentReceipt = receipt?.workspaceId === workspace?.id ? receipt : null;
@@ -195,8 +199,13 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
 
   useLayoutEffect(() => {
     epoch.current++; working.current = false; setBusy(false); setReceipt(null); setAvailable(false);
-    clearScreen(false); setDraft("");
-    if (workspace && !blocked) void inspect();
+    clearScreen(false); setDraft(""); setLayout(null); setLayoutMessage("");
+    if (workspace && !blocked) {
+      void inspect();
+      const current = currentCheck(); const end = Date.now() + budgetMs;
+      const startedAt = Date.now();
+      void loadLayout(end, current, workspace.id, startedAt).catch(() => { if (current()) setLayoutMessage("Layout is unconfirmed. Inspect state; nothing was overwritten blindly."); });
+    }
   }, [userId, workspace?.id, workspace?.archived, blocked]);
 
   useLayoutEffect(() => {
@@ -348,6 +357,64 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
     } finally { if (current()) { working.current = false; setBusy(false); } }
   }
 
+  async function loadLayout(end: number, current: () => boolean, workspaceId: string, after?: number) {
+    const result = await client(end).api.workspaces({ workspaceId }).layout.get();
+    if (!current() || Date.now() >= end) throw new Error("Terminal context expired");
+    if (workspaceErrorStatus(result.error) === 401) onUnauthorized();
+    if (result.error) throw new Error("Workspace layout unavailable");
+    const parsed = result.data && (result.data as { layout?: unknown }).layout === null
+      ? null : workspaceLayoutResponseFromValue(result.data, workspaceId);
+    if (result.data && (result.data as { layout?: unknown }).layout !== null && !parsed) throw new Error("Invalid workspace layout");
+    // A save that confirmed while this read was in flight wins: stale reads
+    // must not overwrite it (>= covers same-millisecond clock ties).
+    if (after !== undefined && layoutSavedAt.current >= after) return;
+    if (current()) { setLayout(parsed); setLayoutMessage(parsed ? `Layout restored: ${parsed.tabs.length} tab(s).` : "No saved layout for this workspace."); }
+  }
+
+  async function saveLayout() {
+    if (!workspace || blocked || !storageReady || working.current) return;
+    const current = currentCheck(); const end = Date.now() + budgetMs;
+    working.current = true; setBusy(true);
+    try {
+      await preflight(end, current);
+      // Merge, never blind-replace: reload the stored layout first so file,
+      // thread and pane entries the terminal panel does not own survive.
+      const stored = await client(end).api.workspaces({ workspaceId: workspace.id }).layout.get();
+      if (!current() || Date.now() >= end) throw new Error("Terminal context expired");
+      if (workspaceErrorStatus(stored.error) === 401) onUnauthorized();
+      if (stored.error) throw new Error("Workspace layout unavailable");
+      const existing = (stored.data as { layout?: unknown }).layout === null
+        ? { tabs: [], activeTabId: null } : workspaceLayoutResponseFromValue(stored.data, workspace.id);
+      if ((stored.data as { layout?: unknown }).layout !== null && !existing) throw new Error("Invalid workspace layout");
+      const saved = referenceRef.current;
+      const terminalTab = saved?.terminalId && saved.start.workspaceId === workspace.id
+        ? [{ id: `terminal-${saved.terminalId.slice(0, 8)}`, kind: "terminal" as const, targetId: saved.terminalId }]
+        : [];
+      // This panel owns only the terminal tab: drop other terminal tabs the
+      // panel may have written before, keep file/thread tabs. Panes pointing
+      // at a dropped terminal tab are pruned too, so the merged layout stays
+      // valid instead of failing the save.
+      const kept = (existing?.tabs ?? []).filter((tab) => tab.kind !== "terminal" || !(tab.targetId === saved?.terminalId || tab.id.startsWith("terminal-")));
+      const keptIds = new Set(kept.map((tab) => tab.id));
+      const keptPanes = (existing?.panes ?? []).filter((pane) => keptIds.has(pane.tabId));
+      const tabs = [...kept, ...terminalTab];
+      const next: WorkspaceLayout = { ...existing, tabs, panes: keptPanes.length > 0 || existing?.panes !== undefined ? keptPanes : undefined,
+        activeTabId: terminalTab[0]?.id ?? existing?.activeTabId ?? null,
+        activePaneId: keptPanes.some((pane) => pane.id === existing?.activePaneId) ? existing?.activePaneId : null };
+      if (terminalTab.length === 0 && tabs.length === 0) { next.activeTabId = null; }
+      if (!workspaceLayoutFromValue(next)) throw new Error("Invalid workspace layout");
+      const result = await client(end).api.workspaces({ workspaceId: workspace.id }).layout.put(next);
+      if (!current() || Date.now() >= end) throw new Error("Terminal context expired");
+      if (workspaceErrorStatus(result.error) === 401) onUnauthorized();
+      const confirmed = result.error ? null : workspaceLayoutResponseFromValue(result.data, workspace.id);
+      if (!confirmed) throw new Error("Workspace layout not confirmed");
+      layoutSavedAt.current = Date.now();
+      if (current()) { setLayout(confirmed); setLayoutMessage(`Layout saved: ${confirmed.tabs.length} tab(s).`); }
+    } catch {
+      if (current()) setLayoutMessage("Layout is unconfirmed. Inspect state; nothing was overwritten blindly.");
+    } finally { if (current()) { working.current = false; setBusy(false); } }
+  }
+
   async function stop() {
     const saved = referenceRef.current;
     if (!saved?.terminalId || saved.start.workspaceId !== workspace?.id || blocked || !storageReady || saved.stopRequested || working.current) return;
@@ -402,7 +469,9 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <button type="button" disabled={busy || !canInput || !draft} onClick={() => void send(draft.endsWith("\n") ? draft : `${draft}\n`, draft)}>Send input</button>
         <button type="button" disabled={busy || !canInput} onClick={() => void send("\x03")}>Send Ctrl+C</button>
+        <button type="button" disabled={busy || blocked || !storageReady || !workspace || workspace.archived} onClick={() => void saveLayout()}>Save layout</button>
       </div>
+      <p data-testid="terminal-layout-state">{layoutMessage || "Layout not loaded for this workspace."}{layout ? ` Active tab: ${layout.activeTabId ?? "none"}.` : ""}</p>
     </>}
   </section>;
 }

@@ -5,6 +5,8 @@ export type { PendingWorkspace, Workspace, WorkspaceKind } from "./workspaces";
 export { fileReceiptFromValue, pendingFileFromValue, pendingFileValueMatches, pendingFolderFromValue, pendingFolderMatches, validFilePath, validFileText, fileFolderStateFromValue, fileDirectoryFromValue, fileContentFromValue, fileVersionConflict, fileTargetExists, fileMissingPath } from "./files";
 export type { FileKind, FileReceipt, PendingFile, PendingFolder, FileEntry, FileContent, FileFolderState } from "./files";
 export { pendingTerminalStartFromValue, terminalReferenceFromValue, terminalReceiptFromValue, terminalPollFromValue, terminalInputAckFromValue } from "./terminals";
+export { workspaceLayoutFromValue, workspaceLayoutResponseFromValue } from "./layout";
+export type { WorkspaceLayout, LayoutTab, LayoutPane } from "./layout";
 export type { PendingTerminalStart, TerminalReference, TerminalState, TerminalInputState, TerminalReceipt, TerminalPoll, TerminalInputAck } from "./terminals";
 export type { ActionEventState, ActionReceipt } from "./action-events";
 
