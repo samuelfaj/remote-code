@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-031 flow totals on committed source — real Linux proof passed
+
+- Baseline run3 of the committed source (`25b794d`, pinned oven/bun image `sha256:87416c9...`, Linux arm64) exits `web_terminal_disconnect_reconnect_renderer_resize_and_unknown_outcomes_passed` on both viewports (1440x1000 and 390x844, 3 starts / 17 inputs each), 6 terminals exited/removed, 0 sessions, integrity ok, all cleanup true. A scratch-only runner variant asserting the new flat flow totals failed on a reordered DOM check (`Scrollback/viewport unbounded`) before reaching its own assertion; the same runner without the variant passes, so the failure is runner-side, not product-side. Runner variant reverted; shipped flow code unchanged. Re-review of the committed fixes closed all four points with no new defect. Graceful live-actor shutdown and full RC-031 acceptance still open; RC-002 unknown, RC-004 gated. No deployment or X post.
+
 ## RC-031 observable flow control — source slice, unaccepted
 
 - Backend ring now exposes produced/retained/dropped/delivered totals on every poll and receipt flow object; producer never blocks, older bytes drop with disclosed gap, client validators enforce total-retained=dropped and 64 KiB bound. Web shows `Flow: N produced, M retained, K dropped` beside gap notice. Review pass found two real defects, both fixed and re-verified: poll receipt lagged the delivered counter, and the client key-set rejected the server `flow` field (would have nulled every live poll). Verified after fix: ring invariant passes, full typecheck exit 0, client 9/9 pass, API/client suites 45/45 pass, docs links exit 0. Linux Docker PTY overflow proof and graceful live-actor shutdown still open; RC-031 stays In Progress, RC-002 unknown, RC-004 gated. No deployment or X post.
