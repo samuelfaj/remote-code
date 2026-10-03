@@ -396,11 +396,19 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
       // valid instead of failing the save.
       const kept = (existing?.tabs ?? []).filter((tab) => tab.kind !== "terminal" || !(tab.targetId === saved?.terminalId || tab.id.startsWith("terminal-")));
       const keptIds = new Set(kept.map((tab) => tab.id));
-      const keptPanes = (existing?.panes ?? []).filter((pane) => keptIds.has(pane.tabId));
+      // Pruning a dropped terminal tab can leave pane order gaps; validators
+      // require dense orders from zero, so re-index surviving panes.
+      const keptPanes = (existing?.panes ?? [])
+        .filter((pane) => keptIds.has(pane.tabId))
+        .sort((a, b) => a.order - b.order)
+        .map((pane, index) => ({ ...pane, order: index }));
       const tabs = [...kept, ...terminalTab];
-      const next: WorkspaceLayout = { ...existing, tabs, panes: keptPanes.length > 0 || existing?.panes !== undefined ? keptPanes : undefined,
-        activeTabId: terminalTab[0]?.id ?? existing?.activeTabId ?? null,
-        activePaneId: keptPanes.some((pane) => pane.id === existing?.activePaneId) ? existing?.activePaneId : null };
+      const next: WorkspaceLayout = { tabs, activeTabId: terminalTab[0]?.id ?? existing?.activeTabId ?? null };
+      const survivingPanes = keptPanes.filter((pane) => tabs.some((tab) => tab.id === pane.tabId));
+      if (survivingPanes.length > 0 || existing?.panes !== undefined) {
+        next.panes = survivingPanes;
+        next.activePaneId = survivingPanes.some((pane) => pane.id === existing?.activePaneId) ? existing?.activePaneId ?? null : null;
+      }
       if (terminalTab.length === 0 && tabs.length === 0) { next.activeTabId = null; }
       if (!workspaceLayoutFromValue(next)) throw new Error("Invalid workspace layout");
       const result = await client(end).api.workspaces({ workspaceId: workspace.id }).layout.put(next);

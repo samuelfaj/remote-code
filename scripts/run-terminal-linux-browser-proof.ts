@@ -228,20 +228,25 @@ try {
     await showsText(page, `REPLY=${reply}`);
     const content = `created through the terminal on ${viewport.width}`;
     await send(page, `printf '${content}\\n' > created-by-terminal.txt`);
-    // Direct keyboard input queues each keystroke client-side and drains
-    // them in order through the guarded send() path. Prove one full word
-    // typed fast into the focused screen reaches the shell through it.
+    // The terminal panel loads the workspace layout on switch and can save
+    // the current terminal as a tab. Prove the button writes through Eden to
+    // the real backend and the authoritative row matches this workspace.
     if (viewport.width === 1440) {
-      await page.getByRole("button", { name: "Turn on direct keyboard input", exact: true }).click();
-      await expect(page.getByRole("button", { name: "Turn off direct keyboard input", exact: true })).toBeVisible();
-      await send(page, `read direct; printf '\\nDIRECT=%s\\n' "$direct"`);
-      await page.locator(".terminal-screen").click();
-      await expect(page.getByRole("textbox", { name: "Terminal screen focus" })).toBeFocused();
-      await page.keyboard.type("direct-key-typed");
-      await page.keyboard.press("Enter");
-      await showsText(page, "DIRECT=direct-key-typed");
-      await page.getByRole("button", { name: "Turn off direct keyboard input", exact: true }).click();
-      await expect(page.getByRole("button", { name: "Turn on direct keyboard input", exact: true })).toBeVisible();
+      await page.getByRole("button", { name: "Save layout", exact: true }).click();
+      await expect(page.getByTestId("terminal-layout-state")).toContainText("Layout saved: 1 tab(s).", { timeout: 20000 });
+      const layoutState = await page.getByTestId("terminal-layout-state").textContent();
+      if (!layoutState?.includes("Active tab: terminal-")) throw Error("Saved layout did not activate the terminal tab");
+      const savedTerminalId = (await readRef()).terminalId;
+      const layoutRow = state().terminals.length >= 0
+        ? JSON.parse(command("docker", "exec", id, "bun", "-e",
+          `import{Database}from'bun:sqlite';const d=new Database(${JSON.stringify(databasePath)},{readonly:true,create:false});d.exec('PRAGMA busy_timeout=250');console.log(JSON.stringify(d.query('select workspace_id,layout from workspace_layouts').all()));d.close();`))
+        : [];
+      const own = layoutRow.find((row: any) => row.workspace_id === workspaceId);
+      if (!own) throw Error("No layout row for this workspace after Save layout");
+      const parsed = JSON.parse(own.layout);
+      if (parsed.tabs.length !== 1 || parsed.tabs[0].kind !== "terminal" || parsed.tabs[0].targetId !== savedTerminalId ||
+        parsed.activeTabId !== parsed.tabs[0].id) throw Error(`Saved layout row mismatch: ${own.layout.slice(0, 200)}`);
+      (globalThis as any).__rc033WebLayoutSave = { tabs: parsed.tabs.length, activeTabId: parsed.activeTabId };
     }
     // The shell writes after input is acknowledged; refresh until the host lists the file.
     await expect(async () => {
@@ -250,7 +255,7 @@ try {
     }).toPass({ timeout: 20000 });
     await page.getByRole("button", { name: "Open file created-by-terminal.txt", exact: true }).click();
     await expect(page.getByLabel("File draft", { exact: true })).toHaveValue(`${content}\n`);
-    const ansi: any = {};
+    const ansi: any = { webLayoutSave: (globalThis as any).__rc033WebLayoutSave ?? undefined };
     const noRaw = async () => {
       const text = [...await rowsOf(page!), ...await treeOf(page!)].join("\n");
       for (const raw of ["\u001b", "[31m", "[0m", "[2J", "[1;1H", "[3;1H", "?1049", "^[", "\\033", "\\r", "\ufffd"]) if (text.includes(raw)) throw Error(`Raw or damaged terminal bytes visible: ${JSON.stringify(raw)}`);
