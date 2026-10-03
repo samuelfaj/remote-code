@@ -130,16 +130,21 @@ export function terminalPollFromValue(value: unknown, expected: TerminalReferenc
   const row = terminalRow(value);
   if (!reference?.terminalId || !row || !offset(requestedOffset)) return null;
   const { baseOffset, offset: from, nextOffset, endOffset, gap, outputBase64, outputAvailable,
-    retainedBytes, totalBytes, droppedBytes, ...receiptValue } = row;
-  const receipt = terminalReceiptFromValue(receiptValue, reference.start, reference.terminalId);
+    retainedBytes, totalBytes, droppedBytes, flow: flowField, ...receiptValue } = row;
+  const receipt = terminalReceiptFromValue(flowField === undefined ? receiptValue : { ...receiptValue, flow: flowField },
+    reference.start, reference.terminalId);
   if (!receipt) return null;
   if (outputAvailable === false) {
     if (Object.keys(row).sort().join(",") !== `${receiptKeys},gap,outputAvailable`.split(",").sort().join(",") || gap !== true) return null;
     return { ...receipt, outputAvailable: false, gap: true };
   }
+  const parsedFlowValue = flow(flowField);
+  if (!offset(nextOffset) || parsedFlowValue === null || parsedFlowValue === undefined ||
+    parsedFlowValue.totalBytes !== totalBytes || parsedFlowValue.retainedBytes !== retainedBytes ||
+    parsedFlowValue.droppedBytes !== droppedBytes || parsedFlowValue.polledOffset < nextOffset) return null;
   if (outputAvailable !== true || Object.keys(row).sort().join(",") !==
-    `${receiptKeys},baseOffset,droppedBytes,endOffset,gap,nextOffset,offset,outputAvailable,outputBase64,retainedBytes,totalBytes`.split(",").sort().join(",") ||
-    !offset(baseOffset) || !offset(from) || !offset(nextOffset) || !offset(endOffset) ||
+    `${receiptKeys},baseOffset,droppedBytes,endOffset,flow,gap,nextOffset,offset,outputAvailable,outputBase64,retainedBytes,totalBytes`.split(",").sort().join(",") ||
+    !offset(baseOffset) || !offset(from) || !offset(endOffset) ||
     !offset(retainedBytes) || !offset(totalBytes) || !offset(droppedBytes) ||
     baseOffset > from || from > nextOffset || nextOffset > endOffset || endOffset - baseOffset > 64 * 1024 ||
     endOffset !== totalBytes || retainedBytes !== endOffset - baseOffset || droppedBytes !== baseOffset ||

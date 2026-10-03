@@ -775,8 +775,11 @@ export function terminalsFeature(databasePath: string, config?: TerminalConfig) 
         if (!Number.isSafeInteger(offset) || offset < 0) throw new TerminalError(422, "invalid_terminal_offset");
         const context = contexts.get(params.terminalId);
         assertSession(owner);
-        return context?.outputAvailable ? { ...receipt(row), ...outputSnapshot(context, offset) } :
-          { ...receipt(row), outputAvailable: false, gap: true };
+        if (!context?.outputAvailable) return { ...receipt(row), outputAvailable: false, gap: true };
+        const snapshot = outputSnapshot(context, offset);
+        return { ...receipt(context.row), ...snapshot,
+          flow: { totalBytes: snapshot.totalBytes, retainedBytes: snapshot.retainedBytes,
+            droppedBytes: snapshot.droppedBytes, polledOffset: context.polledOffset } };
       } catch (error) { return routeError(error, set); }
     }, { params: t.Object({ terminalId: uuidSchema }), query: t.Object({ offset: t.Optional(t.String({ pattern: "^(0|[1-9][0-9]{0,15})$", maxLength: 16 })) }) })
     .post("/api/terminals/:terminalId/input", ({ request, params, body, set }) => {
