@@ -1,11 +1,11 @@
 # Pivot policy
 
-## RC-031 web disconnect/reconnect proof — local checkpoint — 2026-10-03 (UTC)
+## RC-031 web disconnect/reconnect proof — locally verified bounded slice — 2026-10-03 (UTC)
 
-- **Decision:** Preserve original acceptance criteria and keep RC-031 In Progress. Record corrected run10 evidence as pending parent final verification; do not claim a pass or completion. No runner changes, commit, push, or deployment from this documentation checkpoint.
-- **Evidence boundary:** Browser context was closed while a producer ran; candidate record reports 324,033 bytes before reopen, disclosed gap, resumed marker, and healthy readiness. Reopened browser received the saved terminal reference through explicit `sessionStorage` restoration; automatic product restore is not established. Observer gate releases only test synchronization, never PTY input or a product action.
-- **External publication:** Account interval eligible, but refresh/Post link produced no composer. No text entered or submitted; owned tab close result `closed:false`/`released:true`, `hasTab:false`, physical removal unverified. No new tab opened. Do not count unavailable publication as a rate-limit skip.
-- **Next:** Parent verifies reconnect evidence; then address flow control and normal graceful shutdown with live terminal. Direct keyboard input and native surfaces remain open.
+- **Decision:** Preserve original acceptance criteria and keep RC-031 In Progress. This checkpoint verified run10 evidence as a bounded reconnect slice (not full task acceptance) and committed/pushed it as `917379f`. No deployment.
+- **Evidence boundary:** Browser context was closed while a producer ran; verified record reports 324,033 bytes before reopen, disclosed gap, resumed marker, and healthy readiness. Reopened browser received the saved terminal reference through explicit `sessionStorage` restoration; automatic product restore is not established. Observer gate releases only test synchronization, never PTY input or a product action.
+- **External publication:** Account `@samfajreldines` verified, latest own post 30 Sep (interval eligible). Post click closed the bridge and disconnected the extension; no text entered or submitted. `browser_close` unverifiable (extension disconnected); owned tab physical removal unknown. No new tab opened. Draft retained in scratch `x-check.json`, not submitted.
+- **Next:** Address flow control, then normal graceful shutdown with a live terminal. Direct keyboard input and native surfaces remain open.
 
 ## RC-031 web ANSI renderer and explicit resize — locally verified bounded slice, full task unaccepted — 2026-10-03 (UTC)
 
