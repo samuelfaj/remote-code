@@ -1310,3 +1310,7 @@ The historical checkpoint evidence below is retained in its original order and s
 - **Scope:** Web TerminalPanel renders one paragraph when currentReceipt.inputState is "queued" (shipped backend backpressure/pending-write state). No handler/state/testid change; full RC-031 unaccepted.
 - **Evidence:** New apps/web/src/features/terminals/terminal-input-state.test.ts 2/2 drives shipped terminalReceiptFromValue (queued vs written distinct, unknown rejected). Full suite 173 pass/64 skip/0 fail/2136 assertions; typecheck + doc links clean. Independent subagent review 01a107b3 clean (type match, real validator, render-only-on-queued).
 - **X:** Not yet attempted this checkpoint; rule: skip if own post <1h old.
+
+# RC-031 queued-input checkpoint — X attempt 2026-10-04 (UTC)
+
+- **X:** Timeline read @samfajreldines / 458 posts (account confirmed); posts list did not load, so latest-post time unknown and 1h rule unverifiable. Scroll attempt closed the mac-use bridge; browser_status and browser_close both fail with bridge closed. No text entered, nothing submitted. Owned-tab removal unverified.
