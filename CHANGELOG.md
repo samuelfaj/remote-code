@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-031 readable termination — UI shows exit code after every stop
+
+- scripts/run-terminal-linux-browser-proof.ts stop() now asserts the host-state line contains 'exit code:' as well as 'cleanup: removed' (shipped UI already renders the host-reported code; no app change). Real Linux rerun passes with sourceUnchanged true and browser/vite/api/volume cleanup all true; evidence.json in scratch. Reasoning review clean (suffix-presence, not numeric-equality proof). One slice, not full RC-031 acceptance. X: bridge closed at checkpoint; no tab, nothing submitted, no receipt, no valid <1h skip.
+
 ## RC-031 graceful-shutdown rerun — shipped SIGTERM settles live actor
 
 - Reran scripts/run-terminal-shutdown-proof.ts on current source (pinned image): one live producing actor (running, endOffset 563), SIGTERM to API PID 1 via shipped index.ts handler, readback exited/removed with exit 137 (Docker stop escalation, not graceful actor exit), container absent by exact ID, api + volume cleanup true, evidence.json in scratch. Reasoning review clean with honest 137 limit. One slice, not full RC-031 acceptance. No code changed. X: bridge closed at checkpoint; no tab, nothing submitted, no receipt, no valid <1h skip.

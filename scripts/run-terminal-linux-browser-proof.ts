@@ -114,6 +114,9 @@ async function screenBlank(target: Page) {
 async function stop(target: Page) {
   await target.getByRole("button", { name: "Stop terminal", exact: true }).click();
   await expect(target.getByTestId("terminal-host-state")).toContainText("cleanup: removed", { timeout: 15000 });
+  // Readable termination: the UI must show the host-reported exit code, not
+  // just a removed cleanup flag.
+  await expect(target.getByTestId("terminal-host-state")).toContainText("exit code:", { timeout: 15000 });
   await expect(target.getByRole("button", { name: "Start Linux terminal", exact: true })).toBeEnabled();
 }
 try {
