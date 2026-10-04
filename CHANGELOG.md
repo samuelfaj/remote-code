@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-033 live-check 503 message — save pre-read outage reads honestly
+
+- saveLayout() live workspace GET 503 now throws login-unavailable (caught → not-saved + retry) instead of generic unavailable; PUT never reached. Literal identical across all 9 throw/catch sites with path-correct suffixes. 3-person panel clean. Verified: typecheck clean, 50 pass/1 skip. X: see checkpoint note.
+
 ## RC-033 merge-GET 404 message — deleted workspace during merge reads honestly
 
 - saveLayout() stored-layout GET 404 now throws gone (caught by existing mapping) instead of generic unavailable; pure read, PUT never reached. 3-person panel clean. Verified: typecheck clean, 50 pass/1 skip. X: see checkpoint note.

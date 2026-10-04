@@ -725,6 +725,7 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
       if (!current() || Date.now() >= end) throw new Error("Terminal context expired");
       if (workspaceErrorStatus(live.error) === 401) onUnauthorized();
       if (workspaceErrorStatus(live.error) === 404) throw new Error("Workspace is gone on this host");
+      if (workspaceErrorStatus(live.error) === 503) throw new Error("Terminal login check is unavailable");
       const liveWorkspace = live.error ? null : workspaceFromValue(live.data);
       if (!liveWorkspace) throw new Error("Workspace layout unavailable");
       if (liveWorkspace.archived) throw new Error("Workspace is archived");
@@ -762,7 +763,9 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
           ? "Layout write failed on this host. Stored layout unchanged; try saving again."
           : error instanceof Error && error.message === "Workspace is gone on this host"
             ? "Workspace is gone on this host. Layout was not saved; pick another workspace."
-            : "Layout is unconfirmed. Inspect state; nothing was overwritten blindly.");
+            : error instanceof Error && error.message === "Terminal login check is unavailable"
+              ? "Terminal login check is unavailable. Layout was not saved; state reads retry automatically."
+              : "Layout is unconfirmed. Inspect state; nothing was overwritten blindly.");
     } finally { if (current()) { working.current = false; setBusy(false); } }
   }
 
