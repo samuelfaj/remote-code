@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-033 tab-switch pane reset — E2E requires first pane of new tab
+
+- Pane E2E seed gains tab-b/pane-3; after the one-sided pane switch it clicks Open tab-b and asserts local pane-3, other device still pane-1, zero PUTs, shared row still pane-2. Falsification: removing the pane-reset line fails the test; file restored. Verified: workspaces E2E 15/15, typecheck clean, links + whitespace pass; review clean. Test-only, no shipped code changed. X skipped: extension disconnected; no tab, nothing submitted.
+
 ## RC-033 mobile non-interference — current mobile paths touch no layout route
 
 - Static sweep over apps/mobile (explicit .layout refs, layout imports, string-URL/fetch paths): zero layout reads or writes; observed calls are workspaces list/get/mutate/receipts plus folder/files and /api/events. Rerunnable script + log in scratch (rc033-mobile-noninterference-check.sh/.log, exit 0). Reasoning review: no hidden layout path; wording narrowed — proves current-path no-direct-write only, not the full mobile-tab-switch journey (mobile renders no tabs) and not an enforced capability (shared Eden client retains full treaty). Full RC-033 acceptance remains open. No code changed. X skipped: extension disconnected (scratch x-failure-evidence.json); no tab, nothing submitted.

@@ -313,9 +313,16 @@ test("two browser contexts keep per-device pane selection while sharing panes", 
   expect(workspaceId).toBeTruthy();
   const seed = await page.request.put(`${apiUrl}/api/workspaces/${workspaceId}/layout`, {
     data: {
-      tabs: [{ id: "tab-a", kind: "file", targetId: "a.txt" }],
+      tabs: [
+        { id: "tab-a", kind: "file", targetId: "a.txt" },
+        { id: "tab-b", kind: "file", targetId: "b.txt" },
+      ],
       activeTabId: "tab-a",
-      panes: [{ id: "pane-1", tabId: "tab-a", order: 0 }, { id: "pane-2", tabId: "tab-a", order: 1 }],
+      panes: [
+        { id: "pane-1", tabId: "tab-a", order: 0 },
+        { id: "pane-2", tabId: "tab-a", order: 1 },
+        { id: "pane-3", tabId: "tab-b", order: 2 },
+      ],
       activePaneId: "pane-2",
     },
   });
@@ -323,14 +330,14 @@ test("two browser contexts keep per-device pane selection while sharing panes", 
   await page.reload();
   await expect(page.getByTestId("workspace-panel")).toBeVisible();
   await page.getByRole("button", { name: `Open workspace ${name}` }).click();
-  await expect(page.getByTestId("terminal-layout-state")).toContainText("Shared tabs: 1");
+  await expect(page.getByTestId("terminal-layout-state")).toContainText("Shared tabs: 2");
 
   const otherContext = await browser.newContext();
   const other = await otherContext.newPage();
   try {
     await signIn(other);
     await other.getByRole("button", { name: `Open workspace ${name}` }).click();
-    await expect(other.getByTestId("terminal-layout-state")).toContainText("Shared tabs: 1");
+    await expect(other.getByTestId("terminal-layout-state")).toContainText("Shared tabs: 2");
     // Neither device adopts the stored pane-2.
     await expect(page.getByTestId("terminal-layout-state")).toContainText("pane: pane-1");
     await expect(other.getByTestId("terminal-layout-state")).toContainText("pane: pane-1");
@@ -341,6 +348,13 @@ test("two browser contexts keep per-device pane selection while sharing panes", 
     });
     await page.getByRole("button", { name: "Open pane-2" }).click();
     await expect(page.getByTestId("terminal-layout-state")).toContainText("pane: pane-2");
+    await expect(other.getByTestId("terminal-layout-state")).toContainText("pane: pane-1");
+    expect(layoutPuts).toBe(0);
+    // Switching the local tab resets the local pane to that tab's first
+    // pane; the other device is untouched and no PUT is made.
+    await page.getByRole("button", { name: "Open tab-b" }).click();
+    await expect(page.getByTestId("terminal-layout-state")).toContainText("this device: tab-b");
+    await expect(page.getByTestId("terminal-layout-state")).toContainText("pane: pane-3");
     await expect(other.getByTestId("terminal-layout-state")).toContainText("pane: pane-1");
     expect(layoutPuts).toBe(0);
     const shared = await page.request.get(`${apiUrl}/api/workspaces/${workspaceId}/layout`);
