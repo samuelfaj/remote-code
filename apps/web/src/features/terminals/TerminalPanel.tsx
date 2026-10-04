@@ -326,6 +326,15 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
       const result = await client(end).api.workspaces({ workspaceId: workspace.id }).terminals.post({ requestId: value.start.requestId, cols: value.start.cols, rows: value.start.rows });
       if (!current() || Date.now() >= end) throw new Error("Start outcome unknown");
       if (workspaceErrorStatus(result.error) === 401) onUnauthorized();
+      if (workspaceErrorStatus(result.error) === 404) {
+        // Ambiguous: pre-reservation misses (workspace/folder/token) reserve
+        // nothing, but post-INSERT guard()/launch() re-checks throw the same
+        // 404 after the reserved row commits, and the server strips the
+        // receipt on 404. The response carries no marker, so keep the
+        // reference and report unknown with the request ID retained.
+        setMessage("Workspace may be gone on this host. Start outcome is unknown. Original request ID retained; inspect its receipt. No automatic resend.");
+        return;
+      }
       if (workspaceErrorStatus(result.error) === 409 && terminalRejectionMessage(result.error) === "request_id_conflict") {
         // Same request ID with different dims: a terminal already exists for
         // this ID, but its stored dims differ from this attempt's, so the

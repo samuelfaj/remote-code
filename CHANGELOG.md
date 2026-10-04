@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-031 start-404 stays unknown — post-INSERT miss shares the message
+
+- start() 404 keeps the reference with unknown + inspect message: post-INSERT guard/launch re-checks throw the same 404 after commit with receipt stripped, so clearing could orphan a row. First review caught the leak; fixed, follow-up clean. Verified: typecheck clean, 50 pass/1 skip. X: see checkpoint note.
+
 ## RC-031 attached-receipt helper promoted to shared client with unit test
 
 - Panel-local receipt extraction is now shared terminalAttachedReceipt(error, start) with a committed unit test (bound accept, four rejects). Panel delegates unchanged. Verified: 191 pass/64 skip/0 fail, typecheck + links clean, review clean. X: see checkpoint note.
