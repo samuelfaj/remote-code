@@ -1403,3 +1403,8 @@ The historical checkpoint evidence below is retained in its original order and s
 - **Scope:** saveLayout() live workspace GET before PUT aborts on archived; PUT 409 maps to exact "Workspace is archived. Layout was not saved." message; other errors keep generic unknown. Backend 409 workspace_archived stays the TOCTOU authority. No backend change.
 - **Evidence:** Typecheck clean; terminal tests 2/2. Review 01a107fa clean with TOCTOU verdict (narrowed not closed, acceptable); follow-up 01a107fb clean (sole PUT 409 source, exact-string mapping, no swallow).
 - **X:** Pending this checkpoint; bridge check follows.
+
+# RC-033 layout-guard checkpoint — X attempt 2026-10-04 (UTC)
+
+- **X mac-use:** Bridge still closed (eleventh consecutive check). No tab, nothing submitted.
+- **X eligibility (same-day Space evidence):** Latest own post Sep 30; <1h rule does not block. Submission waits on mac-use bridge recovery (user-side Chrome extension reconnect).
