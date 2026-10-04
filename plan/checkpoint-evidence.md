@@ -1341,3 +1341,7 @@ The historical checkpoint evidence below is retained in its original order and s
 - **Scope:** TerminalPanel stop() treats a 409 stop refusal as "already settling": readonly poll() supplies the authoritative receipt via acceptReceipt; stopRequested fence set before POST keeps input disabled; poll failure still lands in the unknown catch with no resend. No backend change.
 - **Evidence:** Full suite 190 pass/64 skip/0 fail/2310 assertions; typecheck + doc links clean. Review 01a107d9 clean on all four checks (409-before-ack, poll readonly, fence-first, no unknown masking).
 - **X:** Pending this checkpoint; bridge check follows.
+
+# RC-031 stop-409 checkpoint — X attempt 2026-10-04 (UTC)
+
+- **X:** Bridge still closed (fifth consecutive check this session). No tab, no timeline read, no 1h verification, nothing submitted. Pending draft (same): honest terminal input-state slice + #buildingRemoteCode.
