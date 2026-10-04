@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-031 pending-input wait message — backpressure tells user to wait
+
+- Definitive terminal_input_pending refusal now says "Host is still writing the previous input. Wait for the next state poll, then try again" instead of the generic refused text; fence behavior unchanged. Verified: typecheck clean, terminal tests 13/13, review clean. X: see checkpoint note.
+
 ## RC-031 resize-409 poll fallback — refused resize reads authoritative state
 
 - resize() on 409 now falls back to readonly poll: applied with matching dims clears the uncertainty fence and confirms size; otherwise fence stays with input blocked. Mirrors the reviewed stop-409 shape; first review caught a stuck-fence defect on the applied path (fixed, follow-up clean). Verified: 190 pass/64 skip/0 fail, typecheck + links clean. X: see checkpoint note.

@@ -299,7 +299,9 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
       if (workspaceErrorStatus(result.error) === 401) onUnauthorized();
       if (terminalInputRejectionIsDefinitive(workspaceErrorStatus(result.error), terminalRejectionMessage(result.error))) {
         writeReference(saved, next);
-        setMessage("Host refused input. Nothing was queued; inspect state before trying again.");
+        setMessage(terminalRejectionMessage(result.error) === "terminal_input_pending"
+          ? "Host is still writing the previous input. Wait for the next state poll, then try again; nothing was queued."
+          : "Host refused input. Nothing was queued; inspect state before trying again.");
         return;
       }
       const ack = result.error ? null : terminalInputAckFromValue(result.data, saved.terminalId, sequence);
