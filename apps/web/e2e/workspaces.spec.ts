@@ -350,6 +350,58 @@ test("two browser contexts keep per-device pane selection while sharing panes", 
   }
 });
 
+test("saved layout returns after close and reopen with tabs and panes intact", async ({
+  page,
+}) => {
+  // RC-033 close-and-return: save a layout through the real UI, close the
+  // client (reload), reopen, and the same tabs/panes return from the host.
+  const suffix = crypto.randomUUID();
+  const name = `RC033 return ${suffix}`;
+  await signIn(page);
+  await page.getByLabel("Workspace name").fill(name);
+  await page.getByRole("button", { name: "Create workspace" }).click();
+  await expect(page.getByRole("button", { name: `Open workspace ${name}` })).toBeVisible();
+  await page.getByRole("button", { name: `Open workspace ${name}` }).click();
+  await expect(page.getByTestId("terminal-layout-state")).toContainText("No saved layout");
+
+  const listed = await page.request.get(`${apiUrl}/api/workspaces`);
+  const rows = ((await listed.json()) as { workspaces: Array<{ id: string; name: string }> }).workspaces;
+  const workspaceId = rows.find((row) => row.name === name)?.id;
+  expect(workspaceId).toBeTruthy();
+  // Seed the file/thread half the terminal panel does not own, so the UI
+  // merge-save must preserve it; then save the terminal half via the UI.
+  const seed = await page.request.put(`${apiUrl}/api/workspaces/${workspaceId}/layout`, {
+    data: {
+      tabs: [{ id: "tab-file", kind: "file", targetId: "notes.txt" }],
+      activeTabId: "tab-file",
+      panes: [{ id: "pane-file", tabId: "tab-file", order: 0 }],
+      activePaneId: "pane-file",
+    },
+  });
+  expect(seed.ok()).toBe(true);
+  await page.reload();
+  await expect(page.getByTestId("workspace-panel")).toBeVisible();
+  await page.getByRole("button", { name: `Open workspace ${name}` }).click();
+  await expect(page.getByTestId("terminal-layout-state")).toContainText("Shared tabs: 1");
+  await page.getByRole("button", { name: "Save layout" }).click();
+  await expect(page.getByTestId("terminal-layout-state")).toContainText("Layout saved: 1 tab(s).");
+  const savedRow = ((await (await page.request.get(`${apiUrl}/api/workspaces/${workspaceId}/layout`)).json()) as {
+    layout: { tabs: Array<{ id: string; kind: string; targetId: string }> };
+  }).layout;
+  expect(savedRow.tabs).toEqual([{ id: "tab-file", kind: "file", targetId: "notes.txt" }]);
+  // Close the client and go back: the layout returns intact.
+  await page.reload();
+  await expect(page.getByTestId("workspace-panel")).toBeVisible();
+  await page.getByRole("button", { name: `Open workspace ${name}` }).click();
+  await expect(page.getByTestId("terminal-layout-state")).toContainText("Shared tabs: 1");
+  await expect(page.getByTestId("terminal-local-tabs")).toContainText("tab-file");
+  const returned = ((await (await page.request.get(`${apiUrl}/api/workspaces/${workspaceId}/layout`)).json()) as {
+    layout: { tabs: Array<{ id: string }>; panes: Array<{ id: string; tabId: string; order: number }> };
+  }).layout;
+  expect(returned.tabs.map((tab) => tab.id)).toEqual(["tab-file"]);
+  expect(returned.panes).toEqual([{ id: "pane-file", tabId: "tab-file", order: 0 }]);
+});
+
 test("older host capability blocks create before any workspace POST", async ({
   page,
 }) => {

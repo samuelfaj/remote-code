@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-033 close-and-return E2E — UI save survives reload with tabs/panes intact
+
+- New workspaces.spec.ts test: seed file tab + pane via API, reopen in UI, click real Save layout, assert confirm + authoritative row, reload, reopen, assert Shared tabs/panes render and row contents intact. Verified: workspaces E2E 15/15, layout unit 8/8, typecheck clean, doc links + whitespace pass; reasoning review clean (scope: file-half preservation; terminal-half preservation unverified). RC-002 unknown/unaccepted, untouched, no retry. No deployment. X skipped: Chrome extension disconnected, no tab opened, nothing submitted.
+
 ## RC-033 pane focus slice — per-device pane switcher, zero PUTs, stale-ref fix
 
 - TerminalPanel gains localPaneId + Local-panes button row; load defaults to first pane of first tab, tab switch resets pane, save-confirm derives nextTabId before pane fallback. New two-context pane E2E: shared panes render on both devices with local pane-1, one-sided switch to pane-2 moves only that device, route counter asserts zero layout PUTs, shared row still reads pane-2. Verified: workspaces E2E 14/14, layout unit 8/8, typecheck + Vite build clean, doc links + whitespace pass. Reasoning review found save-confirm stale-ref P2 (pane fallback could read pre-update tab); fixed and follow-up review clean. RC-002 unknown/unaccepted, untouched, no retry. No deployment. X skipped: Chrome extension disconnected, no tab opened, nothing submitted.
