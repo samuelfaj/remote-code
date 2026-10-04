@@ -1351,3 +1351,7 @@ The historical checkpoint evidence below is retained in its original order and s
 - **Scope:** TerminalPanel resize() treats a 409 resize refusal as unsettled: readonly poll() supplies authoritative receipt. Applied + matching wantCols/wantRows clears resizeUncertain fence and confirms; otherwise fence stays, input blocked, Stop path open. No backend change.
 - **Evidence:** Full suite 190 pass/64 skip/0 fail/2310 assertions; typecheck + doc links clean. Review 01a107dd found stuck-fence defect on applied path (message claimed success while fence blocked input); fixed with writeReference(saved,next) on applied-match. Follow-up 01a107df clean (fence boundary, success-path symmetry, no deadlock).
 - **X:** Pending this checkpoint; bridge check follows.
+
+# RC-031 resize-409 checkpoint — X attempt 2026-10-04 (UTC)
+
+- **X:** Bridge still closed (sixth consecutive check this session). No tab, no timeline read, no 1h verification, nothing submitted. Bridge recovery needs user-side Chrome extension reconnect; engineering continues without it.
