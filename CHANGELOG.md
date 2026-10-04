@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-031 named-409 receipt-first — post-INSERT refusals confirm state
+
+- start() named 409s (archived/changed/identity) now prefer an attached valid receipt (post-INSERT guard/launch re-checks attach one) before the clear-ref fallback. Verified: typecheck clean, 50 pass/1 skip, review clean on attach rule, binding, fallback, honesty. X: see checkpoint note.
+
 ## RC-031 resize not_running split — dead process reads honestly, no wasted poll
 
 - resize() 409 terminal_not_running now says the process ended directly (fence kept, stop to release) instead of polling a dead terminal; all other 409s keep poll-fallback (verified correct for closing/unavailable/archived/changed/identity — poll reads via ownedRow, unaffected by guard refusals). 3-person panel clean. Verified: typecheck clean, 50 pass/1 skip. X: see checkpoint note.

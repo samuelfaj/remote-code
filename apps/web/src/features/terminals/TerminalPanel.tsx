@@ -347,6 +347,16 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
         (terminalRejectionMessage(result.error) === "workspace_archived" ||
           terminalRejectionMessage(result.error) === "terminal_workspace_changed" ||
           terminalRejectionMessage(result.error) === "terminal_workspace_identity_required")) {
+        // Usually pre-reservation refusals (nothing reserved — drop the
+        // reference and retry fresh). But the same messages can fire from
+        // post-INSERT guard()/launch() re-checks with a receipt attached, so
+        // prefer an attached valid receipt when present before clearing.
+        const attached = terminalAttachedReceipt(result.error, value.start);
+        if (attached) {
+          acceptReceipt(attached, value);
+          setMessage("Terminal start reported a workspace refusal, but the host receipt confirms state. Inspect it before acting.");
+          return;
+        }
         // Definitive pre-reservation refusals: the backend throws before the
         // INSERT transaction, so nothing was reserved. Drop the local
         // reference and let the user fix the cause and try again fresh.
