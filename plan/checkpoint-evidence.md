@@ -1728,3 +1728,7 @@ The historical checkpoint evidence below is retained in its original order and s
 - **Scope:** saveLayout() stored-GET 404 throws gone (existing catch maps it); pure merge-source read, PUT never reached. Covers delete-between-preflight-and-merge race. No backend change.
 - **Evidence:** Typecheck clean; 50 pass/1 skip. 3-person panel clean: A (definitive/read-only/catch-match), B (503-first order safe, no fallthrough), C (1 hunk message-only).
 - **X:** Bridge check with WHY gates + timestamp follows.
+
+# RC-033 merge-404 checkpoint — X attempt 2026-10-04T22:40:19Z (UTC)
+
+- **WHY no post, three gates:** (1) mac-use bridge to signed-in Chrome — CLOSED (2026-10-04T22:40:19Z, 42nd consecutive check; status+close both fail, no tab can open); (2) <1h rule — PASS (latest own post Sep 30 per same-day cua Space page-HTML read, four days old); (3) fallback environments — UNAVAILABLE (cua Space local:space-7d25e43636 still a fresh Ubuntu container: no signed-in X session, headless Chromium blocked by X JS wall; posting there needs ungranted credentials, and TWITTER.md forbids substituting methods without user instruction). Gate 1 closed → no submission possible. No tab opened, nothing submitted.
