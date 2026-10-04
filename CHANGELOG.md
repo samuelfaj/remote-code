@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-033 Linux proof refresh — current source passes pinned-image slice
+
+- Reran scripts/run-layout-proof.ts against current source (read-only bind mount, pinned oven/bun 1.3.13): workspace_layout_slice_passed, api + volume cleanup true, evidence.json in scratch. Review found stale 'not panes' scope text contradicting the pane assertions; fixed to tab+pane API-level scope with UI/archived/mobile exclusions, rerun passed, follow-up clean. X: bridge closed on snapshot again (connected:true then disconnected); no timeline read, nothing submitted, no owned tab. No receipt, no valid <1h skip.
+
 ## RC-033 thread-half merge proof — all three tab kinds survive UI Save
 
 - Merge E2E seed gains tab-thread/thread-1 + pane-thread (4 panes, stale order 0); UI Save asserts exact tabs (file + thread + foreign) and re-indexed panes (0,1,2). Verified: workspaces E2E 18/18, typecheck clean, links + whitespace pass; full-delta reasoning review clean. Test-only, no shipped code changed. X: extension connected briefly (connected:true, no owned tab), bridge closed on snapshot before any timeline read or composer; no text entered, nothing submitted; owned-tab cleanup N/A (no tab ever owned). No receipt, no valid <1h skip.

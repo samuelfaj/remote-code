@@ -16,7 +16,7 @@ const image = "sha256:87416c977a612a204eb54ab9f3927023c2a3c971f4f345a01da08ea626
 const label = "remotecode.rc033.layoutproof";
 const password = randomBytes(32).toString("base64url");
 const databasePath = "/var/lib/remotecode/layout-proof.sqlite";
-const record: any = { run, volume, image, result: "unverified", scope: "RC-033 tab-layout slice: save/open per workspace without cross-workspace moves; not panes, not mobile" };
+const record: any = { run, volume, image, result: "unverified", scope: "RC-033 tab+pane layout slice: save/open/switch per workspace without cross-workspace moves; API-level only, not UI merge/save, not archived, not mobile" };
 let id = "";
 function command(...args: string[]) {
   const result = Bun.spawnSync(args, { cwd: repo, stdout: "pipe", stderr: "pipe", timeout: 30_000 });
