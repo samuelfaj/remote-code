@@ -1424,3 +1424,8 @@ The historical checkpoint evidence below is retained in its original order and s
 - **Scope:** resize() 422 invalid dims clears optimistically set resizeUncertain fence (Elysia VALIDATION fires before update at :840) with honest message; mirrors send-422/start-422. No backend change.
 - **Evidence:** Typecheck clean; terminal tests 13/13. Review 01a10807 clean on all four checks (pre-state-change, fence safety, status-only gate, symmetry).
 - **X:** Bridge + cua checks follow with timestamp.
+
+# RC-031 resize-422 checkpoint — X attempt 2026-10-04T17:49Z (UTC)
+
+- **X mac-use browser_status:** bridge closed (thirteenth consecutive check). Timestamp 2026-10-04T17:49Z.
+- **X cua Space timeline (local:space-7d25e43636, 2026-10-04T17:49Z):** page-HTML markers Sep 25/27/29/30; latest own post Sep 30 — four days old, so no post within the last hour; skip reason is eligibility-proven, not a post. No signed-in session in Space and X JS wall blocks headless Chromium, so no submission possible from there. Post waits on mac-use bridge recovery (user-side Chrome extension reconnect).
