@@ -1523,3 +1523,8 @@ The historical checkpoint evidence below is retained in its original order and s
 - **Scope:** start() 503 terminal_capacity keeps reference with unknown + receipt-inspect message; no clear. Two sources share the message (count check pre-INSERT vs makeContext post-INSERT at :738) with no response marker. No backend change.
 - **Evidence:** Typecheck clean; terminal tests 13/13. Review 01a10846 found orphan-row leak in clear version (committed INSERT + lost requestId, slot consumed); corrected to unknown posture. Follow-up 01a10848 clean (retention, message, no leak, stop-404 consistency).
 - **X:** Bridge check with timestamp follows.
+
+# RC-031 capacity-503 checkpoint — X attempt 2026-10-04T19:01:15Z (UTC)
+
+- **X mac-use browser_status 2026-10-04T19:01:15Z:** bridge closed (twenty-second consecutive check). No tab, nothing submitted.
+- **X eligibility:** latest own post Sep 30 per same-day cua Space page-HTML read; no post within last hour, <1h rule not blocking. Submission waits on mac-use bridge recovery (user-side Chrome extension reconnect).
