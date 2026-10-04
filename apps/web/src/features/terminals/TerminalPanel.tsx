@@ -235,7 +235,11 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
       void inspect();
       const current = currentCheck(); const end = Date.now() + budgetMs;
       const startedAt = Date.now();
-      void loadLayout(end, current, workspace.id, startedAt).catch(() => { if (current()) setLayoutMessage("Layout is unconfirmed. Inspect state; nothing was overwritten blindly."); });
+      void loadLayout(end, current, workspace.id, startedAt).catch((error) => {
+        if (current()) setLayoutMessage(error instanceof Error && error.message === "Saved layout is unreadable on this host"
+          ? "Saved layout is unreadable on this host. Tabs start empty; saving overwrites the bad row."
+          : "Layout is unconfirmed. Inspect state; nothing was overwritten blindly.");
+      });
     }
   }, [userId, workspace?.id, workspace?.archived, blocked]);
 
@@ -495,6 +499,7 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
     const result = await client(end).api.workspaces({ workspaceId }).layout.get();
     if (!current() || Date.now() >= end) throw new Error("Terminal context expired");
     if (workspaceErrorStatus(result.error) === 401) onUnauthorized();
+    if (workspaceErrorStatus(result.error) === 503) throw new Error("Saved layout is unreadable on this host");
     if (result.error) throw new Error("Workspace layout unavailable");
     const parsed = result.data && (result.data as { layout?: unknown }).layout === null
       ? null : workspaceLayoutResponseFromValue(result.data, workspaceId);
@@ -530,10 +535,16 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
       const stored = await client(end).api.workspaces({ workspaceId: workspace.id }).layout.get();
       if (!current() || Date.now() >= end) throw new Error("Terminal context expired");
       if (workspaceErrorStatus(stored.error) === 401) onUnauthorized();
-      if (stored.error) throw new Error("Workspace layout unavailable");
-      const existing = (stored.data as { layout?: unknown }).layout === null
+      if (workspaceErrorStatus(stored.error) === 503) {
+        // Corrupt stored row: nothing salvageable to merge, but the PUT
+        // path upserts unconditionally, so a fresh save repairs the row.
+        // Seed empty and continue instead of throwing.
+        if (current()) setLayoutMessage("Saved layout is unreadable on this host. Starting empty; saving repairs the stored row.");
+      } else if (stored.error) throw new Error("Workspace layout unavailable");
+      const existing = (stored.data as { layout?: unknown } | undefined)?.layout === null ||
+        workspaceErrorStatus(stored.error) === 503
         ? { tabs: [], activeTabId: null } : workspaceLayoutResponseFromValue(stored.data, workspace.id);
-      if ((stored.data as { layout?: unknown }).layout !== null && !existing) throw new Error("Invalid workspace layout");
+      if ((stored.data as { layout?: unknown } | undefined)?.layout !== null && workspaceErrorStatus(stored.error) !== 503 && !existing) throw new Error("Invalid workspace layout");
       const saved = referenceRef.current;
       const terminalTab = saved?.terminalId && saved.start.workspaceId === workspace.id
         ? [{ id: `terminal-${saved.terminalId.slice(0, 8)}`, kind: "terminal" as const, targetId: saved.terminalId }]

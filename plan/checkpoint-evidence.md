@@ -1495,3 +1495,9 @@ The historical checkpoint evidence below is retained in its original order and s
 
 - **X mac-use browser_status 2026-10-04T18:34:16Z:** bridge closed (nineteenth consecutive check). No tab, nothing submitted.
 - **X eligibility:** latest own post Sep 30 per same-day cua Space page-HTML read; no post within last hour, <1h rule not blocking. Submission waits on mac-use bridge recovery (user-side Chrome extension reconnect).
+
+# RC-033 corrupt-layout repair — locally verified slice — 2026-10-04 (UTC)
+
+- **Scope:** loadLayout() 503 layout_unavailable (sole GET 503 source, corrupt stored row) reads honestly with tabs-empty message; saveLayout() seeds empty on 503 and continues to unconditional PUT upsert, repairing the row. No backend change.
+- **Evidence:** Typecheck clean; terminal+layout tests 5/5. Review 01a10836 clean except minor message/flow mismatch (merge-save threw on same bad row); fixed with seeded-empty path. Follow-up 01a10839 clean on seed path, PUT overwrite, no-loss, typecheck.
+- **X:** Bridge check with timestamp follows.

@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-033 corrupt-layout repair — unreadable row seeds empty, save fixes it
+
+- loadLayout() 503 now reads as corrupt stored row with tabs-empty message; saveLayout() seeds empty on 503 and PUTs through (upsert unconditional), so saving repairs the row instead of throwing on its own pre-read. First review caught the unfulfillable promise; fixed, follow-up clean. Verified: typecheck clean, terminal+layout tests 5/5. X: see checkpoint note.
+
 ## RC-031 review-panel fixes — three stuck/overclaim defects closed
 
 - start() pre-reservation 409s (archived/changed/identity) now drop the reference with per-cause messages instead of fencing unknown; stop() 404 verifies via readonly poll (observable → release, gone → unknown, no resend); poll() 503 no longer overclaims host outage. Panel found all three plus one message nit; all fixed, follow-ups clean. Verified: typecheck clean, terminal tests 13/13. X: see checkpoint note.
