@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-031 reconnect closeout — pending verification resolved as bounded slice
+
+- Closed the 'reconnect candidate evidence awaits parent final verification' note: run10 reconnect record read back (324033 disconnected bytes, gap disclosed, session retained, mutations unchanged, 6 exited/removed, cleanup true) plus fresh rc031-exit/flow/weblayout reruns on current source re-exercising the same path. Boundary: manual saved-reference restoration, not automatic product restore; observer/gate test-only. Review found a status contradiction in checkpoint-evidence.md ('corrected evidence pending' vs parent-verified); fixed. Follow-up: review confirms closeout. Docs-only, no code changed. X: bridge closed at checkpoint; no tab, nothing submitted, no receipt, no valid <1h skip.
+
 ## RC-031 status refresh — stale passages updated to current evidence
 
 - plan/tasks.html RC-031 status now records the closed flow-totals overflow slice and the shipped-entry graceful-shutdown rerun, replacing passages that still called both open. No criteria changed, task stays In Progress, no code changed. Reasoning review clean. X: bridge closed at checkpoint; no tab, nothing submitted, no receipt, no valid <1h skip.
