@@ -1361,3 +1361,7 @@ The historical checkpoint evidence below is retained in its original order and s
 - **Scope:** send() definitive-409 branch splits message text only: terminal_input_pending advises waiting for the next state poll; other definitive refusals keep generic text. No fence/ack/queue change.
 - **Evidence:** Typecheck clean; terminal + client-terminal tests 13/13. Review 01a107e4 clean (gate correct, advice matches 750ms poll + written/null gate, zero behavior change).
 - **X:** Pending this checkpoint; bridge check follows.
+
+# RC-031 wait-message checkpoint — X attempt 2026-10-04 (UTC)
+
+- **X:** Bridge still closed (seventh consecutive check this session). No tab, no timeline read, no 1h verification, nothing submitted.
