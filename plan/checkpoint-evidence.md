@@ -1429,3 +1429,9 @@ The historical checkpoint evidence below is retained in its original order and s
 
 - **X mac-use browser_status:** bridge closed (thirteenth consecutive check). Timestamp 2026-10-04T17:49Z.
 - **X cua Space timeline (local:space-7d25e43636, 2026-10-04T17:49Z):** page-HTML markers Sep 25/27/29/30; latest own post Sep 30 — four days old, so no post within the last hour; skip reason is eligibility-proven, not a post. No signed-in session in Space and X JS wall blocks headless Chromium, so no submission possible from there. Post waits on mac-use bridge recovery (user-side Chrome extension reconnect).
+
+# RC-031 stop-422 fence clear — locally verified slice — 2026-10-04 (UTC)
+
+- **Scope:** stop() 422 invalid clears optimistically set stopRequested fence (VALIDATION before makeContext/stopContext at :858-859) with honest message; retry allowed. Completes the 422-fence family: start/send/resize/stop all clear on validation-only refusals, keep fences on genuine unknowns. No backend change.
+- **Evidence:** Typecheck clean; terminal tests 13/13. Review 01a1080b clean on all four checks (pre-action, fence safety, status-only gate, symmetry + retry path).
+- **X:** Bridge check with timestamp follows.

@@ -570,6 +570,13 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
         setMessage(settled.cleanup === "removed" ? "Host confirms the terminal ended and its process was removed." : "Stop is not complete. Inspect state; no automatic stop resend.");
         return;
       }
+      if (workspaceErrorStatus(result.error) === 422) {
+        // Invalid stop shape: the backend validates before acting, so clear
+        // the locally set stop fence and let the user inspect or retry.
+        writeReference(saved, next);
+        setMessage("Host rejected the stop request as invalid. Nothing changed; inspect state before trying again.");
+        return;
+      }
       const confirmed = result.error ? null : terminalReceiptFromValue(result.data, saved.start, saved.terminalId);
       if (!confirmed) throw new Error("Stop outcome unknown");
       acceptReceipt(confirmed, next);

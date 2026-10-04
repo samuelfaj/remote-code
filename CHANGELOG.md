@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-031 stop-422 fence clear — invalid stop keeps terminal usable
+
+- stop() on 422 now clears the optimistically set stop fence (VALIDATION fires before makeContext/stopContext) with an honest message; mirrors send-422/resize-422. Verified: typecheck clean, terminal tests 13/13, review clean on pre-action order, fence safety, gate scope and retry path. X: see checkpoint note.
+
 ## RC-031 resize-422 fence clear — invalid size keeps terminal usable
 
 - resize() on 422 now clears the optimistically set fence (backend validates before touching resize state) with an honest message; mirrors send-422/start-422. Verified: typecheck clean, terminal tests 13/13, review clean on state order, fence safety, gate scope and symmetry. X: see checkpoint note.
