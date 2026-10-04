@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-031 send-422 fence clear — invalid input keeps input usable
+
+- send() on 422 now clears the optimistically set uncertainty fence (backend validates before reserving) with an honest message; queued keys drain in order. Verified: typecheck clean, terminal tests 13/13, review clean on reservation order, fence safety, gate scope and queue FIFO. X: see checkpoint note.
+
 ## RC-033 layout archived guard — live check plus honest 409 message
 
 - saveLayout() re-checks archived state live before PUT (avoids doomed write) and maps PUT 409 to "Workspace is archived. Layout was not saved." Backend 409 stays the race authority; no write possible on archived. Verified: typecheck clean, terminal tests 2/2, two review rounds clean (TOCTOU verdict: narrowed not closed, acceptable). X: see checkpoint note.

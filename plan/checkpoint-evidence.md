@@ -1408,3 +1408,8 @@ The historical checkpoint evidence below is retained in its original order and s
 
 - **X mac-use:** Bridge still closed (eleventh consecutive check). No tab, nothing submitted.
 - **X eligibility (same-day Space evidence):** Latest own post Sep 30; <1h rule does not block. Submission waits on mac-use bridge recovery (user-side Chrome extension reconnect).
+
+# RC-031 send-422 fence clear — locally verified slice — 2026-10-04 (UTC)
+
+- **Scope:** send() 422 invalid input clears the optimistically set uncertainty fence (backend validates before reserving the sequence) with honest message; surviving queued keys drain in order. No backend change. Queue comment updated for early-return paths.
+- **Evidence:** Typecheck clean; terminal tests 13/13. Review 01a10801 clean on all four checks (both 422s pre-reservation, fence clear safe, status-only gate safe, queue FIFO correct; one stale-comment nit fixed).

@@ -327,6 +327,14 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
           : "Host refused input. Nothing was queued; inspect state before trying again.");
         return;
       }
+      if (workspaceErrorStatus(result.error) === 422) {
+        // Invalid input shape: the backend validates before reserving the
+        // sequence, so clear the locally set uncertainty fence and let the
+        // user fix the input and try again.
+        writeReference(saved, next);
+        setMessage("Host rejected the input as invalid. Nothing was queued; fix the input and try again.");
+        return;
+      }
       const ack = result.error ? null : terminalInputAckFromValue(result.data, saved.terminalId, sequence);
       if (!ack || ack.state === "unknown") throw new Error("Input outcome unknown");
       writeReference(saved, next);
@@ -347,6 +355,8 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
   // wait here instead of being dropped. The queue drains one key per send()
   // round-trip; a failed or uncertain send keeps the fence (input stays
   // blocked) and drops the queue so no key is silently reordered past it.
+  // Definitive refusals and invalid input return early instead: the fence is
+  // cleared and surviving keys drain in order on the next send.
   function enqueueKey(text: string) {
     const encoded = new TextEncoder().encode(text);
     if (!encoded.length || encoded.length > 4096) return;
