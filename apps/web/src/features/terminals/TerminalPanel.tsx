@@ -296,10 +296,17 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
         catch (error) {
           if (current()) {
             setReceipt(null);
+            if (error instanceof Error && error.message === "Terminal state unavailable for this login" &&
+              referenceRef.current === saved) {
+              // Definitive 404 on the auto-poll: this login can never observe
+              // the terminal again, so release the stale reference and let
+              // the user start fresh. No mutation was sent; nothing to fence.
+              try { writeReference(null, saved); } catch { /* Storage already reports itself; keep the message. */ }
+            }
             setMessage(error instanceof Error && error.message === "Terminal login check is unavailable"
               ? "Terminal login check is unavailable. State reads retry automatically; nothing was resent."
               : error instanceof Error && error.message === "Terminal state unavailable for this login"
-                ? "Terminal not found for this login. State reads retry automatically; select the original workspace or start a new terminal."
+                ? "Terminal not found for this login. Start a new terminal when ready."
                 : error instanceof Error && (error.message === "Terminal cursor ran ahead. Re-reading retained output; nothing was resent." ||
                   error.message === "Terminal cursor is invalid. Re-reading retained output; nothing was resent.")
                   ? error.message

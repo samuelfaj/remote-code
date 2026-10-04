@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-031 tick-404 self-release — dead reference frees Start automatically
+
+- Auto-poll 404 now releases the stale reference (CAS-guarded, storage-failure safe) so Start re-enables; message no longer promises auto-retry on the idle tick. Verified: typecheck clean, 50 pass/1 skip, review clean on definitiveness, CAS, failure path and recovery (+1 wording nit fixed in-slice). X: see checkpoint note.
+
 ## RC-031 preflight gone/outage split — workspace read refuses honestly
 
 - preflight() workspace GET now throws gone on 404 and login-unavailable on 503 before the generic decode; send/resize/stop map both to No-sent + retry. 3-person panel clean (order/honesty, untouched paths honestly generic, scope message-only). Verified: typecheck clean, 50 pass/1 skip. X: see checkpoint note.
