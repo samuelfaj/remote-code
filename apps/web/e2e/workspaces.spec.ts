@@ -552,6 +552,7 @@ test("merge-save preserves another device terminal tab while pruning own stale o
     data: {
       tabs: [
         { id: "tab-file", kind: "file", targetId: "notes.txt" },
+        { id: "tab-thread", kind: "thread", targetId: "thread-1" },
         { id: "foreign-term", kind: "terminal", targetId: "11111111-1111-1111-1111-111111111111" },
         { id: "terminal-deadbeef", kind: "terminal", targetId: "deadbeef-dead-beef-dead-beefdeadbeef" },
       ],
@@ -560,6 +561,7 @@ test("merge-save preserves another device terminal tab while pruning own stale o
         { id: "pane-stale", tabId: "terminal-deadbeef", order: 0 },
         { id: "pane-foreign", tabId: "foreign-term", order: 1 },
         { id: "pane-file", tabId: "tab-file", order: 2 },
+        { id: "pane-thread", tabId: "tab-thread", order: 3 },
       ],
       activePaneId: "pane-file",
     },
@@ -568,9 +570,9 @@ test("merge-save preserves another device terminal tab while pruning own stale o
   await page.reload();
   await expect(page.getByTestId("workspace-panel")).toBeVisible();
   await page.getByRole("button", { name: `Open workspace ${name}` }).click();
-  await expect(page.getByTestId("terminal-layout-state")).toContainText("Shared tabs: 3");
+  await expect(page.getByTestId("terminal-layout-state")).toContainText("Shared tabs: 4");
   await page.getByRole("button", { name: "Save layout" }).click();
-  await expect(page.getByTestId("terminal-layout-state")).toContainText("Layout saved: 2 tab(s).");
+  await expect(page.getByTestId("terminal-layout-state")).toContainText("Layout saved: 3 tab(s).");
   const saved = ((await (await page.request.get(`${apiUrl}/api/workspaces/${workspaceId}/layout`)).json()) as {
     layout: {
       tabs: Array<{ id: string; kind: string; targetId: string }>;
@@ -579,11 +581,13 @@ test("merge-save preserves another device terminal tab while pruning own stale o
   }).layout;
   expect(saved.tabs).toEqual([
     { id: "tab-file", kind: "file", targetId: "notes.txt" },
+    { id: "tab-thread", kind: "thread", targetId: "thread-1" },
     { id: "foreign-term", kind: "terminal", targetId: "11111111-1111-1111-1111-111111111111" },
   ]);
   expect(saved.panes).toEqual([
     { id: "pane-foreign", tabId: "foreign-term", order: 0 },
     { id: "pane-file", tabId: "tab-file", order: 1 },
+    { id: "pane-thread", tabId: "tab-thread", order: 2 },
   ]);
 });
 

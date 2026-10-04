@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-033 thread-half merge proof — all three tab kinds survive UI Save
+
+- Merge E2E seed gains tab-thread/thread-1 + pane-thread (4 panes, stale order 0); UI Save asserts exact tabs (file + thread + foreign) and re-indexed panes (0,1,2). Verified: workspaces E2E 18/18, typecheck clean, links + whitespace pass; full-delta reasoning review clean. Test-only, no shipped code changed. X: extension connected briefly (connected:true, no owned tab), bridge closed on snapshot before any timeline read or composer; no text entered, nothing submitted; owned-tab cleanup N/A (no tab ever owned). No receipt, no valid <1h skip.
+
 ## RC-033 workspace-switching E2E — each workspace loads its own layout
 
 - New workspaces.spec.ts test: two workspaces with distinct seeded layouts; UI open renders own tabs (negative asserts against the other's), B restores its pane, switch back to A clean. Review found seed toBeTruthy() gap (HTTP errors would pass); fixed to ok(), follow-up clean. Verified: workspaces E2E 18/18, typecheck clean, links + whitespace pass. Test-only, no shipped code changed. X: extension disconnected at checkpoint; no tab, nothing submitted, no receipt.
