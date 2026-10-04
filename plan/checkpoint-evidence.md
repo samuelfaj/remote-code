@@ -1592,3 +1592,9 @@ The historical checkpoint evidence below is retained in its original order and s
 # RC-031 409-nuance checkpoint — X attempt 2026-10-04T20:01:20Z (UTC)
 
 - **WHY no post, three gates:** (1) mac-use bridge to signed-in Chrome — CLOSED (2026-10-04T20:01:20Z, 28th consecutive check; status+close both fail, no tab can open); (2) <1h rule — PASS (latest own post Sep 30 per same-day cua Space page-HTML read, four days old); (3) fallback environments — UNAVAILABLE (cua Space local:space-7d25e43636 still a fresh Ubuntu container: no signed-in X session, headless Chromium blocked by X JS wall; posting there needs ungranted credentials, and TWITTER.md forbids substituting methods without user instruction). Gate 1 closed → no submission possible. No tab opened, nothing submitted.
+
+# RC-033 archived E2E pins honest message — locally verified slice — 2026-10-04 (UTC)
+
+- **Scope:** Stale-prop half asserts "archived" (shipped message) instead of generic "unconfirmed"; queued-input paragraph gains inert testid. No product behavior change.
+- **Evidence:** Real browser E2E 1 passed (2.0s, local bun API + vite): real PATCH-archive behind panel's back, guard refusal with zero PUTs, row intact. 3-person panel clean: A (real path, falsifies old text, other half intact), B (testid inert, receipt match, naming), C (two hunks only, no behavior change).
+- **X:** Bridge check with WHY gates + timestamp follows.

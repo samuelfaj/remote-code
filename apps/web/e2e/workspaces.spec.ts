@@ -517,7 +517,7 @@ test("archived workspace blocks layout save in the UI without a write", async ({
   expect(archiveCall.ok()).toBe(true);
   await expect(page.getByRole("button", { name: "Save layout" })).toBeEnabled();
   await page.getByRole("button", { name: "Save layout" }).click();
-  await expect(page.getByTestId("terminal-layout-state")).toContainText("unconfirmed");
+  await expect(page.getByTestId("terminal-layout-state")).toContainText("archived");
   expect(layoutPuts2).toBe(0);
   const row2 = ((await (await page.request.get(`${apiUrl}/api/workspaces/${workspaceId2}/layout`)).json()) as {
     layout: { tabs: Array<{ id: string }> };

@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-033 archived E2E pins honest message + queued-input testid
+
+- Stale-prop archived-save half now asserts "archived" (was generic "unconfirmed"), driving the shipped live-preflight + PUT-409 message through a real browser + real API: 1 passed locally. Queued-input paragraph gains data-testid terminal-input-backpressure (inert). 3-person panel clean. X: see checkpoint note.
+
 ## RC-031 409 poll-failure nuance — refused + unreadable stays unknown, fenced
 
 - stop() 409 poll-fallback now catches poll failure with fence-kept unknown message instead of escaping to the generic outer catch (which also wiped the last-known receipt). resize() 409 gets the same guard (reviewer B asymmetry note). 3-person panel clean on fence, consistency and messages. Verified: typecheck clean, terminal tests 13/13. X: see checkpoint note.
