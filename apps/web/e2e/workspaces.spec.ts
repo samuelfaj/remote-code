@@ -587,6 +587,55 @@ test("merge-save preserves another device terminal tab while pruning own stale o
   ]);
 });
 
+test("switching workspaces in the UI loads each workspace layout", async ({
+  page,
+}) => {
+  // RC-033 workspace switching: two workspaces with distinct seeded layouts;
+  // opening each in the UI renders its own tabs, and switching back restores
+  // the first without cross-contamination.
+  const suffix = crypto.randomUUID();
+  const nameA = `RC033 switch A ${suffix}`;
+  const nameB = `RC033 switch B ${suffix}`;
+  await signIn(page);
+  for (const name of [nameA, nameB]) {
+    await page.getByLabel("Workspace name").fill(name);
+    await page.getByRole("button", { name: "Create workspace" }).click();
+    await expect(page.getByRole("button", { name: `Open workspace ${name}` })).toBeVisible();
+  }
+  const listed = await page.request.get(`${apiUrl}/api/workspaces`);
+  const rows = ((await listed.json()) as { workspaces: Array<{ id: string; name: string }> }).workspaces;
+  const idA = rows.find((row) => row.name === nameA)?.id;
+  const idB = rows.find((row) => row.name === nameB)?.id;
+  expect(idA).toBeTruthy();
+  expect(idB).toBeTruthy();
+  const seedA = await page.request.put(`${apiUrl}/api/workspaces/${idA}/layout`, {
+    data: { tabs: [{ id: "tab-alpha", kind: "file", targetId: "alpha.txt" }], activeTabId: "tab-alpha" },
+  });
+  expect(seedA.ok()).toBe(true);
+  const seedB = await page.request.put(`${apiUrl}/api/workspaces/${idB}/layout`, {
+    data: {
+      tabs: [{ id: "tab-beta", kind: "file", targetId: "beta.txt" }],
+      activeTabId: "tab-beta",
+      panes: [{ id: "pane-beta", tabId: "tab-beta", order: 0 }],
+      activePaneId: "pane-beta",
+    },
+  });
+  expect(seedB.ok()).toBe(true);
+  await page.getByRole("button", { name: `Open workspace ${nameA}` }).click();
+  await expect(page.getByTestId("terminal-layout-state")).toContainText("Shared tabs: 1");
+  await expect(page.getByTestId("terminal-local-tabs")).toContainText("tab-alpha");
+  await expect(page.getByTestId("terminal-local-tabs")).not.toContainText("tab-beta");
+  await page.getByRole("button", { name: `Open workspace ${nameB}` }).click();
+  await expect(page.getByTestId("terminal-layout-state")).toContainText("Shared tabs: 1");
+  await expect(page.getByTestId("terminal-local-tabs")).toContainText("tab-beta");
+  await expect(page.getByTestId("terminal-local-tabs")).not.toContainText("tab-alpha");
+  await expect(page.getByTestId("terminal-layout-state")).toContainText("pane: pane-beta");
+  // Switch back: A returns without B's tabs.
+  await page.getByRole("button", { name: `Open workspace ${nameA}` }).click();
+  await expect(page.getByTestId("terminal-local-tabs")).toContainText("tab-alpha");
+  await expect(page.getByTestId("terminal-local-tabs")).not.toContainText("tab-beta");
+});
+
 test("older host capability blocks create before any workspace POST", async ({
   page,
 }) => {

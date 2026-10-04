@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-033 workspace-switching E2E — each workspace loads its own layout
+
+- New workspaces.spec.ts test: two workspaces with distinct seeded layouts; UI open renders own tabs (negative asserts against the other's), B restores its pane, switch back to A clean. Review found seed toBeTruthy() gap (HTTP errors would pass); fixed to ok(), follow-up clean. Verified: workspaces E2E 18/18, typecheck clean, links + whitespace pass. Test-only, no shipped code changed. X: extension disconnected at checkpoint; no tab, nothing submitted, no receipt.
+
 ## RC-033 cross-device merge E2E — foreign terminal tabs survive UI Save
 
 - New workspaces.spec.ts test: seed file + foreign terminal + own stale terminal tabs (stale pane order 0, survivors 1,2), click UI Save, assert exact tabs (file + foreign) and re-indexed panes (0,1). A behavior-change filter attempt proved identical to the original by case analysis and was reverted to a sharpened comment; re-index-removal falsification fails the test. Verified: workspaces E2E 17/17, typecheck clean, links + whitespace pass; two review rounds closed (non-load-bearing seed gap fixed, follow-up clean). X: extension disconnected at checkpoint; no tab, nothing submitted, no receipt.
