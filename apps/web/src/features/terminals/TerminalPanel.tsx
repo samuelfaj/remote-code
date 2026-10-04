@@ -116,6 +116,8 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
     const result = await client(end).api.workspaces({ workspaceId: workspace.id }).get();
     if (!current() || Date.now() >= end) throw new Error("Terminal context expired");
     if (workspaceErrorStatus(result.error) === 401) onUnauthorized();
+    if (workspaceErrorStatus(result.error) === 404) throw new Error("Workspace is gone on this host");
+    if (workspaceErrorStatus(result.error) === 503) throw new Error("Terminal login check is unavailable");
     const owned = result.error ? null : workspaceFromValue(result.data);
     if (!owned || owned.id !== workspace.id) throw new Error("Workspace unavailable");
     if (starting && owned.archived) throw new Error("Workspace is archived");
@@ -498,7 +500,8 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
         setReceipt(null);
         setMessage(error instanceof Error && error.message === "Workspace is archived"
           ? `${error.message}. No input was sent.`
-          : error instanceof Error && error.message === "Terminal login check is unavailable"
+          : error instanceof Error && (error.message === "Terminal login check is unavailable" ||
+            error.message === "Workspace is gone on this host")
             ? `${error.message}. No input was sent; state reads retry automatically.`
             : sent ? "Input delivery is unknown. Further input is blocked, including after reload. State reads never resend input; inspect or stop the terminal." : "Input preflight or storage failed. No input was sent. Inspect the host before trying again.");
       }
@@ -623,7 +626,8 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
         setReceipt(null);
         setMessage(error instanceof Error && error.message === "Workspace is archived"
           ? `${error.message}. No resize was sent.`
-          : error instanceof Error && error.message === "Terminal login check is unavailable"
+          : error instanceof Error && (error.message === "Terminal login check is unavailable" ||
+            error.message === "Workspace is gone on this host")
             ? `${error.message}. No resize was sent; state reads retry automatically.`
             : sent ? "Resize outcome is unknown. Further input and resize are blocked, including after reload. Stop the terminal to release it." : "Resize preflight or storage failed. No resize was sent. Inspect the host before trying again.");
       }
@@ -846,7 +850,8 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
     } catch (error) {
       if (current()) {
         setReceipt(null);
-        setMessage(error instanceof Error && error.message === "Terminal login check is unavailable"
+        setMessage(error instanceof Error && (error.message === "Terminal login check is unavailable" ||
+          error.message === "Workspace is gone on this host")
           ? `${error.message}. No stop was sent; state reads retry automatically.`
           : "Stop outcome is unconfirmed. Input stays disabled. Inspect state; no stop request is resent automatically.");
       }

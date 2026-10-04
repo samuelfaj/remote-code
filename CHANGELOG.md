@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-031 preflight gone/outage split — workspace read refuses honestly
+
+- preflight() workspace GET now throws gone on 404 and login-unavailable on 503 before the generic decode; send/resize/stop map both to No-sent + retry. 3-person panel clean (order/honesty, untouched paths honestly generic, scope message-only). Verified: typecheck clean, 50 pass/1 skip. X: see checkpoint note.
+
 ## RC-031 inspect-503 passthrough — manual read inherits host-outage honesty
 
 - inspect() poll-try now rethrows poll's 503 message alongside the 404 literal; outer catch identity-maps it. Readonly path, tick keeps auto-retrying. 3-person panel clean. Verified: typecheck clean, 50 pass/1 skip. X: see checkpoint note.
