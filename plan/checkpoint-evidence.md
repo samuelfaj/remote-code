@@ -1742,3 +1742,9 @@ The historical checkpoint evidence below is retained in its original order and s
 # RC-033 live-503 checkpoint — X attempt 2026-10-04T22:49:56Z (UTC)
 
 - **WHY no post, three gates:** (1) mac-use bridge to signed-in Chrome — CLOSED (2026-10-04T22:49:56Z, 43rd consecutive check; status+close both fail, no tab can open); (2) <1h rule — PASS (latest own post Sep 30 per same-day cua Space page-HTML read, four days old); (3) fallback environments — UNAVAILABLE (cua Space local:space-7d25e43636 still a fresh Ubuntu container: no signed-in X session, headless Chromium blocked by X JS wall; posting there needs ungranted credentials, and TWITTER.md forbids substituting methods without user instruction). Gate 1 closed → no submission possible. No tab opened, nothing submitted.
+
+# RC-031 inspect-503 passthrough — locally verified slice — 2026-10-04 (UTC)
+
+- **Scope:** inspect() rethrows poll's 503 host message (readonly path, tick auto-retries regardless); outer catch identity-maps it. Transient/local/validation errors stay generic. No backend change.
+- **Evidence:** Typecheck clean; 50 pass/1 skip. 3-person panel clean: A (readonly honesty, tick-retry true, literal safety), B (remaining flattened errors all honestly generic), C (2 hunks routing-only).
+- **X:** Bridge check with WHY gates + timestamp follows.

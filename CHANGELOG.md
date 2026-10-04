@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-031 inspect-503 passthrough — manual read inherits host-outage honesty
+
+- inspect() poll-try now rethrows poll's 503 message alongside the 404 literal; outer catch identity-maps it. Readonly path, tick keeps auto-retrying. 3-person panel clean. Verified: typecheck clean, 50 pass/1 skip. X: see checkpoint note.
+
 ## RC-033 live-check 503 message — save pre-read outage reads honestly
 
 - saveLayout() live workspace GET 503 now throws login-unavailable (caught → not-saved + retry) instead of generic unavailable; PUT never reached. Literal identical across all 9 throw/catch sites with path-correct suffixes. 3-person panel clean. Verified: typecheck clean, 50 pass/1 skip. X: see checkpoint note.

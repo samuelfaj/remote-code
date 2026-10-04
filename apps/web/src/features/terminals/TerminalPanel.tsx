@@ -210,11 +210,13 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
           try {
             await poll(end, current, saved);
           } catch (error) {
-            // Surface the poll's own foreign-terminal verdict instead of
-            // flattening it; everything else stays unconfirmed. Offset-ahead
-            // is transient (next poll re-reads), so it also stays generic.
+            // Surface the poll's own honest verdicts instead of flattening
+            // them; everything else stays unconfirmed. Offset-ahead and
+            // invalid-cursor are transient (next poll re-reads), so they
+            // also stay generic here.
             if (error instanceof Error &&
-              error.message === "Terminal state unavailable for this login") throw error;
+              (error.message === "Terminal state unavailable for this login" ||
+                error.message === "Terminal state is unconfirmed. State reads retry automatically; nothing was resent.")) throw error;
             throw new Error("Terminal state is unconfirmed. Original identity retained; inspect manually. No mutation was resent.");
           }
         }
@@ -241,7 +243,8 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
         setReceipt(null); setAvailable(false);
         setMessage(error instanceof Error &&
           (error.message === "Terminal state unavailable for this login" ||
-            error.message === "No terminal receipt is visible to this login")
+            error.message === "No terminal receipt is visible to this login" ||
+            error.message === "Terminal state is unconfirmed. State reads retry automatically; nothing was resent.")
           ? error.message
           : "Terminal state is unconfirmed or unavailable on this host. Original identity retained; inspect manually. No mutation was resent.");
       }
