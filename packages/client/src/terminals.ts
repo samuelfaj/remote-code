@@ -173,6 +173,16 @@ export function terminalInputRejectionIsDefinitive(status: number | null, messag
 }
 
 // Eden surfaces route errors as { status, value: { error: message } }.
+// A post-reservation failure may attach the host receipt alongside the
+// error ({ status, value: { error, receipt } }); accept it only when it
+// validates against the attempt's start identity, otherwise null.
+export function terminalAttachedReceipt(error: unknown, start: PendingTerminalStart): TerminalReceipt | null {
+  if (typeof error !== "object" || error === null || !("value" in error)) return null;
+  const value = (error as { value: unknown }).value;
+  if (typeof value !== "object" || value === null || !("receipt" in value)) return null;
+  return terminalReceiptFromValue((value as Record<string, unknown>).receipt, start);
+}
+
 export function terminalRejectionMessage(error: unknown): unknown {
   if (typeof error !== "object" || error === null || !("value" in error)) return null;
   const value = (error as { value: unknown }).value;

@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-031 attached-receipt helper promoted to shared client with unit test
+
+- Panel-local receipt extraction is now shared terminalAttachedReceipt(error, start) with a committed unit test (bound accept, four rejects). Panel delegates unchanged. Verified: 191 pass/64 skip/0 fail, typecheck + links clean, review clean. X: see checkpoint note.
+
 ## RC-031 login-check 503 message — session outage reads honestly on auto-poll
 
 - session() 503 now throws login-unavailable before the generic umbrella; tick maps it to auto-retry with nothing resent. Readonly check, no reservation. Verified: typecheck clean, 49 pass/1 skip, review clean on order, honesty and caller consistency. X: see checkpoint note.

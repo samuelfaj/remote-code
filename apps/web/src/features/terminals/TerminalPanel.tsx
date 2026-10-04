@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef, useState } from "react";
 import "./styles.css";
 import { TerminalScreen, type TerminalScreenHandle } from "./TerminalScreen";
 import {
-  createApiClient, fileFolderStateFromValue, terminalInputAckFromValue, terminalInputRejectionIsDefinitive, terminalPollFromValue, terminalRejectionMessage,
+  createApiClient, fileFolderStateFromValue, terminalAttachedReceipt, terminalInputAckFromValue, terminalInputRejectionIsDefinitive, terminalPollFromValue, terminalRejectionMessage,
   terminalReceiptFromValue, terminalReferenceFromValue, workspaceErrorStatus, workspaceFromValue,
   workspaceLayoutFromValue, workspaceLayoutResponseFromValue,
   type TerminalReceipt, type TerminalReference, type Workspace, type WorkspaceLayout,
@@ -135,13 +135,10 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
   }
 
   // A post-reservation start failure attaches the host receipt alongside the
-  // error (Eden { status, value: { error, receipt } }). Accept it only when
-  // it validates against this attempt's start identity; otherwise null.
+  // error; accept it only when it validates against this attempt's start
+  // identity, otherwise null. Shared client helper, also unit-tested there.
   function attachedReceipt(error: unknown, expected: TerminalReference): TerminalReceipt | null {
-    if (!error || typeof error !== "object" || !("value" in error)) return null;
-    const value = (error as { value: unknown }).value;
-    if (!value || typeof value !== "object" || !("receipt" in value)) return null;
-    return terminalReceiptFromValue((value as Record<string, unknown>).receipt, expected.start);
+    return terminalAttachedReceipt(error, expected.start);
   }
 
   async function poll(end: number, current: () => boolean, expected: TerminalReference) {

@@ -1,7 +1,7 @@
 import { expect, it } from "bun:test";
 import {
   pendingTerminalStartFromValue, terminalReferenceFromValue, terminalReceiptFromValue,
-  terminalPollFromValue, terminalInputAckFromValue, terminalInputRejectionIsDefinitive, terminalRejectionMessage,
+  terminalPollFromValue, terminalInputAckFromValue, terminalInputRejectionIsDefinitive, terminalRejectionMessage, terminalAttachedReceipt,
   type PendingTerminalStart, type TerminalReference, type TerminalReceipt, type TerminalPoll,
 } from "./index";
 
@@ -246,4 +246,13 @@ it("keeps an input-uncertain poll visible as unknown, never as written", () => {
   const { outputAvailable: _o, baseOffset: _b, offset: _f, nextOffset: _n, endOffset: _e,
     gap: _g, outputBase64: _c, retainedBytes: _r, totalBytes: _t, droppedBytes: _d, flow: _w, ...receiptFields } = uncertain;
   expect(terminalReceiptFromValue(receiptFields, start, terminalId)?.inputState).toBe("unknown");
+});
+
+it("accepts an attached host receipt only when bound to this start", () => {
+  const attached = { ...receipt, requestId: start.requestId, workspaceId: start.workspaceId };
+  expect(terminalAttachedReceipt({ status: 503, value: { error: "terminal_capacity", receipt: attached } }, start)?.terminalId).toBe(terminalId);
+  expect(terminalAttachedReceipt({ status: 503, value: { error: "terminal_capacity", receipt: { ...attached, requestId: otherId } } }, start)).toBeNull();
+  expect(terminalAttachedReceipt({ status: 503, value: { error: "terminal_capacity" } }, start)).toBeNull();
+  expect(terminalAttachedReceipt({ status: 503, value: "terminal_capacity" }, start)).toBeNull();
+  expect(terminalAttachedReceipt(null, start)).toBeNull();
 });
