@@ -472,9 +472,12 @@ test("archived workspace blocks layout save in the UI without a write", async ({
   await page.getByRole("button", { name: "Archive workspace" }).click();
   await expect(page.getByText("Archived workspaces are read-only.")).toBeVisible();
   // The read-only UI disables Save layout: no click is possible, no layout
-  // PUT is sent, and the saved row stays intact.
+  // PUT is sent, and the saved layout stays visible read-only.
   await expect(page.getByRole("button", { name: "Save layout" })).toBeDisabled();
   expect(layoutPuts).toBe(0);
+  await expect(page.getByTestId("terminal-layout-state")).toContainText("Shared tabs: 1");
+  await expect(page.getByTestId("terminal-local-tabs")).toContainText("tab-a");
+  await expect(page.getByTestId("terminal-layout-state")).toContainText("this device: tab-a");
   // Stale-prop guard path: un-archive via API is not offered by the UI, so
   // reload the unarchived state instead — reopen a fresh workspace where the
   // panel mounts unarchived, archive it via API behind the panel's back, then

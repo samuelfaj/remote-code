@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-033 archived stays visible — saved layout renders read-only after archive
+
+- Archived E2E half now asserts the saved layout stays visible after Archive: Shared tabs: 1, local tab-a, local selection tab-a, alongside disabled Save + zero PUTs. Verified: workspaces E2E 16/16, typecheck clean, links + whitespace pass; reasoning review clean. Test-only, no shipped code changed. X: extension disconnected at checkpoint (browser_status fail, no tab, nothing submitted); no timeline check possible, no receipt.
+
 ## RC-033 archived UI slice — disabled Save plus live-preflight guard with falsified E2E
 
 - saveLayout now refuses on a live-archived workspace before any layout traffic (stale-prop defense). E2E covers both halves: archived UI disables Save (zero PUTs, row intact) and stale-prop half archives via API behind a mounted panel then clicks enabled Save (unconfirmed, zero PUTs, row intact). Guard-removal falsification fails the stale half; restored file passes 16/16 E2E, typecheck clean, links + whitespace pass; two review rounds closed. X: extension disconnected at checkpoint (browser_status fail, no tab, nothing submitted); no timeline check possible, no receipt.
