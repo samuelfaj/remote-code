@@ -536,8 +536,9 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
           setLocalPaneId(inTab[0]?.id ?? null);
         }}>Open {tab.id}{tab.id === localTabId ? " (this device)" : ""}</button>)}
       </div> : null}
-      {layout?.panes && layout.panes.filter((pane) => pane.tabId === localTabId).length > 1 ? <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }} aria-label="Local panes" data-testid="terminal-local-panes">
-        {layout.panes.filter((pane) => pane.tabId === localTabId).sort((a, b) => a.order - b.order).map((pane) => <button key={pane.id} type="button" disabled={pane.id === localPaneId} onClick={() => setLocalPaneId(pane.id)}>Open {pane.id}{pane.id === localPaneId ? " (this device)" : ""}</button>)}
+      {layout && localTabId ? <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }} aria-label="Local panes" data-testid="terminal-local-panes">
+        {layout.panes?.filter((pane) => pane.tabId === localTabId).sort((a, b) => a.order - b.order).map((pane) => <button key={pane.id} type="button" disabled={pane.id === localPaneId} onClick={() => setLocalPaneId(pane.id)}>Open {pane.id}{pane.id === localPaneId ? " (this device)" : ""}</button>) ?? null}
+        {(layout.panes?.filter((pane) => pane.tabId === localTabId).length ?? 0) === 0 ? <span>No panes on this tab.</span> : null}
       </div> : null}
     </>}
   </section>;

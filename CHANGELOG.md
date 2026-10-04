@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-033 panes container across tab shapes — single pane and empty state render
+
+- Local-panes container now mounts whenever a local tab is selected: multi/single-pane buttons, explicit "No panes on this tab." empty state. Pane E2E asserts single-pane container after tab switch on one device and two-pane container on the other. Falsification: old >1-only conditional fails the new assertion; fix verified by full 15/15 E2E, typecheck, layout 8/8, links + whitespace clean; reasoning review clean. X skipped: extension disconnected (browser_status fail, no tab, nothing submitted); no timeline check possible.
+
 ## RC-033 tab-switch pane reset — E2E requires first pane of new tab
 
 - Pane E2E seed gains tab-b/pane-3; after the one-sided pane switch it clicks Open tab-b and asserts local pane-3, other device still pane-1, zero PUTs, shared row still pane-2. Falsification: removing the pane-reset line fails the test; file restored. Verified: workspaces E2E 15/15, typecheck clean, links + whitespace pass; review clean. Test-only, no shipped code changed. X skipped: extension disconnected; no tab, nothing submitted.

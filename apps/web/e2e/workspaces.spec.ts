@@ -356,6 +356,11 @@ test("two browser contexts keep per-device pane selection while sharing panes", 
     await expect(page.getByTestId("terminal-layout-state")).toContainText("this device: tab-b");
     await expect(page.getByTestId("terminal-layout-state")).toContainText("pane: pane-3");
     await expect(other.getByTestId("terminal-layout-state")).toContainText("pane: pane-1");
+    // Single-pane tab renders the container with an explicit empty state,
+    // not a missing section: the switcher stays mounted across tab shapes.
+    await expect(page.getByTestId("terminal-local-panes")).toContainText("pane-3");
+    await expect(other.getByTestId("terminal-local-panes")).toContainText("pane-1");
+    await expect(other.getByTestId("terminal-local-panes")).toContainText("pane-2");
     expect(layoutPuts).toBe(0);
     const shared = await page.request.get(`${apiUrl}/api/workspaces/${workspaceId}/layout`);
     expect(((await shared.json()) as { layout: { activePaneId: string } }).layout.activePaneId).toBe("pane-2");
