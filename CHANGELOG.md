@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-031 review-panel fixes — three stuck/overclaim defects closed
+
+- start() pre-reservation 409s (archived/changed/identity) now drop the reference with per-cause messages instead of fencing unknown; stop() 404 verifies via readonly poll (observable → release, gone → unknown, no resend); poll() 503 no longer overclaims host outage. Panel found all three plus one message nit; all fixed, follow-ups clean. Verified: typecheck clean, terminal tests 13/13. X: see checkpoint note.
+
 ## RC-031 inspect passthrough — manual read inherits poll honesty
 
 - inspect() now surfaces poll's honest 503-host and 404 foreign-terminal messages instead of flattening to generic unconfirmed; other failures keep generic. Static literals only, no server-content interpolation. Verified: typecheck clean, terminal tests 13/13, review clean on success path, allowlist, injection and state reset. X: see checkpoint note.

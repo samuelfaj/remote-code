@@ -141,7 +141,12 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
     if (result.error) {
       if (workspaceErrorStatus(result.error) === 401) onUnauthorized();
       if (workspaceErrorStatus(result.error) === 404) clearScreen(true);
-      if (workspaceErrorStatus(result.error) === 503) throw new Error("Terminal host is unavailable");
+      if (workspaceErrorStatus(result.error) === 503) {
+        // Host-side failure on a readonly read. Most 503s are host outages,
+        // but receipt-validation 503s are not — so report unconfirmed state
+        // with auto-retry, not a definitive outage verdict.
+        throw new Error("Terminal state is unconfirmed. State reads retry automatically; nothing was resent.");
+      }
       throw new Error("Terminal state unavailable for this login");
     }
     const confirmed = terminalPollFromValue(result.data, expected, offset);
@@ -181,10 +186,10 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
           try {
             await poll(end, current, saved);
           } catch (error) {
-            // Surface the poll's own verdict instead of flattening it:
-            // host outage and foreign-terminal reads already speak honestly.
-            if (error instanceof Error && (error.message === "Terminal host is unavailable" ||
-              error.message === "Terminal state unavailable for this login")) throw error;
+            // Surface the poll's own foreign-terminal verdict instead of
+            // flattening it; everything else stays unconfirmed.
+            if (error instanceof Error &&
+              error.message === "Terminal state unavailable for this login") throw error;
             throw new Error("Terminal state is unconfirmed. Original identity retained; inspect manually. No mutation was resent.");
           }
         }
@@ -208,8 +213,8 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
     } catch (error) {
       if (current()) {
         setReceipt(null); setAvailable(false);
-        setMessage(error instanceof Error && (error.message === "Terminal host is unavailable" ||
-          error.message === "Terminal state unavailable for this login")
+        setMessage(error instanceof Error &&
+          error.message === "Terminal state unavailable for this login"
           ? error.message
           : "Terminal state is unconfirmed or unavailable on this host. Original identity retained; inspect manually. No mutation was resent.");
       }
@@ -255,9 +260,9 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
         catch (error) {
           if (current()) {
             setReceipt(null);
-            setMessage(error instanceof Error && error.message === "Terminal host is unavailable"
-              ? "Terminal host is unavailable. State reads retry automatically; nothing was resent."
-              : "Terminal state is unconfirmed. Input is disabled; only state reads retry automatically.");
+            setMessage(error instanceof Error && error.message === "Terminal state unavailable for this login"
+              ? "Terminal not found for this login. State reads retry automatically; select the original workspace or start a new terminal."
+              : "Terminal state is unconfirmed. State reads retry automatically; nothing was resent.");
           }
         }
         finally { if (current()) { working.current = false; setBusy(false); drainKeys(); } }
@@ -291,6 +296,22 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
         // conflict honestly with the original request ID retained; the user
         // inspects the existing receipt instead of starting a second terminal.
         setMessage("A terminal already exists for this request with different dimensions. Original request ID retained; inspect its receipt. No second terminal was started.");
+        return;
+      }
+      if (workspaceErrorStatus(result.error) === 409 &&
+        (terminalRejectionMessage(result.error) === "workspace_archived" ||
+          terminalRejectionMessage(result.error) === "terminal_workspace_changed" ||
+          terminalRejectionMessage(result.error) === "terminal_workspace_identity_required")) {
+        // Definitive pre-reservation refusals: the backend throws before the
+        // INSERT transaction, so nothing was reserved. Drop the local
+        // reference and let the user fix the cause and try again fresh.
+        writeReference(null, value);
+        const reason = terminalRejectionMessage(result.error);
+        setMessage(reason === "workspace_archived"
+          ? "Workspace is archived. Nothing was started; unarchive it or pick another workspace."
+          : reason === "terminal_workspace_identity_required"
+            ? "Workspace folder ownership changed. Nothing was started; prepare the folder and try again."
+            : "Workspace folder changed. Nothing was started; prepare the folder and try again.");
         return;
       }
       if (workspaceErrorStatus(result.error) === 422) {
@@ -621,10 +642,21 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
         return;
       }
       if (workspaceErrorStatus(result.error) === 404) {
-        // Unknown terminal on the final read: stop was already initiated,
-        // so the outcome is unknown, not a clean no-op. Keep the fence and
-        // report honestly with no resend.
-        setMessage("Stop outcome is unconfirmed. The terminal is gone for this login; inspect state. No stop request is resent automatically.");
+        // Distinguish the two 404 sources: a pre-action ownedRow miss means
+        // no stop was ever initiated (release the fence so the slot is not
+        // stuck); a post-action final-read miss means the outcome is unknown.
+        // The stop route's first ownedRow runs before makeContext/stopContext,
+        // but the response carries no marker — so verify with a readonly poll:
+        // if the terminal is observable, the miss was transient/pre-action
+        // and the fence releases; if it is gone, the outcome stays unknown.
+        try {
+          await poll(end, current, saved);
+          writeReference(saved, next);
+          clearScreen(true);
+          setMessage("Terminal not found for this login, but its state reads. Stop fence released; inspect state or start a new terminal.");
+        } catch {
+          setMessage("Stop outcome is unconfirmed. The terminal is gone for this login; inspect state. No stop request is resent automatically.");
+        }
         return;
       }
       const confirmed = result.error ? null : terminalReceiptFromValue(result.data, saved.start, saved.terminalId);
