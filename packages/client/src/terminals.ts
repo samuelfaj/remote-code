@@ -162,3 +162,21 @@ export function terminalInputAckFromValue(value: unknown, expectedTerminalId: st
     row.terminalId !== expectedTerminalId || row.sequence !== expectedSequence || !inputState(row.state)) return null;
   return { terminalId: expectedTerminalId, sequence: expectedSequence, state: row.state };
 }
+
+// Only these pre-reservation refusals are definitive (sequence never
+// reserved, so input must not be fenced as unknown). terminal_unavailable
+// is ambiguous — liveContext (pre-reservation) and guard (post-reservation)
+// share the message — so it stays unknown to protect ordering.
+const definitiveInputRejections = new Set(["terminal_input_pending", "terminal_input_sequence_conflict", "terminal_input_unknown"]);
+export function terminalInputRejectionIsDefinitive(status: number | null, message: unknown): boolean {
+  return status === 409 && typeof message === "string" && definitiveInputRejections.has(message);
+}
+
+// Eden surfaces route errors as { status, value: { error: message } }.
+export function terminalRejectionMessage(error: unknown): unknown {
+  if (typeof error !== "object" || error === null || !("value" in error)) return null;
+  const value = (error as { value: unknown }).value;
+  if (typeof value === "string") return value;
+  if (typeof value === "object" && value !== null && "error" in value) return (value as { error: unknown }).error;
+  return null;
+}

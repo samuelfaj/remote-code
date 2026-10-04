@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-031 definitive 409 input refusal — no false unknown fence
+
+- Named pre-reservation 409s (terminal_input_pending/sequence_conflict/input_unknown) clear the unknown fence with "Host refused input" instead of blocking further input; post-reservation guard 409s and ambiguous terminal_unavailable stay unknown to protect ordering. New terminalRejectionMessage extracts Eden {status, value:{error}}. Verified: 189 pass/64 skip/0 fail, typecheck + links clean, three review rounds (two defects found and fixed, final clean). X: see checkpoint note.
+
 ## RC-031 queued-input notice — host-buffered input now visible in UI
 
 - TerminalPanel shows "Host buffered input. Poll before sending more." when receipt inputState is queued (backend backpressure/pending-write state); renders only on queued, no behavior change otherwise. New terminal-input-state.test.ts drives shipped terminalReceiptFromValue (queued vs written distinct, unknown rejected). Verified: new test 2/2, full suite 173 pass/64 skip/0 fail, typecheck + doc links clean, independent review clean. X: see checkpoint note.

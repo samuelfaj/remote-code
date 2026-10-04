@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef, useState } from "react";
 import "./styles.css";
 import { TerminalScreen, type TerminalScreenHandle } from "./TerminalScreen";
 import {
-  createApiClient, fileFolderStateFromValue, terminalInputAckFromValue, terminalPollFromValue,
+  createApiClient, fileFolderStateFromValue, terminalInputAckFromValue, terminalInputRejectionIsDefinitive, terminalPollFromValue, terminalRejectionMessage,
   terminalReceiptFromValue, terminalReferenceFromValue, workspaceErrorStatus, workspaceFromValue,
   workspaceLayoutFromValue, workspaceLayoutResponseFromValue,
   type TerminalReceipt, type TerminalReference, type Workspace, type WorkspaceLayout,
@@ -297,6 +297,11 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
       const result = await client(end).api.terminals({ terminalId: saved.terminalId }).input.post({ sequence, text });
       if (!current() || Date.now() >= end) throw new Error("Input outcome unknown");
       if (workspaceErrorStatus(result.error) === 401) onUnauthorized();
+      if (terminalInputRejectionIsDefinitive(workspaceErrorStatus(result.error), terminalRejectionMessage(result.error))) {
+        writeReference(saved, next);
+        setMessage("Host refused input. Nothing was queued; inspect state before trying again.");
+        return;
+      }
       const ack = result.error ? null : terminalInputAckFromValue(result.data, saved.terminalId, sequence);
       if (!ack || ack.state === "unknown") throw new Error("Input outcome unknown");
       writeReference(saved, next);

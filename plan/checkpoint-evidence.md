@@ -1314,3 +1314,10 @@ The historical checkpoint evidence below is retained in its original order and s
 # RC-031 queued-input checkpoint — X attempt 2026-10-04 (UTC)
 
 - **X:** Timeline read @samfajreldines / 458 posts (account confirmed); posts list did not load, so latest-post time unknown and 1h rule unverifiable. Scroll attempt closed the mac-use bridge; browser_status and browser_close both fail with bridge closed. No text entered, nothing submitted. Owned-tab removal unverified.
+
+# RC-031 definitive 409 input refusal — locally verified slice — 2026-10-04 (UTC)
+
+- **Scope:** TerminalPanel send() treats only named pre-reservation 409s (terminal_input_pending, terminal_input_sequence_conflict, terminal_input_unknown) as definitive refusal: restores saved reference, no unknown fence, "Host refused input" message. All other 409s (post-reservation guard, ambiguous terminal_unavailable) keep the unknown fence. Shared helper terminalInputRejectionIsDefinitive(status, message) + terminalRejectionMessage(error) in packages/client.
+- **Evidence:** packages/client/src/terminals.test.ts case covers three definitive + four unknown messages + non-409 statuses + Eden shape extraction. Full suite 189 pass/64 skip/0 fail/2307 assertions; typecheck + doc links clean. Reviews: 01a107bc found post-reservation defect (fixed), 01a107c1 found missing terminal_input_unknown (fixed), 01a107c4 scope check, 01a107c7 final clean.
+- **Falsification:** Initial blanket-409 version would clear fence on post-reservation refusal; caught by review reading backend order (update at :803, guard at :804). Test asserts ambiguous terminal_unavailable stays unknown.
+- **X:** Pending this checkpoint; rule: skip if own post <1h old with timestamp proof.

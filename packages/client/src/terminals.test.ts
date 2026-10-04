@@ -1,7 +1,7 @@
 import { expect, it } from "bun:test";
 import {
   pendingTerminalStartFromValue, terminalReferenceFromValue, terminalReceiptFromValue,
-  terminalPollFromValue, terminalInputAckFromValue,
+  terminalPollFromValue, terminalInputAckFromValue, terminalInputRejectionIsDefinitive, terminalRejectionMessage,
   type PendingTerminalStart, type TerminalReference, type TerminalReceipt, type TerminalPoll,
 } from "./index";
 
@@ -218,4 +218,21 @@ it("confirms only the exact terminal and sequence ack and never upgrades unknown
     delete missing[key];
     expect(terminalInputAckFromValue(missing, terminalId, 1)).toBeNull();
   }
+});
+
+it("treats a 409 input rejection as definitive refusal, never uncertain delivery", () => {
+  expect(terminalInputRejectionIsDefinitive(409, "terminal_input_pending")).toBe(true);
+  expect(terminalInputRejectionIsDefinitive(409, "terminal_input_sequence_conflict")).toBe(true);
+  expect(terminalInputRejectionIsDefinitive(409, "terminal_input_unknown")).toBe(true);
+  // Post-reservation 409s (guard fires after reserving the sequence) stay unknown.
+  // terminal_unavailable is ambiguous (pre-reservation via liveContext or
+  // post-reservation via guard), so it stays unknown to protect ordering.
+  for (const message of ["terminal_closing", "terminal_workspace_changed", "terminal_unavailable", "terminal_not_running"]) {
+    expect(terminalInputRejectionIsDefinitive(409, message)).toBe(false);
+  }
+  for (const status of [null, 200, 401, 404, 503]) expect(terminalInputRejectionIsDefinitive(status, "terminal_input_pending")).toBe(false);
+  expect(terminalInputRejectionIsDefinitive(409, null)).toBe(false);
+  expect(terminalRejectionMessage({ status: 409, value: { error: "terminal_input_pending" } })).toBe("terminal_input_pending");
+  expect(terminalRejectionMessage({ status: 409, value: "terminal_input_pending" })).toBe("terminal_input_pending");
+  expect(terminalRejectionMessage({ status: 409 })).toBeNull();
 });
