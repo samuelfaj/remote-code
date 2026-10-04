@@ -177,7 +177,17 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
       const saved = referenceRef.current;
       if (saved) {
         if (saved.start.workspaceId !== workspace.id) { setMessage("Select the original workspace to inspect its terminal. No new terminal was started."); return; }
-        if (saved.terminalId) await poll(end, current, saved);
+        if (saved.terminalId) {
+          try {
+            await poll(end, current, saved);
+          } catch (error) {
+            // Surface the poll's own verdict instead of flattening it:
+            // host outage and foreign-terminal reads already speak honestly.
+            if (error instanceof Error && (error.message === "Terminal host is unavailable" ||
+              error.message === "Terminal state unavailable for this login")) throw error;
+            throw new Error("Terminal state is unconfirmed. Original identity retained; inspect manually. No mutation was resent.");
+          }
+        }
         else {
           const result = await client(end).api.workspaces({ workspaceId: workspace.id }).terminals.receipts({ requestId: saved.start.requestId }).get();
           if (!current() || Date.now() >= end) throw new Error("Terminal context expired");
@@ -195,8 +205,14 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
         setAvailable(true);
         setMessage("Protected terminal routes are available. Prepare the workspace folder before starting.");
       }
-    } catch {
-      if (current()) { setReceipt(null); setAvailable(false); setMessage("Terminal state is unconfirmed or unavailable on this host. Original identity retained; inspect manually. No mutation was resent."); }
+    } catch (error) {
+      if (current()) {
+        setReceipt(null); setAvailable(false);
+        setMessage(error instanceof Error && (error.message === "Terminal host is unavailable" ||
+          error.message === "Terminal state unavailable for this login")
+          ? error.message
+          : "Terminal state is unconfirmed or unavailable on this host. Original identity retained; inspect manually. No mutation was resent.");
+      }
     } finally { if (current()) { working.current = false; setBusy(false); } }
   }
 

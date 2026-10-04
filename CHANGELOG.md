@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-031 inspect passthrough — manual read inherits poll honesty
+
+- inspect() now surfaces poll's honest 503-host and 404 foreign-terminal messages instead of flattening to generic unconfirmed; other failures keep generic. Static literals only, no server-content interpolation. Verified: typecheck clean, terminal tests 13/13, review clean on success path, allowlist, injection and state reset. X: see checkpoint note.
+
 ## RC-031 poll-503 message — host outage reads honestly on auto-poll
 
 - poll() 503 now throws "Terminal host is unavailable" and the 750ms tick shows it stays auto-retried with nothing resent; other poll failures keep generic. GET-only path, no behavior change. Verified: typecheck clean, terminal tests 13/13, review clean on host-side sources, string safety, inspect nuance and retry continuity. X: see checkpoint note.
