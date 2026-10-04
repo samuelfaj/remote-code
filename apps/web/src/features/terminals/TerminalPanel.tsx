@@ -511,6 +511,7 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
       {reference?.inputUncertain ? <p role="alert">Input delivery remains unknown. No input will be resent automatically.</p> : null}
       {reference?.resizeUncertain ? <p role="alert">Resize outcome remains unknown. The terminal size is unconfirmed and input is blocked; Stop the terminal to release it.</p> : null}
       {reference?.stopRequested ? <p>Stop is unconfirmed. Input stays disabled until the host confirms cleanup.</p> : null}
+      {currentReceipt?.inputState === "queued" ? <p>Host buffered input. Poll before sending more.</p> : null}
       <p data-testid="terminal-host-state">{currentReceipt ? `Host state: ${currentReceipt.state}; cleanup: ${currentReceipt.cleanup}; ${currentReceipt.cols} columns × ${currentReceipt.rows} rows; resize: ${currentReceipt.resizeState}${currentReceipt.exitCode === null ? "" : `; exit code: ${currentReceipt.exitCode}`}` : "Host terminal state is unconfirmed."}</p>
       {gap ? <p>Earlier output was discarded or is unavailable. Only received bytes are shown.</p> : null}
       {currentReceipt?.flow ? <p data-testid="terminal-flow-state">{`Flow: ${currentReceipt.flow.totalBytes} produced, ${currentReceipt.flow.retainedBytes} retained, ${currentReceipt.flow.droppedBytes} dropped.`}</p> : null}

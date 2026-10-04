@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-031 queued-input notice — host-buffered input now visible in UI
+
+- TerminalPanel shows "Host buffered input. Poll before sending more." when receipt inputState is queued (backend backpressure/pending-write state); renders only on queued, no behavior change otherwise. New terminal-input-state.test.ts drives shipped terminalReceiptFromValue (queued vs written distinct, unknown rejected). Verified: new test 2/2, full suite 173 pass/64 skip/0 fail, typecheck + doc links clean, independent review clean. X: see checkpoint note.
+
 ## RC-031 reconnect closeout — pending verification resolved as bounded slice
 
 - Closed the 'reconnect candidate evidence awaits parent final verification' note: run10 reconnect record read back (324033 disconnected bytes, gap disclosed, session retained, mutations unchanged, 6 exited/removed, cleanup true) plus fresh rc031-exit/flow/weblayout reruns on current source re-exercising the same path. Boundary: manual saved-reference restoration, not automatic product restore; observer/gate test-only. Review found a status contradiction in checkpoint-evidence.md ('corrected evidence pending' vs parent-verified); fixed. Follow-up: review confirms closeout. Docs-only, no code changed. X: bridge closed at checkpoint; no tab, nothing submitted, no receipt, no valid <1h skip.
