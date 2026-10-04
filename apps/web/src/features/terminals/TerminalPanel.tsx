@@ -133,6 +133,16 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
     else if (expected.terminalId === null) writeReference({ ...expected, terminalId: value.terminalId }, expected);
   }
 
+  // A post-reservation start failure attaches the host receipt alongside the
+  // error (Eden { status, value: { error, receipt } }). Accept it only when
+  // it validates against this attempt's start identity; otherwise null.
+  function attachedReceipt(error: unknown, expected: TerminalReference): TerminalReceipt | null {
+    if (!error || typeof error !== "object" || !("value" in error)) return null;
+    const value = (error as { value: unknown }).value;
+    if (!value || typeof value !== "object" || !("receipt" in value)) return null;
+    return terminalReceiptFromValue((value as Record<string, unknown>).receipt, expected.start);
+  }
+
   async function poll(end: number, current: () => boolean, expected: TerminalReference) {
     if (!expected.terminalId) throw new Error("Start receipt is pending");
     const offset = cursor.current;
@@ -335,10 +345,30 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
       if (workspaceErrorStatus(result.error) === 503 && terminalRejectionMessage(result.error) === "terminal_capacity") {
         // Ambiguous: the count check throws before INSERT (nothing reserved),
         // but makeContext can throw the same 503 after the reserved row
-        // commits. The response carries no marker, so keep the reference and
-        // report unknown with the request ID retained for receipt inspect.
-        // Retry uses the same ID only via inspect; a fresh start is separate.
+        // commits — and the server attaches a receipt whenever a context
+        // exists. Prefer an attached valid receipt when present; otherwise
+        // keep the reference and report unknown with the request ID retained.
+        const attached = attachedReceipt(result.error, value);
+        if (attached) {
+          acceptReceipt(attached, value);
+          setMessage("Terminal start reported host capacity pressure, but the host receipt confirms state. Inspect it before acting.");
+          return;
+        }
         setMessage("Host may be at terminal capacity. Start outcome is unknown. Original request ID retained; inspect its receipt. No automatic resend.");
+        return;
+      }
+      if (workspaceErrorStatus(result.error) === 503) {
+        // Other 503s may or may not carry a reserved row: post-reservation
+        // failures attach a receipt alongside the error. Prefer it when
+        // present and valid; otherwise keep the reference and report unknown
+        // with the request ID retained for receipt inspect.
+        const attached = attachedReceipt(result.error, value);
+        if (attached) {
+          acceptReceipt(attached, value);
+          setMessage("Terminal start reported a host failure, but the host receipt confirms state. Inspect it before acting.");
+          return;
+        }
+        setMessage("Host failed to start the terminal. Start outcome is unknown. Original request ID retained; inspect its receipt. No automatic resend.");
         return;
       }
       const confirmed = result.error ? null : terminalReceiptFromValue(result.data, value.start);

@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-031 attached-receipt 503s — post-reservation failures confirm state
+
+- start() 503 branches (capacity + generic) now prefer a server-attached valid receipt via a shared attachedReceipt helper when present, else keep reference + unknown. First review caught an orphan-row leak in a clear version; second caught the same leak hiding in the generic branch; receipt-first posture verified twice. Verified: typecheck clean, terminal tests 13/13. X: see checkpoint note.
+
 ## RC-031 capacity-503 stays unknown — ambiguous source keeps reference
 
 - start() on 503 terminal_capacity keeps the reference with unknown + inspect message instead of clearing: the count check throws pre-reservation but makeContext throws the same 503 post-reservation with no response marker, so clearing could orphan a row. First review caught the leak; fixed, follow-up clean. Verified: typecheck clean, terminal tests 13/13. X: see checkpoint note.
