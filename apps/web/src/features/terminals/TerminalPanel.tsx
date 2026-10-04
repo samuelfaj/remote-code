@@ -596,6 +596,7 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
       if (!current() || Date.now() >= end) throw new Error("Terminal context expired");
       if (workspaceErrorStatus(result.error) === 401) onUnauthorized();
       if (workspaceErrorStatus(result.error) === 409) throw new Error("Workspace archived");
+      if (workspaceErrorStatus(result.error) === 503) throw new Error("Layout write failed on this host");
       const confirmed = result.error ? null : workspaceLayoutResponseFromValue(result.data, workspace.id);
       if (!confirmed) throw new Error("Workspace layout not confirmed");
       layoutSavedAt.current = Date.now();
@@ -620,7 +621,9 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
     } catch (error) {
       if (current()) setLayoutMessage(error instanceof Error && error.message === "Workspace archived"
         ? "Workspace is archived. Layout was not saved."
-        : "Layout is unconfirmed. Inspect state; nothing was overwritten blindly.");
+        : error instanceof Error && error.message === "Layout write failed on this host"
+          ? "Layout write failed on this host. Stored layout unchanged; try saving again."
+          : "Layout is unconfirmed. Inspect state; nothing was overwritten blindly.");
     } finally { if (current()) { working.current = false; setBusy(false); } }
   }
 

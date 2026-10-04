@@ -1506,3 +1506,9 @@ The historical checkpoint evidence below is retained in its original order and s
 
 - **X mac-use browser_status 2026-10-04T18:45:00Z:** bridge closed (twentieth consecutive check). No tab, nothing submitted.
 - **X eligibility:** latest own post Sep 30 per same-day cua Space page-HTML read; no post within last hour, <1h rule not blocking. Submission waits on mac-use bridge recovery (user-side Chrome extension reconnect).
+
+# RC-033 PUT-503 message — locally verified slice — 2026-10-04 (UTC)
+
+- **Scope:** saveLayout() PUT 503 throws write-failed; catch maps to stored-unchanged + retry-safe message. Transaction atomicity verified (upsert + read-back in one immediate txn; any throw rolls back). No backend change.
+- **Evidence:** Typecheck clean; terminal tests 2/2. Review 01a1083f clean on all four checks (unchanged holds via txn rollback, retry safe/idempotent, exact-string mapping, branch order).
+- **X:** Bridge check with timestamp follows.

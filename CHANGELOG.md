@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-033 PUT-503 message — failed layout write reads honestly
+
+- saveLayout() PUT 503 now says the write failed with stored layout unchanged and retry safe (single transaction rolls back; retry is an idempotent layout-only PUT). Verified: typecheck clean, terminal tests 2/2, review clean on transaction atomicity, retry safety, string mapping and branch order. X: see checkpoint note.
+
 ## RC-033 corrupt-layout repair — unreadable row seeds empty, save fixes it
 
 - loadLayout() 503 now reads as corrupt stored row with tabs-empty message; saveLayout() seeds empty on 503 and PUTs through (upsert unconditional), so saving repairs the row instead of throwing on its own pre-read. First review caught the unfulfillable promise; fixed, follow-up clean. Verified: typecheck clean, terminal+layout tests 5/5. X: see checkpoint note.
