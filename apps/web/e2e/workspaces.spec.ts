@@ -228,6 +228,70 @@ test("malformed response and missing lookup remain pending without replay", asyn
   ).toHaveLength(1);
 });
 
+test("two browser contexts keep per-device layout selection while sharing tabs", async ({
+  browser,
+  page,
+}) => {
+  // RC-033 per-device focus: both contexts read the same shared layout row,
+  // but switching the local tab on one must not move the other's selection.
+  const suffix = crypto.randomUUID();
+  const name = `RC033 shared ${suffix}`;
+  await signIn(page);
+  await page.getByLabel("Workspace name").fill(name);
+  await page.getByRole("button", { name: "Create workspace" }).click();
+  await expect(page.getByRole("button", { name: `Open workspace ${name}` })).toBeVisible();
+  await page.getByRole("button", { name: `Open workspace ${name}` }).click();
+  await expect(page.getByTestId("selected-workspace")).toContainText(name);
+  // Mount this workspace's terminal panel so it loads the shared layout.
+  await expect(page.getByTestId("terminal-layout-state")).toContainText("No saved layout");
+
+  const listed = await page.request.get(`${apiUrl}/api/workspaces`);
+  const rows = ((await listed.json()) as { workspaces: Array<{ id: string; name: string }> }).workspaces;
+  const workspaceId = rows.find((row) => row.name === name)?.id;
+  expect(workspaceId).toBeTruthy();
+  const seed = await page.request.put(`${apiUrl}/api/workspaces/${workspaceId}/layout`, {
+    data: { tabs: [{ id: "tab-a", kind: "file", targetId: "a.txt" }, { id: "tab-b", kind: "file", targetId: "b.txt" }], activeTabId: "tab-b" },
+  });
+  expect(seed.ok()).toBe(true);
+  // First context read the layout before the seed existed; reload the page
+  // and reopen to force a fresh load of the seeded row.
+  await page.reload();
+  await expect(page.getByTestId("workspace-panel")).toBeVisible();
+  await page.getByRole("button", { name: `Open workspace ${name}` }).click();
+  await expect(page.getByTestId("terminal-layout-state")).toContainText("Shared tabs: 2");
+
+  const otherContext = await browser.newContext();
+  const other = await otherContext.newPage();
+  try {
+    await signIn(other);
+    await other.getByRole("button", { name: `Open workspace ${name}` }).click();
+    await expect(other.getByTestId("selected-workspace")).toContainText(name);
+    await expect(other.getByTestId("terminal-layout-state")).toContainText("Shared tabs: 2");
+    // Both devices render the shared tabs; neither adopts the stored tab-b.
+    await expect(page.getByTestId("terminal-local-tabs")).toContainText("tab-a");
+    await expect(other.getByTestId("terminal-local-tabs")).toContainText("tab-a");
+    await expect(page.getByTestId("terminal-layout-state")).toContainText("this device: tab-a");
+    await expect(other.getByTestId("terminal-layout-state")).toContainText("this device: tab-a");
+    // Switch the local tab on one device only. Count layout PUTs from
+    // here: a regressed click handler that PUTs must fail this test even
+    // though the stored value below already equals tab-b.
+    let layoutPuts = 0;
+    await page.route(`**/api/workspaces/${workspaceId}/layout`, (route) => {
+      if (route.request().method() === "PUT") layoutPuts += 1;
+      return route.continue();
+    });
+    await page.getByRole("button", { name: "Open tab-b" }).click();
+    await expect(page.getByTestId("terminal-layout-state")).toContainText("this device: tab-b");
+    await expect(other.getByTestId("terminal-layout-state")).toContainText("this device: tab-a");
+    expect(layoutPuts).toBe(0);
+    // The shared row still carries the stored selection; no PUT was made.
+    const shared = await page.request.get(`${apiUrl}/api/workspaces/${workspaceId}/layout`);
+    expect(((await shared.json()) as { layout: { activeTabId: string } }).layout.activeTabId).toBe("tab-b");
+  } finally {
+    await otherContext.close();
+  }
+});
+
 test("older host capability blocks create before any workspace POST", async ({
   page,
 }) => {

@@ -512,8 +512,8 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
         <button type="button" disabled={busy || blocked || !storageReady || !workspace || workspace.archived} onClick={() => void saveLayout()}>Save layout</button>
       </div>
       <p data-testid="terminal-layout-state">{layoutMessage || "Layout not loaded for this workspace."}{layout ? ` Shared tabs: ${layout.tabs.length}; this device: ${localTabId ?? "none"}; selection stays on this device.` : ""}</p>
-      {layout && layout.tabs.length > 1 ? <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }} aria-label="Local tabs">
-        {layout.tabs.map((tab) => <button key={tab.id} type="button" disabled={tab.id === localTabId} onClick={() => setLocalTabId(tab.id)}>Open {tab.id}{tab.id === localTabId ? " (this device)" : ""}</button>)}
+      {layout ? <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }} aria-label="Local tabs" data-testid="terminal-local-tabs">
+        {layout.tabs.length === 0 ? <span>No shared tabs yet.</span> : layout.tabs.map((tab) => <button key={tab.id} type="button" disabled={tab.id === localTabId} onClick={() => setLocalTabId(tab.id)}>Open {tab.id}{tab.id === localTabId ? " (this device)" : ""}</button>)}
       </div> : null}
     </>}
   </section>;

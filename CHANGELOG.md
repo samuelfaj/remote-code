@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-033 two-context layout focus E2E — local switch makes zero PUTs
+
+- New Playwright test in workspaces.spec.ts: two isolated browser contexts share one seeded layout row (stored active tab-b); both render shared tabs with local tab-a, a one-sided Open tab-b click moves only the clicking context, a route-level PUT counter asserts zero layout PUTs, and the authoritative row still reads activeTabId tab-b. TerminalPanel always renders the Local-tabs container (empty-state span when zero tabs) with stable testid. Verified: workspaces E2E 13/13, layout unit 8/8, typecheck clean, doc links + whitespace pass; reasoning review found the no-PUT assertion gap (value-only check could miss a same-value PUT) and the PUT-counter fix passed follow-up review clean. RC-002 effect still unknown/unaccepted, untouched, no retry. No deployment. X skipped: Chrome extension disconnected, no tab opened, nothing submitted.
+
 ## RC-033 local tab switcher — per-device tab buttons, no server write
 
 - Terminal panel now renders a Local-tabs button row plus a this-device status line. Clicking a tab calls only local state; the sole layout PUT stays inside merge-save, which still echoes stored active ids. Mobile has no layout consumer, so no mobile writer exists to separate. Verified: typecheck clean, Vite build ok, layout 8/8, static bundle/source check RC033_LOCAL_TABS_PASSED (saved under scratch, rerunnable via node script), reasoning review no defect. Full RC-033 acceptance still open; no deployment. X skipped: Chrome extension disconnected, no tab opened, nothing submitted.
