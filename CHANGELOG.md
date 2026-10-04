@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-033 deleted-workspace message — save on gone workspace reads honestly
+
+- saveLayout() live-GET 404 + PUT 404 both map to "Workspace is gone on this host. Layout was not saved; pick another workspace." Panel B caught the live-GET gap (common deleted case died generic while PUT branch covered only the race); fixed, follow-up clean. Verified: typecheck clean, 49 pass/1 skip unit + panel clean. X: see checkpoint note.
+
 ## RC-031 poll-422 cursor guard — corrupt offset re-reads honestly
 
 - poll() 422 invalid offset now resets display refs and re-reads with gap disclosed (same recovery as offset-ahead); unreachable in normal flow, cheap defense against a misleading generic message. 3-person panel clean. Verified: typecheck clean, terminal tests 13/13. X: see checkpoint note.

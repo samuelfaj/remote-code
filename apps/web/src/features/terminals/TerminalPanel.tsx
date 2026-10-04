@@ -688,6 +688,7 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
       const live = await client(end).api.workspaces({ workspaceId: workspace.id }).get();
       if (!current() || Date.now() >= end) throw new Error("Terminal context expired");
       if (workspaceErrorStatus(live.error) === 401) onUnauthorized();
+      if (workspaceErrorStatus(live.error) === 404) throw new Error("Workspace is gone on this host");
       const liveWorkspace = live.error ? null : workspaceFromValue(live.data);
       if (!liveWorkspace) throw new Error("Workspace layout unavailable");
       if (liveWorkspace.archived) throw new Error("Workspace archived");
@@ -696,6 +697,7 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
       if (workspaceErrorStatus(result.error) === 401) onUnauthorized();
       if (workspaceErrorStatus(result.error) === 409) throw new Error("Workspace archived");
       if (workspaceErrorStatus(result.error) === 503) throw new Error("Layout write failed on this host");
+      if (workspaceErrorStatus(result.error) === 404) throw new Error("Workspace is gone on this host");
       const confirmed = result.error ? null : workspaceLayoutResponseFromValue(result.data, workspace.id);
       if (!confirmed) throw new Error("Workspace layout not confirmed");
       layoutSavedAt.current = Date.now();
@@ -722,7 +724,9 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
         ? "Workspace is archived. Layout was not saved."
         : error instanceof Error && error.message === "Layout write failed on this host"
           ? "Layout write failed on this host. Stored layout unchanged; try saving again."
-          : "Layout is unconfirmed. Inspect state; nothing was overwritten blindly.");
+          : error instanceof Error && error.message === "Workspace is gone on this host"
+            ? "Workspace is gone on this host. Layout was not saved; pick another workspace."
+            : "Layout is unconfirmed. Inspect state; nothing was overwritten blindly.");
     } finally { if (current()) { working.current = false; setBusy(false); } }
   }
 
