@@ -1788,3 +1788,9 @@ The historical checkpoint evidence below is retained in its original order and s
 # RC-031 start-map checkpoint — X attempt 2026-10-04T23:42:39Z (UTC)
 
 - **WHY no post, three gates:** (1) mac-use bridge to signed-in Chrome — CLOSED (2026-10-04T23:42:39Z, 48th consecutive check; status+close both fail, no tab can open); (2) <1h rule — PASS (latest own post Sep 30 per same-day cua Space page-HTML read, four days old); (3) fallback environments — UNAVAILABLE (cua Space local:space-7d25e43636 still a fresh Ubuntu container: no signed-in X session, headless Chromium blocked by X JS wall; posting there needs ungranted credentials, and TWITTER.md forbids substituting methods without user instruction). Gate 1 closed → no submission possible. No tab opened, nothing submitted.
+
+# RC-031 inspect list-GET 404/503 — locally verified slice — 2026-10-05 (UTC)
+
+- **Scope:** inspect() list GET 404 → gone, 503 → login-unavailable, before generic decode; catch identity-maps both. Pure read (workspace→available→SELECT, no mutation). Literals byte-identical to existing sites. No backend change.
+- **Evidence:** Typecheck clean; 50 pass/1 skip. Review 01a10955 clean (route/client order, honesty, no drift — 13 identical uses each, zero fence writes, falsifier tried).
+- **X:** Bridge check with WHY gates + timestamp follows.

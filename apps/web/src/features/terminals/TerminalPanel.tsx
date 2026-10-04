@@ -236,6 +236,8 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
         const result = await client(end).api.workspaces({ workspaceId: workspace.id }).terminals.get();
         if (!current() || Date.now() >= end) throw new Error("Terminal context expired");
         if (workspaceErrorStatus(result.error) === 401) onUnauthorized();
+        if (workspaceErrorStatus(result.error) === 404) throw new Error("Workspace is gone on this host");
+        if (workspaceErrorStatus(result.error) === 503) throw new Error("Terminal login check is unavailable");
         if (result.error || !result.data || !("terminals" in result.data) || !Array.isArray(result.data.terminals)) throw new Error("Protected terminal routes unavailable");
         setAvailable(true);
         setMessage("Protected terminal routes are available. Prepare the workspace folder before starting.");
@@ -246,7 +248,9 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
         setMessage(error instanceof Error &&
           (error.message === "Terminal state unavailable for this login" ||
             error.message === "No terminal receipt is visible to this login" ||
-            error.message === "Terminal state is unconfirmed. State reads retry automatically; nothing was resent.")
+            error.message === "Terminal state is unconfirmed. State reads retry automatically; nothing was resent." ||
+            error.message === "Workspace is gone on this host" ||
+            error.message === "Terminal login check is unavailable")
           ? error.message
           : "Terminal state is unconfirmed or unavailable on this host. Original identity retained; inspect manually. No mutation was resent.");
       }

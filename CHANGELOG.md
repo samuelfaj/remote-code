@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-031 inspect list-GET 404/503 — availability probe reads honestly
+
+- inspect() terminals-list GET now throws gone on 404 and login-unavailable on 503 before generic decode; outer catch identity-maps both. Pure read, literals byte-identical to existing sites. Verified: typecheck clean, 50 pass/1 skip, review clean. X: see checkpoint note.
+
 ## RC-031 start preflight map — refused start reads honestly, not unknown
 
 - start() outer catch now maps the four preflight literals to No-start-sent messages instead of generic preflight-failed text. All four reachable via starting=true preflight, sent=false forced, zero fence writes. 3-person panel clean. Verified: typecheck clean, 50 pass/1 skip. X: see checkpoint note.
