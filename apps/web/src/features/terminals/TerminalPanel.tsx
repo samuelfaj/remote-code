@@ -525,15 +525,20 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
       if (workspaceErrorStatus(result.error) === 401) onUnauthorized();
       if (workspaceErrorStatus(result.error) === 409) {
         // Resize refused on an unsettled terminal: fall back to a readonly
-        // poll for the authoritative receipt instead of failing.
-        const settled = await poll(end, current, saved);
-        if (settled.resizeState === "applied" && settled.cols === wantCols && settled.rows === wantRows) {
-          writeReference(saved, next);
-          acceptReceipt(settled, saved);
-          setMessage(`Host confirms ${settled.cols} columns × ${settled.rows} rows.`);
-        } else {
-          acceptReceipt(settled, next);
-          setMessage("Resize is not complete. Input stays blocked; Stop the terminal to release it.");
+        // poll for the authoritative receipt instead of failing. If the poll
+        // itself throws, the outcome is unknown (fence kept) with no resend.
+        try {
+          const settled = await poll(end, current, saved);
+          if (settled.resizeState === "applied" && settled.cols === wantCols && settled.rows === wantRows) {
+            writeReference(saved, next);
+            acceptReceipt(settled, saved);
+            setMessage(`Host confirms ${settled.cols} columns × ${settled.rows} rows.`);
+          } else {
+            acceptReceipt(settled, next);
+            setMessage("Resize is not complete. Input stays blocked; Stop the terminal to release it.");
+          }
+        } catch {
+          setMessage("Resize outcome is unconfirmed after a refusal. The terminal size is unknown; Stop the terminal to release it.");
         }
         return;
       }
@@ -728,9 +733,15 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
       if (workspaceErrorStatus(result.error) === 409) {
         // Stop refused on an already-settling terminal: fall back to a
         // readonly poll for the authoritative receipt instead of failing.
-        const settled = await poll(end, current, saved);
-        acceptReceipt(settled, next);
-        setMessage(settled.cleanup === "removed" ? "Host confirms the terminal ended and its process was removed." : "Stop is not complete. Inspect state; no automatic stop resend.");
+        // If the poll itself throws, the outcome is unknown (fence kept);
+        // an observable receipt is adopted with a cleanup-branched message.
+        try {
+          const settled = await poll(end, current, saved);
+          acceptReceipt(settled, next);
+          setMessage(settled.cleanup === "removed" ? "Host confirms the terminal ended and its process was removed." : "Stop is not complete. Inspect state; no automatic stop resend.");
+        } catch {
+          setMessage("Stop outcome is unconfirmed after a refusal. The terminal state is unknown for this login; inspect state. No stop request is resent automatically.");
+        }
         return;
       }
       if (workspaceErrorStatus(result.error) === 422) {

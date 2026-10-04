@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-031 409 poll-failure nuance — refused + unreadable stays unknown, fenced
+
+- stop() 409 poll-fallback now catches poll failure with fence-kept unknown message instead of escaping to the generic outer catch (which also wiped the last-known receipt). resize() 409 gets the same guard (reviewer B asymmetry note). 3-person panel clean on fence, consistency and messages. Verified: typecheck clean, terminal tests 13/13. X: see checkpoint note.
+
 ## RC-031 offset-ahead recovery — stale cursor re-reads instead of failing
 
 - poll() 409 terminal_offset_ahead now resets display refs and re-reads the retained window with gap disclosed on the next tick; no fence, no resend. Review clean on termination, consistency, honesty (plus wording-redundancy nits fixed in-slice). Verified: typecheck clean, terminal tests 13/13. X: see checkpoint note.
