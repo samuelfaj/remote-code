@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-031 preflight honesty, trimmed — archived splits + literal unification
+
+- preflight() splits archived/gone-folder causes (starting-gated); send/resize map reachable archived literal to No-sent messages; all throw sites unified to one literal. Panel found stop-blocking + dead-branch defects in broader versions; final scope trimmed, follow-up clean. Verified: typecheck clean, 50 pass/1 skip. X: see checkpoint note.
+
 ## RC-031 wrapper removal — panel calls shared helper directly
 
 - Removed the one-line attachedReceipt wrapper; the call site uses shared terminalAttachedReceipt(result.error, value.start) with identical binding. Net -3 lines, no behavior change. Verified: typecheck clean, 50 pass/1 skip, review clean. X: see checkpoint note.

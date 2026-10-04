@@ -117,11 +117,13 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
     if (!current() || Date.now() >= end) throw new Error("Terminal context expired");
     if (workspaceErrorStatus(result.error) === 401) onUnauthorized();
     const owned = result.error ? null : workspaceFromValue(result.data);
-    if (!owned || owned.id !== workspace.id || starting && owned.archived) throw new Error("Workspace unavailable");
+    if (!owned || owned.id !== workspace.id) throw new Error("Workspace unavailable");
+    if (starting && owned.archived) throw new Error("Workspace is archived");
     if (starting) {
       const folder = await client(end).api.workspaces({ workspaceId: workspace.id }).folder.get();
       if (!current() || Date.now() >= end) throw new Error("Terminal context expired");
       if (workspaceErrorStatus(folder.error) === 401) onUnauthorized();
+      if (workspaceErrorStatus(folder.error) === 404) throw new Error("Workspace is gone on this host");
       if (folder.error || fileFolderStateFromValue(folder.data, workspace.id) !== "provisioned") throw new Error("Prepare the workspace folder first");
     }
     return owned;
@@ -419,7 +421,7 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
     let sent = false;
     try {
       const owned = await preflight(end, current);
-      if (owned.archived) throw new Error("Workspace archived");
+      if (owned.archived) throw new Error("Workspace is archived");
       const fresh = await poll(end, current, saved);
       if (!current() || fresh.state !== "running" || fresh.inputState !== null && fresh.inputState !== "written") throw new Error("Input is not ready");
       const next = { ...saved, inputUncertain: true };
@@ -478,8 +480,13 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
       if (proposal !== undefined && draftRef.current === proposal) setDraft("");
       setReceipt(null);
       setMessage(keyQueue.current.length > 0 ? `Input queued by the host. ${keyQueue.current.length} keystroke(s) waiting.` : "Input queued by the host. This is not confirmation that the command succeeded.");
-    } catch {
-      if (current()) { setReceipt(null); setMessage(sent ? "Input delivery is unknown. Further input is blocked, including after reload. State reads never resend input; inspect or stop the terminal." : "Input preflight or storage failed. No input was sent. Inspect the host before trying again."); }
+    } catch (error) {
+      if (current()) {
+        setReceipt(null);
+        setMessage(error instanceof Error && error.message === "Workspace is archived"
+          ? `${error.message}. No input was sent.`
+          : sent ? "Input delivery is unknown. Further input is blocked, including after reload. State reads never resend input; inspect or stop the terminal." : "Input preflight or storage failed. No input was sent. Inspect the host before trying again.");
+      }
       if (keyQueue.current.length > 0) {
         const dropped = keyQueue.current.length;
         keyQueue.current = []; setQueuedKeys(0);
@@ -523,7 +530,7 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
     let sent = false;
     try {
       const owned = await preflight(end, current);
-      if (owned.archived) throw new Error("Workspace archived");
+      if (owned.archived) throw new Error("Workspace is archived");
       const fresh = await poll(end, current, saved);
       if (!current() || fresh.state !== "running" || fresh.resizeState === "unknown") throw new Error("Resize is not ready");
       const next = { ...saved, resizeUncertain: true };
@@ -590,8 +597,13 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
       writeReference(saved, next);
       acceptReceipt(confirmed, saved);
       setMessage(`Host confirms ${confirmed.cols} columns × ${confirmed.rows} rows.`);
-    } catch {
-      if (current()) { setReceipt(null); setMessage(sent ? "Resize outcome is unknown. Further input and resize are blocked, including after reload. Stop the terminal to release it." : "Resize preflight or storage failed. No resize was sent. Inspect the host before trying again."); }
+    } catch (error) {
+      if (current()) {
+        setReceipt(null);
+        setMessage(error instanceof Error && error.message === "Workspace is archived"
+          ? `${error.message}. No resize was sent.`
+          : sent ? "Resize outcome is unknown. Further input and resize are blocked, including after reload. Stop the terminal to release it." : "Resize preflight or storage failed. No resize was sent. Inspect the host before trying again.");
+      }
     } finally { if (current()) { working.current = false; setBusy(false); } }
   }
 
@@ -629,7 +641,7 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
     working.current = true; setBusy(true);
     try {
       const owned = await preflight(end, current);
-      if (owned.archived) throw new Error("Workspace archived");
+      if (owned.archived) throw new Error("Workspace is archived");
       // Merge, never blind-replace: reload the stored layout first so file,
       // thread and pane entries the terminal panel does not own survive.
       const stored = await client(end).api.workspaces({ workspaceId: workspace.id }).layout.get();
@@ -692,11 +704,11 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
       if (workspaceErrorStatus(live.error) === 404) throw new Error("Workspace is gone on this host");
       const liveWorkspace = live.error ? null : workspaceFromValue(live.data);
       if (!liveWorkspace) throw new Error("Workspace layout unavailable");
-      if (liveWorkspace.archived) throw new Error("Workspace archived");
+      if (liveWorkspace.archived) throw new Error("Workspace is archived");
       const result = await client(end).api.workspaces({ workspaceId: workspace.id }).layout.put(next);
       if (!current() || Date.now() >= end) throw new Error("Terminal context expired");
       if (workspaceErrorStatus(result.error) === 401) onUnauthorized();
-      if (workspaceErrorStatus(result.error) === 409) throw new Error("Workspace archived");
+      if (workspaceErrorStatus(result.error) === 409) throw new Error("Workspace is archived");
       if (workspaceErrorStatus(result.error) === 503) throw new Error("Layout write failed on this host");
       if (workspaceErrorStatus(result.error) === 404) throw new Error("Workspace is gone on this host");
       const confirmed = result.error ? null : workspaceLayoutResponseFromValue(result.data, workspace.id);
@@ -721,7 +733,7 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
         setLayoutMessage(`Layout saved: ${confirmed.tabs.length} tab(s).`);
       }
     } catch (error) {
-      if (current()) setLayoutMessage(error instanceof Error && error.message === "Workspace archived"
+      if (current()) setLayoutMessage(error instanceof Error && error.message === "Workspace is archived"
         ? "Workspace is archived. Layout was not saved."
         : error instanceof Error && error.message === "Layout write failed on this host"
           ? "Layout write failed on this host. Stored layout unchanged; try saving again."
