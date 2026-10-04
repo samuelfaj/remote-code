@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-033 zero-pane E2E — empty panes state proved visible
+
+- New workspaces.spec.ts test: panes-absent seed, reload, reopen, assert visible terminal-local-panes container + 'No panes on this tab.' text. Review found text-only gap (hidden container would pass); fixed with toBeVisible(), follow-up clean. Verified: workspaces E2E 19/19, typecheck clean, links + whitespace pass. Test-only, no shipped code changed. X: extension disconnected at checkpoint; no tab, nothing submitted, no receipt, no valid <1h skip.
+
 ## RC-033 Linux Save-proof fix — stale active-tab assertion replaced, rerun passes
 
 - scripts/run-terminal-linux-browser-proof.ts asserted the retired 'Active tab: terminal-' status line; updated to Shared tabs + local-selection marker with brand-new-layout scoping comment. Real Linux rerun (run rc031-web-cd63e1c9, pinned image): web_terminal_disconnect_reconnect_renderer_resize_and_unknown_outcomes_passed, sourceUnchanged true, browser/vite/api/volume cleanup all true; 1440 case recorded webLayoutSave tabs:1 bound to the live terminal tab. Full-delta reasoning review clean. No shipped app code changed. X: extension disconnected at checkpoint; no tab, nothing submitted, no receipt, no valid <1h skip.

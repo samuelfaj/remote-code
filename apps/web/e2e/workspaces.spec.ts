@@ -640,6 +640,36 @@ test("switching workspaces in the UI loads each workspace layout", async ({
   await expect(page.getByTestId("terminal-local-tabs")).not.toContainText("tab-beta");
 });
 
+test("tab without panes renders the empty panes state", async ({
+  page,
+}) => {
+  // RC-033 zero-pane path: a tab with no panes must render the explicit
+  // empty state instead of a missing section.
+  const suffix = crypto.randomUUID();
+  const name = `RC033 nopane ${suffix}`;
+  await signIn(page);
+  await page.getByLabel("Workspace name").fill(name);
+  await page.getByRole("button", { name: "Create workspace" }).click();
+  await expect(page.getByRole("button", { name: `Open workspace ${name}` })).toBeVisible();
+  await page.getByRole("button", { name: `Open workspace ${name}` }).click();
+  await expect(page.getByTestId("terminal-layout-state")).toContainText("No saved layout");
+
+  const listed = await page.request.get(`${apiUrl}/api/workspaces`);
+  const rows = ((await listed.json()) as { workspaces: Array<{ id: string; name: string }> }).workspaces;
+  const workspaceId = rows.find((row) => row.name === name)?.id;
+  expect(workspaceId).toBeTruthy();
+  const seed = await page.request.put(`${apiUrl}/api/workspaces/${workspaceId}/layout`, {
+    data: { tabs: [{ id: "tab-solo", kind: "file", targetId: "solo.txt" }], activeTabId: "tab-solo" },
+  });
+  expect(seed.ok()).toBe(true);
+  await page.reload();
+  await expect(page.getByTestId("workspace-panel")).toBeVisible();
+  await page.getByRole("button", { name: `Open workspace ${name}` }).click();
+  await expect(page.getByTestId("terminal-local-tabs")).toContainText("tab-solo");
+  await expect(page.getByTestId("terminal-local-panes")).toBeVisible();
+  await expect(page.getByTestId("terminal-local-panes")).toContainText("No panes on this tab.");
+});
+
 test("older host capability blocks create before any workspace POST", async ({
   page,
 }) => {
