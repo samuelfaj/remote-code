@@ -428,6 +428,14 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
         setMessage("Host rejected the size as invalid. Nothing changed; fix the dimensions and try again.");
         return;
       }
+      if (workspaceErrorStatus(result.error) === 404) {
+        // Unknown terminal for this login: clear the fence (this login can
+        // never observe it) and clear the screen of its stale bytes.
+        writeReference(saved, next);
+        clearScreen(true);
+        setMessage("Terminal not found for this login. Nothing changed; select the original workspace or start a new terminal.");
+        return;
+      }
       const confirmed = result.error ? null : terminalReceiptFromValue(result.data, saved.start, saved.terminalId);
       if (!confirmed || confirmed.resizeState !== "applied" || confirmed.cols !== wantCols || confirmed.rows !== wantRows) throw new Error("Resize outcome unknown");
       writeReference(saved, next);
@@ -586,6 +594,13 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
         // the locally set stop fence and let the user inspect or retry.
         writeReference(saved, next);
         setMessage("Host rejected the stop request as invalid. Nothing changed; inspect state before trying again.");
+        return;
+      }
+      if (workspaceErrorStatus(result.error) === 404) {
+        // Unknown terminal on the final read: stop was already initiated,
+        // so the outcome is unknown, not a clean no-op. Keep the fence and
+        // report honestly with no resend.
+        setMessage("Stop outcome is unconfirmed. The terminal is gone for this login; inspect state. No stop request is resent automatically.");
         return;
       }
       const confirmed = result.error ? null : terminalReceiptFromValue(result.data, saved.start, saved.terminalId);

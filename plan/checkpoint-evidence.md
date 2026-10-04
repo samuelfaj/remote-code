@@ -1451,3 +1451,9 @@ The historical checkpoint evidence below is retained in its original order and s
 
 - **X mac-use browser_status 2026-10-04T18:01:21Z:** bridge closed (fifteenth consecutive check). No tab, nothing submitted.
 - **X eligibility:** latest own post Sep 30 per same-day cua Space page-HTML read; no post within last hour, <1h rule not blocking. Submission waits on mac-use bridge recovery (user-side Chrome extension reconnect).
+
+# RC-031 resize-404 vs stop-404 split — locally verified slice — 2026-10-04 (UTC)
+
+- **Scope:** resize() 404 clears fence + screen (definitive, pre-update). stop() 404 keeps stopRequested fence with honest unknown message + no resend (second ownedRow at :861 runs after stopContext at :859, so 404 may be post-action). No backend change.
+- **Evidence:** Typecheck clean; terminal tests 13/13. Review 01a10817 found stop-404 overbroad defect (post-action 404 misclassified); corrected to unknown posture. Follow-up 01a10819 clean on fence, message, order, masking.
+- **X:** Bridge check with timestamp follows.

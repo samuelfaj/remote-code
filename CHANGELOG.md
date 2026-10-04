@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-031 resize-404 fence clear, stop-404 stays unknown — definitive split
+
+- resize() on 404 clears the fence + screen (definitive: ownedRow before update). stop() on 404 keeps the fence with an honest unknown message (404 may fire after stopContext, so "nothing changed" would lie). First review caught the overbroad stop-404 clear; fixed, follow-up clean. Verified: typecheck clean, terminal tests 13/13. X: see checkpoint note.
+
 ## RC-031 send-404 fence clear — foreign terminal stops blocking input
 
 - send() on 404 now clears the fence with an honest not-found message and clears the screen (stale bytes belong to an unobservable terminal); this login could never observe it, so blocking forever was a stuck fence. Verified: typecheck clean, terminal tests 13/13, review clean on reservation order, screen consistency, gate scope and recovery paths. X: see checkpoint note.
