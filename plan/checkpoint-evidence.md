@@ -1618,3 +1618,7 @@ The historical checkpoint evidence below is retained in its original order and s
 - **Scope:** saveLayout() live-GET 404 (common deleted case) + PUT 404 (delete race) both throw/map "Workspace is gone on this host" with pick-another-workspace recovery. No write on 404 (throws before INSERT). No backend change.
 - **Evidence:** Typecheck clean; 49 pass/1 skip unit. 3-person panel: A clean (PUT-404 definitive/order/message/no-fence), B found live-GET gap defect (fixed, one shared catch literal), C clean (2-hunk scope). Follow-up 01a10899 confirmed.
 - **X:** Bridge check with WHY gates + timestamp follows.
+
+# RC-033 deleted-workspace checkpoint — X attempt 2026-10-04T20:31:01Z (UTC)
+
+- **WHY no post, three gates:** (1) mac-use bridge to signed-in Chrome — CLOSED (2026-10-04T20:31:01Z, 31st consecutive check; status+close both fail, no tab can open); (2) <1h rule — PASS (latest own post Sep 30 per same-day cua Space page-HTML read, four days old); (3) fallback environments — UNAVAILABLE (cua Space local:space-7d25e43636 still a fresh Ubuntu container: no signed-in X session, headless Chromium blocked by X JS wall; posting there needs ungranted credentials, and TWITTER.md forbids substituting methods without user instruction). Gate 1 closed → no submission possible. No tab opened, nothing submitted.
