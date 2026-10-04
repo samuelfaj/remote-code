@@ -410,6 +410,13 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
         }
         return;
       }
+      if (workspaceErrorStatus(result.error) === 422) {
+        // Invalid dims shape: the backend validates before touching resize
+        // state, so clear the locally set fence and let the user fix and retry.
+        writeReference(saved, next);
+        setMessage("Host rejected the size as invalid. Nothing changed; fix the dimensions and try again.");
+        return;
+      }
       const confirmed = result.error ? null : terminalReceiptFromValue(result.data, saved.start, saved.terminalId);
       if (!confirmed || confirmed.resizeState !== "applied" || confirmed.cols !== wantCols || confirmed.rows !== wantRows) throw new Error("Resize outcome unknown");
       writeReference(saved, next);

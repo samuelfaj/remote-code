@@ -1418,3 +1418,9 @@ The historical checkpoint evidence below is retained in its original order and s
 
 - **X mac-use:** Bridge still closed (twelfth consecutive check). No tab, nothing submitted.
 - **X eligibility (same-day Space evidence):** Latest own post Sep 30; <1h rule does not block. Submission waits on mac-use bridge recovery (user-side Chrome extension reconnect).
+
+# RC-031 resize-422 fence clear — locally verified slice — 2026-10-04 (UTC)
+
+- **Scope:** resize() 422 invalid dims clears optimistically set resizeUncertain fence (Elysia VALIDATION fires before update at :840) with honest message; mirrors send-422/start-422. No backend change.
+- **Evidence:** Typecheck clean; terminal tests 13/13. Review 01a10807 clean on all four checks (pre-state-change, fence safety, status-only gate, symmetry).
+- **X:** Bridge + cua checks follow with timestamp.

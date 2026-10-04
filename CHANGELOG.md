@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-031 resize-422 fence clear — invalid size keeps terminal usable
+
+- resize() on 422 now clears the optimistically set fence (backend validates before touching resize state) with an honest message; mirrors send-422/start-422. Verified: typecheck clean, terminal tests 13/13, review clean on state order, fence safety, gate scope and symmetry. X: see checkpoint note.
+
 ## RC-031 send-422 fence clear — invalid input keeps input usable
 
 - send() on 422 now clears the optimistically set uncertainty fence (backend validates before reserving) with an honest message; queued keys drain in order. Verified: typecheck clean, terminal tests 13/13, review clean on reservation order, fence safety, gate scope and queue FIFO. X: see checkpoint note.
