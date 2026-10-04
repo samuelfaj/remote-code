@@ -1162,3 +1162,27 @@ it.skipIf(process.platform === "linux")("reports Linux-only folder boundary as u
   const { app, workspaceId } = setup();
   expect((await request(app, `/${workspaceId}/files`, ownerToken)).status).toBe(501);
 });
+
+it.skipIf(process.platform !== "linux")("stops file reads and writes after logout and after session expiry on Linux", async () => {
+  const { app, databasePath, workspaceId } = setup();
+  await provision(app, workspaceId);
+  // Empty folder lists 200 with no entries — the known-good baseline before
+  // exercising denials.
+  expect((await request(app, `/${workspaceId}/files`, ownerToken)).status).toBe(200);
+  // Expired session row: same denial shape as a missing session.
+  const stale = "c".repeat(64);
+  const staleDb = new Database(databasePath);
+  try {
+    staleDb.query("INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)")
+      .run(createHash("sha256").update(stale).digest("hex"), "alice", Date.now() - 1000);
+  } finally { staleDb.close(); }
+  expect((await request(app, `/${workspaceId}/files`, stale)).status).toBe(401);
+  expect((await request(app, `/${workspaceId}/files`, stale, "POST", { requestId: crypto.randomUUID(), path: "x.txt", content: "x" })).status).toBe(401);
+  // Logout deletes alice's sessions: the owner cookie is now unauthorized.
+  const logout = await app.handle(new Request("https://localhost/api/auth/logout", {
+    method: "POST", headers: { cookie: `remotecode_session=${ownerToken}`, "content-type": "application/json" }, body: JSON.stringify({}),
+  }));
+  expect([200, 204].includes(logout.status)).toBe(true);
+  expect((await request(app, `/${workspaceId}/files`, ownerToken)).status).toBe(401);
+  expect((await request(app, `/${workspaceId}/files`, ownerToken, "POST", { requestId: crypto.randomUUID(), path: "y.txt", content: "y" })).status).toBe(401);
+});

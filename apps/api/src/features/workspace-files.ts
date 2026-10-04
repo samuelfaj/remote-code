@@ -3,7 +3,7 @@ import { dlopen, FFIType } from "bun:ffi";
 import { Database } from "bun:sqlite";
 import { closeSync, constants, fchmodSync, fchownSync, fsyncSync, fstatSync, readFileSync, readSync, readdirSync, statSync, writeSync } from "node:fs";
 import { Elysia, t } from "elysia";
-import { sessionUserId } from "./auth";
+import { sessionExpiresAt, sessionTokenHash, sessionUserId } from "./auth";
 import { fileRequestSchemaMatches } from "./file-requests";
 import { withProvisionedWorkspaceFolder } from "./workspace-folders";
 
@@ -157,8 +157,26 @@ function errorStatus(error: unknown) {
 }
 
 export function workspaceFilesFeature(databasePath: string, syncDirectory: (fd: number) => void = fsyncSync) {
-  const routes = new Elysia().get("/api/workspaces/:workspaceId/files", ({ params, query, request, set }) => {
+  // Session-bound ownership like the layout routes: every file call must
+  // present a live session (user + token + expiry). Logout, expiry or
+  // revocation stops reads and writes even with a valid workspace id.
+  function liveUserId(request: Request): string | null {
     const userId = sessionUserId(databasePath, request);
+    const tokenHash = sessionTokenHash(request);
+    const expiresAt = sessionExpiresAt(databasePath, request);
+    if (!userId || !tokenHash || !expiresAt) return null;
+    const db = new Database(databasePath, { readonly: true, create: false });
+    try {
+      const live = db.query<{ expires_at: number }, [string, string]>(
+        "SELECT expires_at FROM sessions WHERE user_id = ? AND token_hash = ?",
+      ).get(userId, tokenHash);
+      if (!live || live.expires_at !== expiresAt || live.expires_at <= Date.now()) return null;
+      return userId;
+    } catch { return null; }
+    finally { db.close(); }
+  }
+  const routes = new Elysia().get("/api/workspaces/:workspaceId/files", ({ params, query, request, set }) => {
+    const userId = liveUserId(request);
     if (!userId) { set.status = 401; return { error: "unauthorized" as const }; }
     const components = relativeComponents(query.path, false);
     if (components === null) { set.status = 400; return { error: "invalid_path" as const }; }
@@ -174,7 +192,7 @@ export function workspaceFilesFeature(databasePath: string, syncDirectory: (fd: 
     params: t.Object({ workspaceId: t.String({ format: "uuid", minLength: 36, maxLength: 36 }) }),
     query: t.Object({ path: t.Optional(t.String({ maxLength: 4096 })) }),
   }).get("/api/workspaces/:workspaceId/files/content", ({ params, query, request, set }) => {
-    const userId = sessionUserId(databasePath, request);
+    const userId = liveUserId(request);
     if (!userId) { set.status = 401; return { error: "unauthorized" as const }; }
     const components = relativeComponents(query.path, true);
     if (!components) { set.status = 400; return { error: "invalid_path" as const }; }
@@ -190,7 +208,7 @@ export function workspaceFilesFeature(databasePath: string, syncDirectory: (fd: 
     params: t.Object({ workspaceId: t.String({ format: "uuid", minLength: 36, maxLength: 36 }) }),
     query: t.Object({ path: t.Optional(t.String({ maxLength: 4096 })) }),
   }).post("/api/workspaces/:workspaceId/files", ({ params, body, request, set }) => {
-    const userId = sessionUserId(databasePath, request);
+    const userId = liveUserId(request);
     if (!userId) { set.status = 401; return { error: "unauthorized" as const }; }
     const id = body.requestId.toLowerCase();
     const path = relativeComponents(body.path, true);
@@ -267,7 +285,7 @@ export function workspaceFilesFeature(databasePath: string, syncDirectory: (fd: 
     params: t.Object({ workspaceId: t.String({ format: "uuid", minLength: 36, maxLength: 36 }) }),
     body: t.Object({ requestId: t.String({ format: "uuid", minLength: 36, maxLength: 36 }), path: t.String({ minLength: 1, maxLength: 4096 }), content: t.String() }),
   }).put("/api/workspaces/:workspaceId/files/content", ({ params, body, request, set }) => {
-    const userId = sessionUserId(databasePath, request);
+    const userId = liveUserId(request);
     if (!userId) { set.status = 401; return { error: "unauthorized" as const }; }
     const id = body.requestId.toLowerCase();
     const path = relativeComponents(body.path, true);
@@ -362,7 +380,7 @@ export function workspaceFilesFeature(databasePath: string, syncDirectory: (fd: 
     body: t.Object({ requestId: t.String({ format: "uuid", minLength: 36, maxLength: 36 }), path: t.String({ minLength: 1, maxLength: 4096 }),
       content: t.String(), expectedVersion: t.String({ minLength: 64, maxLength: 64, pattern: "^[0-9a-fA-F]{64}$" }) }),
   }).post("/api/workspaces/:workspaceId/files/move", ({ params, body, request, set }) => {
-    const userId = sessionUserId(databasePath, request);
+    const userId = liveUserId(request);
     if (!userId) { set.status = 401; return { error: "unauthorized" as const }; }
     const id = body.requestId.toLowerCase();
     const source = relativeComponents(body.sourcePath, true);
@@ -456,7 +474,7 @@ export function workspaceFilesFeature(databasePath: string, syncDirectory: (fd: 
     body: t.Object({ requestId: t.String({ format: "uuid", minLength: 36, maxLength: 36 }), sourcePath: t.String({ minLength: 1, maxLength: 4096 }),
       destinationPath: t.String({ minLength: 1, maxLength: 4096 }), expectedVersion: t.String({ minLength: 64, maxLength: 64, pattern: "^[0-9a-fA-F]{64}$" }) }),
   }).get("/api/workspaces/:workspaceId/files/receipts/:requestId", ({ params, request, set }) => {
-    const userId = sessionUserId(databasePath, request);
+    const userId = liveUserId(request);
     if (!userId) { set.status = 401; return { error: "unauthorized" as const }; }
     const requestId = params.requestId.toLowerCase();
     if (!canonicalUuid.test(requestId)) { set.status = 400; return { error: "invalid_request_id" as const }; }
