@@ -148,6 +148,27 @@ it("stops layout access after logout and after session expiry", async () => {
   seedSession("b".repeat(64), "bob");
 });
 
+it("refuses layout writes on an archived workspace while reads stay intact", async () => {
+  seedSession("a".repeat(64), "alice");
+  const created = await call("/api/workspaces", cookieA, "POST", { name: `layout-h-${randomUUID()}`, requestId: randomUUID() });
+  expect(created.status).toBe(201);
+  const listed = await call("/api/workspaces", cookieA);
+  const workspaceId = listed.body.workspaces.find((row: any) => row.name.startsWith("layout-h-")).id as string;
+  const layout = { tabs: [{ id: "t1", kind: "file", targetId: "a.txt" }], activeTabId: "t1" };
+  expect((await call(`/api/workspaces/${workspaceId}/layout`, cookieA, "PUT", layout)).status).toBe(200);
+  // Archive the workspace through the shipped route.
+  const archived = await call(`/api/workspaces/${workspaceId}`, cookieA, "PATCH", { requestId: randomUUID(), archived: true });
+  expect(archived.status).toBe(200);
+  // Writes now fail read-only without effect; retry with a *different* valid
+  // layout so the readback below catches a rejected PUT that rewrites the
+  // row anyway. The saved row must read back unchanged.
+  const other = { tabs: [{ id: "t2", kind: "terminal", targetId: "term-9" }], activeTabId: "t2" };
+  const retry = await call(`/api/workspaces/${workspaceId}/layout`, cookieA, "PUT", other);
+  expect(retry.status).toBe(409);
+  expect(retry.body).toEqual({ error: "workspace_archived" });
+  expect((await call(`/api/workspaces/${workspaceId}/layout`, cookieA)).body).toEqual({ workspaceId, layout });
+});
+
 it("saves two panes and restores them after reopen without moving the other workspace", async () => {
   seedSession("a".repeat(64), "alice");
   const created = await call("/api/workspaces", cookieA, "POST", { name: `layout-e-${randomUUID()}`, requestId: randomUUID() });

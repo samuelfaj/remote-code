@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-033 archived layout test — writes refuse 409, reads stay intact
+
+- New workspace-layout.test.ts case: create, save, archive via shipped PATCH, retry PUT with a different valid layout (t2/terminal) expecting 409 workspace_archived, GET still returns the original row. Review found the identical-payload gap (rewrite-same-content regression undetectable); fixed, follow-up clean. Verified: layout 6/6, full suite 173 pass/64 skip, typecheck clean, links + whitespace pass. Test-only, no shipped code changed. X: extension connected briefly, timeline read 30 Sep latest (>1h eligible), composer opened, then bridge closed mid-post; no text entered, nothing submitted; owned-tab cleanup unverifiable (browser_status + browser_close both fail). No receipt.
+
 ## RC-033 panes container across tab shapes — single pane and empty state render
 
 - Local-panes container now mounts whenever a local tab is selected: multi/single-pane buttons, explicit "No panes on this tab." empty state. Pane E2E asserts single-pane container after tab switch on one device and two-pane container on the other. Falsification: old >1-only conditional fails the new assertion; fix verified by full 15/15 E2E, typecheck, layout 8/8, links + whitespace clean; reasoning review clean. X skipped: extension disconnected (browser_status fail, no tab, nothing submitted); no timeline check possible.
