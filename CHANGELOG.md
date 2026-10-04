@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-033 Linux Save-proof fix — stale active-tab assertion replaced, rerun passes
+
+- scripts/run-terminal-linux-browser-proof.ts asserted the retired 'Active tab: terminal-' status line; updated to Shared tabs + local-selection marker with brand-new-layout scoping comment. Real Linux rerun (run rc031-web-cd63e1c9, pinned image): web_terminal_disconnect_reconnect_renderer_resize_and_unknown_outcomes_passed, sourceUnchanged true, browser/vite/api/volume cleanup all true; 1440 case recorded webLayoutSave tabs:1 bound to the live terminal tab. Full-delta reasoning review clean. No shipped app code changed. X: extension disconnected at checkpoint; no tab, nothing submitted, no receipt, no valid <1h skip.
+
 ## RC-033 Linux proof refresh — current source passes pinned-image slice
 
 - Reran scripts/run-layout-proof.ts against current source (read-only bind mount, pinned oven/bun 1.3.13): workspace_layout_slice_passed, api + volume cleanup true, evidence.json in scratch. Review found stale 'not panes' scope text contradicting the pane assertions; fixed to tab+pane API-level scope with UI/archived/mobile exclusions, rerun passed, follow-up clean. X: bridge closed on snapshot again (connected:true then disconnected); no timeline read, nothing submitted, no owned tab. No receipt, no valid <1h skip.

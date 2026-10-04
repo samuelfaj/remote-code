@@ -235,7 +235,10 @@ try {
       await page.getByRole("button", { name: "Save layout", exact: true }).click();
       await expect(page.getByTestId("terminal-layout-state")).toContainText("Layout saved: 1 tab(s).", { timeout: 20000 });
       const layoutState = await page.getByTestId("terminal-layout-state").textContent();
-      if (!layoutState?.includes("Active tab: terminal-")) throw Error("Saved layout did not activate the terminal tab");
+      // Per-device selection: the panel keeps its own local selection and
+      // echoes the stored active ids back, so the UI reports the shared tab
+      // count plus the this-device marker instead of a stored active tab.
+      if (!layoutState?.includes("Shared tabs: 1") || !layoutState?.includes("selection stays on this device")) throw Error("Saved layout did not confirm shared tabs with local selection");
       const savedTerminalId = (await readRef()).terminalId;
       const layoutRow = state().terminals.length >= 0
         ? JSON.parse(command("docker", "exec", id, "bun", "-e",
@@ -244,6 +247,10 @@ try {
       const own = layoutRow.find((row: any) => row.workspace_id === workspaceId);
       if (!own) throw Error("No layout row for this workspace after Save layout");
       const parsed = JSON.parse(own.layout);
+      // Brand-new layout: the single fresh terminal tab is active. On later
+      // merge-saves the stored active ids echo back unchanged (per-device
+      // selection), so only assert the tab binding here, not a universal
+      // active-tab rule.
       if (parsed.tabs.length !== 1 || parsed.tabs[0].kind !== "terminal" || parsed.tabs[0].targetId !== savedTerminalId ||
         parsed.activeTabId !== parsed.tabs[0].id) throw Error(`Saved layout row mismatch: ${own.layout.slice(0, 200)}`);
       (globalThis as any).__rc033WebLayoutSave = { tabs: parsed.tabs.length, activeTabId: parsed.activeTabId };
