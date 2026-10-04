@@ -41,6 +41,11 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
   const [queuedKeys, setQueuedKeys] = useState(0);
   const [layout, setLayout] = useState<WorkspaceLayout | null>(null);
   const [layoutMessage, setLayoutMessage] = useState("");
+  // This device's own tab selection. The shared layout row stores tabs/panes;
+  // the active ids it carries belong to whichever client saved last, so this
+  // device never adopts them and never writes its own selection back —
+  // switching tabs here cannot move another device's focus.
+  const [localTabId, setLocalTabId] = useState<string | null>(null);
   const layoutSavedAt = useRef(0);
   const keyQueue = useRef<string[]>([]);
   const sameWorkspace = reference?.start.workspaceId === workspace?.id;
@@ -199,7 +204,7 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
 
   useLayoutEffect(() => {
     epoch.current++; working.current = false; setBusy(false); setReceipt(null); setAvailable(false);
-    clearScreen(false); setDraft(""); setLayout(null); setLayoutMessage("");
+    clearScreen(false); setDraft(""); setLayout(null); setLocalTabId(null); setLayoutMessage("");
     if (workspace && !blocked) {
       void inspect();
       const current = currentCheck(); const end = Date.now() + budgetMs;
@@ -373,13 +378,11 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
     // Never adopt it, or one device's selection hijacks this device's focus.
     // Fall back to the first stored tab; keep a purely local selection.
     if (current()) {
-      const tabsOnly = parsed ? {
-        tabs: parsed.tabs,
-        activeTabId: parsed.tabs[0]?.id ?? null,
-        ...(parsed.panes === undefined ? {} : { panes: parsed.panes, activePaneId: null }),
-      } : null;
-      setLayout(tabsOnly);
-      setLayoutMessage(tabsOnly ? `Layout restored: ${tabsOnly.tabs.length} tab(s).` : "No saved layout for this workspace.");
+      setLayout(parsed);
+      // Local selection defaults to the first shared tab; a stored active id
+      // from another device is never adopted.
+      setLocalTabId(parsed ? parsed.tabs[0]?.id ?? null : null);
+      setLayoutMessage(parsed ? `Layout restored: ${parsed.tabs.length} tab(s).` : "No saved layout for this workspace.");
     }
   }
 
@@ -439,7 +442,14 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
       const confirmed = result.error ? null : workspaceLayoutResponseFromValue(result.data, workspace.id);
       if (!confirmed) throw new Error("Workspace layout not confirmed");
       layoutSavedAt.current = Date.now();
-      if (current()) { setLayout(confirmed); setLayoutMessage(`Layout saved: ${confirmed.tabs.length} tab(s).`); }
+      if (current()) {
+        // Keep rendering the shared tabs, but keep this device's own
+        // selection: a confirmed save must not move local focus to the
+        // stored active id another device may have written.
+        setLayout(confirmed);
+        setLocalTabId((prior) => prior !== null && confirmed.tabs.some((tab) => tab.id === prior) ? prior : confirmed.tabs[0]?.id ?? null);
+        setLayoutMessage(`Layout saved: ${confirmed.tabs.length} tab(s).`);
+      }
     } catch {
       if (current()) setLayoutMessage("Layout is unconfirmed. Inspect state; nothing was overwritten blindly.");
     } finally { if (current()) { working.current = false; setBusy(false); } }
@@ -501,7 +511,10 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
         <button type="button" disabled={busy || !canInput} onClick={() => void send("\x03")}>Send Ctrl+C</button>
         <button type="button" disabled={busy || blocked || !storageReady || !workspace || workspace.archived} onClick={() => void saveLayout()}>Save layout</button>
       </div>
-      <p data-testid="terminal-layout-state">{layoutMessage || "Layout not loaded for this workspace."}{layout ? ` Shared tabs: ${layout.tabs.length}; selection stays on this device.` : ""}</p>
+      <p data-testid="terminal-layout-state">{layoutMessage || "Layout not loaded for this workspace."}{layout ? ` Shared tabs: ${layout.tabs.length}; this device: ${localTabId ?? "none"}; selection stays on this device.` : ""}</p>
+      {layout && layout.tabs.length > 1 ? <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }} aria-label="Local tabs">
+        {layout.tabs.map((tab) => <button key={tab.id} type="button" disabled={tab.id === localTabId} onClick={() => setLocalTabId(tab.id)}>Open {tab.id}{tab.id === localTabId ? " (this device)" : ""}</button>)}
+      </div> : null}
     </>}
   </section>;
 }

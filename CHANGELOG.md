@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-033 local tab switcher — per-device tab buttons, no server write
+
+- Terminal panel now renders a Local-tabs button row plus a this-device status line. Clicking a tab calls only local state; the sole layout PUT stays inside merge-save, which still echoes stored active ids. Mobile has no layout consumer, so no mobile writer exists to separate. Verified: typecheck clean, Vite build ok, layout 8/8, static bundle/source check RC033_LOCAL_TABS_PASSED (saved under scratch, rerunnable via node script), reasoning review no defect. Full RC-033 acceptance still open; no deployment. X skipped: Chrome extension disconnected, no tab opened, nothing submitted.
+
 ## RC-033 per-device selection — web panel keeps focus local, merge-save echoes stored selection
 
 - Terminal panel `loadLayout` no longer adopts the server's activeTabId/activePaneId: it renders shared tabs/panes but selects the first stored tab locally with no active pane, so one device's saved selection cannot hijack another device's focus. `saveLayout` merge echoes stored active ids back unchanged (brand-new layout only picks its fresh terminal tab; pruned selection falls back to first surviving tab), preserving file/thread tabs, dense pane re-index and stale-read guard. Status line now reports shared tab count plus local-selection note. Verified: typecheck clean, layout 8/8 (incl new round-trip/selection-preservation test), full suite 172 pass/64 skip, Vite build ok, doc links + whitespace pass, two reasoning reviews closed (first caught tautological test + spread-shape defect, both fixed; follow-up found no defect). Full RC-033 (mobile focus journey) still open; no deployment. X post skipped: mac-use Chrome extension disconnected at checkpoint, no tab opened, nothing submitted.
