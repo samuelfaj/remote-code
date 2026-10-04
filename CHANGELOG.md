@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-031 start conflict message — same-ID different-dims reported honestly
+
+- start() on 409 request_id_conflict now reports the existing terminal with the original request ID retained instead of a generic unknown; no second POST, inspect receipt path intact. First review caught an unreachable receipt-lookup recovery (validator binds stored dims); fixed to honest message, follow-up clean. Verified: typecheck clean, terminal tests 13/13, full suite follows at push. X: see checkpoint note.
+
 ## RC-031 pending-input wait message — backpressure tells user to wait
 
 - Definitive terminal_input_pending refusal now says "Host is still writing the previous input. Wait for the next state poll, then try again" instead of the generic refused text; fence behavior unchanged. Verified: typecheck clean, terminal tests 13/13, review clean. X: see checkpoint note.

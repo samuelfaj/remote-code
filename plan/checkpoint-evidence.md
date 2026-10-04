@@ -1365,3 +1365,9 @@ The historical checkpoint evidence below is retained in its original order and s
 # RC-031 wait-message checkpoint — X attempt 2026-10-04 (UTC)
 
 - **X:** Bridge still closed (seventh consecutive check this session). No tab, no timeline read, no 1h verification, nothing submitted.
+
+# RC-031 start conflict message — locally verified slice — 2026-10-04 (UTC)
+
+- **Scope:** start() 409 request_id_conflict (same request ID, different dims) reports honestly with original request ID retained; no second POST, no false recovery, inspect() receipt path intact. No backend change.
+- **Evidence:** Typecheck clean; terminal tests 13/13. Review 01a107ea found unreachable-lookup defect (validator dims binding); corrected to message-only. Follow-up 01a107eb clean on all four checks. Full suite runs at push below.
+- **X:** Pending this checkpoint; bridge check follows.

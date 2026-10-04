@@ -260,6 +260,15 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
       const result = await client(end).api.workspaces({ workspaceId: workspace.id }).terminals.post({ requestId: value.start.requestId, cols: value.start.cols, rows: value.start.rows });
       if (!current() || Date.now() >= end) throw new Error("Start outcome unknown");
       if (workspaceErrorStatus(result.error) === 401) onUnauthorized();
+      if (workspaceErrorStatus(result.error) === 409 && terminalRejectionMessage(result.error) === "request_id_conflict") {
+        // Same request ID with different dims: a terminal already exists for
+        // this ID, but its stored dims differ from this attempt's, so the
+        // receipt cannot validate against the conflicting dims. Report the
+        // conflict honestly with the original request ID retained; the user
+        // inspects the existing receipt instead of starting a second terminal.
+        setMessage("A terminal already exists for this request with different dimensions. Original request ID retained; inspect its receipt. No second terminal was started.");
+        return;
+      }
       const confirmed = result.error ? null : terminalReceiptFromValue(result.data, value.start);
       if (!confirmed) throw new Error("Start outcome unknown");
       acceptReceipt(confirmed, value);
