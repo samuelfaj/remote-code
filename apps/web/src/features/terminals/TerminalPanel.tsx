@@ -335,6 +335,17 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
         setMessage("Host rejected the input as invalid. Nothing was queued; fix the input and try again.");
         return;
       }
+      if (workspaceErrorStatus(result.error) === 404) {
+        // Unknown terminal for this login: another login's terminal, a
+        // removed terminal, or a revoked session. Nothing was queued.
+        // Clear the fence so input is not blocked on a terminal this login
+        // can never observe; the user selects the original workspace/login
+        // or starts fresh.
+        writeReference(saved, next);
+        clearScreen(true);
+        setMessage("Terminal not found for this login. Nothing was queued; select the original workspace or start a new terminal.");
+        return;
+      }
       const ack = result.error ? null : terminalInputAckFromValue(result.data, saved.terminalId, sequence);
       if (!ack || ack.state === "unknown") throw new Error("Input outcome unknown");
       writeReference(saved, next);

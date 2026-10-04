@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-031 send-404 fence clear — foreign terminal stops blocking input
+
+- send() on 404 now clears the fence with an honest not-found message and clears the screen (stale bytes belong to an unobservable terminal); this login could never observe it, so blocking forever was a stuck fence. Verified: typecheck clean, terminal tests 13/13, review clean on reservation order, screen consistency, gate scope and recovery paths. X: see checkpoint note.
+
 ## RC-031 stop-422 fence clear — invalid stop keeps terminal usable
 
 - stop() on 422 now clears the optimistically set stop fence (VALIDATION fires before makeContext/stopContext) with an honest message; mirrors send-422/resize-422. Verified: typecheck clean, terminal tests 13/13, review clean on pre-action order, fence safety, gate scope and retry path. X: see checkpoint note.
