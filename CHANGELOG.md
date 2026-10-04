@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-033 return covers both merge halves + re-index falsified
+
+- Close-and-return test now seeds file tab + stale terminal tab with terminal pane order 0 / file pane order 1, so UI Save must preserve the file half, prune the stale terminal half, and re-index file pane 1->0. Falsification: neutralizing the re-index map fails the test; restored file verified by full 15/15 E2E. Reasoning review found the non-load-bearing seed gap; follow-up clean. X: browser_status extension disconnected (evidence in scratch x-failure-evidence.json); no tab opened, nothing submitted, no timeline check possible. RC-002 unknown/unaccepted, untouched. No deployment.
+
 ## RC-033 close-and-return E2E — UI save survives reload with tabs/panes intact
 
 - New workspaces.spec.ts test: seed file tab + pane via API, reopen in UI, click real Save layout, assert confirm + authoritative row, reload, reopen, assert Shared tabs/panes render and row contents intact. Verified: workspaces E2E 15/15, layout unit 8/8, typecheck clean, doc links + whitespace pass; reasoning review clean (scope: file-half preservation; terminal-half preservation unverified). RC-002 unknown/unaccepted, untouched, no retry. No deployment. X skipped: Chrome extension disconnected, no tab opened, nothing submitted.

@@ -370,11 +370,20 @@ test("saved layout returns after close and reopen with tabs and panes intact", a
   expect(workspaceId).toBeTruthy();
   // Seed the file/thread half the terminal panel does not own, so the UI
   // merge-save must preserve it; then save the terminal half via the UI.
+  // Seed both halves: a file tab with its pane (owned by other panels)
+  // plus a stale terminal tab from an earlier session on this device. The UI
+  // merge-save must keep the file half and drop the stale terminal tab.
   const seed = await page.request.put(`${apiUrl}/api/workspaces/${workspaceId}/layout`, {
     data: {
-      tabs: [{ id: "tab-file", kind: "file", targetId: "notes.txt" }],
+      tabs: [
+        { id: "tab-file", kind: "file", targetId: "notes.txt" },
+        { id: "terminal-deadbeef", kind: "terminal", targetId: "deadbeef-dead-beef-dead-beefdeadbeef" },
+      ],
       activeTabId: "tab-file",
-      panes: [{ id: "pane-file", tabId: "tab-file", order: 0 }],
+      panes: [
+        { id: "pane-term", tabId: "terminal-deadbeef", order: 0 },
+        { id: "pane-file", tabId: "tab-file", order: 1 },
+      ],
       activePaneId: "pane-file",
     },
   });
@@ -382,19 +391,26 @@ test("saved layout returns after close and reopen with tabs and panes intact", a
   await page.reload();
   await expect(page.getByTestId("workspace-panel")).toBeVisible();
   await page.getByRole("button", { name: `Open workspace ${name}` }).click();
-  await expect(page.getByTestId("terminal-layout-state")).toContainText("Shared tabs: 1");
+  await expect(page.getByTestId("terminal-layout-state")).toContainText("Shared tabs: 2");
   await page.getByRole("button", { name: "Save layout" }).click();
   await expect(page.getByTestId("terminal-layout-state")).toContainText("Layout saved: 1 tab(s).");
   const savedRow = ((await (await page.request.get(`${apiUrl}/api/workspaces/${workspaceId}/layout`)).json()) as {
-    layout: { tabs: Array<{ id: string; kind: string; targetId: string }> };
+    layout: {
+      tabs: Array<{ id: string; kind: string; targetId: string }>;
+      panes: Array<{ id: string; tabId: string; order: number }>;
+    };
   }).layout;
+  // File half preserved; stale terminal tab and its pane pruned and orders
+  // re-indexed dense from zero.
   expect(savedRow.tabs).toEqual([{ id: "tab-file", kind: "file", targetId: "notes.txt" }]);
+  expect(savedRow.panes).toEqual([{ id: "pane-file", tabId: "tab-file", order: 0 }]);
   // Close the client and go back: the layout returns intact.
   await page.reload();
   await expect(page.getByTestId("workspace-panel")).toBeVisible();
   await page.getByRole("button", { name: `Open workspace ${name}` }).click();
   await expect(page.getByTestId("terminal-layout-state")).toContainText("Shared tabs: 1");
   await expect(page.getByTestId("terminal-local-tabs")).toContainText("tab-file");
+  await expect(page.getByTestId("terminal-local-tabs")).not.toContainText("terminal-deadbeef");
   const returned = ((await (await page.request.get(`${apiUrl}/api/workspaces/${workspaceId}/layout`)).json()) as {
     layout: { tabs: Array<{ id: string }>; panes: Array<{ id: string; tabId: string; order: number }> };
   }).layout;
