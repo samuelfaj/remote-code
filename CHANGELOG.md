@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-031 status refresh — stale passages updated to current evidence
+
+- plan/tasks.html RC-031 status now records the closed flow-totals overflow slice and the shipped-entry graceful-shutdown rerun, replacing passages that still called both open. No criteria changed, task stays In Progress, no code changed. Reasoning review clean. X: bridge closed at checkpoint; no tab, nothing submitted, no receipt, no valid <1h skip.
+
 ## RC-031 readable termination — UI shows exit code after every stop
 
 - scripts/run-terminal-linux-browser-proof.ts stop() now asserts the host-state line contains 'exit code:' as well as 'cleanup: removed' (shipped UI already renders the host-reported code; no app change). Real Linux rerun passes with sourceUnchanged true and browser/vite/api/volume cleanup all true; evidence.json in scratch. Reasoning review clean (suffix-presence, not numeric-equality proof). One slice, not full RC-031 acceptance. X: bridge closed at checkpoint; no tab, nothing submitted, no receipt, no valid <1h skip.
