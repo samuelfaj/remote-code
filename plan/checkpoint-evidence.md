@@ -1490,3 +1490,8 @@ The historical checkpoint evidence below is retained in its original order and s
 - **Scope:** Panel 01a10829 found 3 defects + docs clean: (1) start non-conflict 409s fenced unknown though pre-reservation — fixed with per-cause clear; (2) stop 404 kept fence forever with no recovery — fixed with poll-verify split; (3) poll 503 overclaimed host outage — fixed to unconfirmed-with-retry. Review 01a1082d verified fixes, found identity-message nit; fixed, 01a1082f confirmed. No backend change.
 - **Evidence:** Typecheck clean; terminal tests 13/13. RC-031 tasks.html status updated with honesty-family summary.
 - **X:** Bridge check with timestamp follows.
+
+# RC-031 panel-fix checkpoint — X attempt 2026-10-04T18:34:16Z (UTC)
+
+- **X mac-use browser_status 2026-10-04T18:34:16Z:** bridge closed (nineteenth consecutive check). No tab, nothing submitted.
+- **X eligibility:** latest own post Sep 30 per same-day cua Space page-HTML read; no post within last hour, <1h rule not blocking. Submission waits on mac-use bridge recovery (user-side Chrome extension reconnect).
