@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-031 poll-422 cursor guard — corrupt offset re-reads honestly
+
+- poll() 422 invalid offset now resets display refs and re-reads with gap disclosed (same recovery as offset-ahead); unreachable in normal flow, cheap defense against a misleading generic message. 3-person panel clean. Verified: typecheck clean, terminal tests 13/13. X: see checkpoint note.
+
 ## RC-033 archived E2E pins honest message + queued-input testid
 
 - Stale-prop archived-save half now asserts "archived" (was generic "unconfirmed"), driving the shipped live-preflight + PUT-409 message through a real browser + real API: 1 passed locally. Queued-input paragraph gains data-testid terminal-input-backpressure (inert). 3-person panel clean. X: see checkpoint note.

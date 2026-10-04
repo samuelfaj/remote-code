@@ -166,6 +166,14 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
         // with auto-retry, not a definitive outage verdict.
         throw new Error("Terminal state is unconfirmed. State reads retry automatically; nothing was resent.");
       }
+      if (workspaceErrorStatus(result.error) === 422) {
+        // Invalid poll offset: the client cursor is corrupt (negative or
+        // unsafe integer). Same recovery as offset-ahead — reset display
+        // refs so the next tick re-reads the retained window. Readonly, no
+        // fence, no resend.
+        clearScreen(true);
+        throw new Error("Terminal cursor is invalid. Re-reading retained output; nothing was resent.");
+      }
       throw new Error("Terminal state unavailable for this login");
     }
     const confirmed = terminalPollFromValue(result.data, expected, offset);
@@ -286,7 +294,8 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
             setReceipt(null);
             setMessage(error instanceof Error && error.message === "Terminal state unavailable for this login"
               ? "Terminal not found for this login. State reads retry automatically; select the original workspace or start a new terminal."
-              : error instanceof Error && error.message === "Terminal cursor ran ahead. Re-reading retained output; nothing was resent."
+              : error instanceof Error && (error.message === "Terminal cursor ran ahead. Re-reading retained output; nothing was resent." ||
+                error.message === "Terminal cursor is invalid. Re-reading retained output; nothing was resent.")
                 ? error.message
                 : "Terminal state is unconfirmed. State reads retry automatically; nothing was resent.");
           }
