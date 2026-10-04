@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-033 layout archived guard — live check plus honest 409 message
+
+- saveLayout() re-checks archived state live before PUT (avoids doomed write) and maps PUT 409 to "Workspace is archived. Layout was not saved." Backend 409 stays the race authority; no write possible on archived. Verified: typecheck clean, terminal tests 2/2, two review rounds clean (TOCTOU verdict: narrowed not closed, acceptable). X: see checkpoint note.
+
 ## RC-031 shutdown-start message — 503 closing clears for later retry
 
 - start() on 503 terminals_closing now drops the unreserved local reference and says the host is shutting down; later retry uses a fresh ID. Pre-reservation confirmed (throws before workspace checks and INSERT). Verified: typecheck clean, terminal tests 13/13, review clean. X: see checkpoint note.

@@ -491,9 +491,19 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
       // fall back to the first surviving tab.
       if (next.activeTabId !== null && !tabs.some((tab) => tab.id === next.activeTabId)) next.activeTabId = tabs[0]?.id ?? null;
       if (!workspaceLayoutFromValue(next)) throw new Error("Invalid workspace layout");
+      // Live archived re-check just before PUT: the workspace may have been
+      // archived after preflight. The backend refuses with 409, but a local
+      // check avoids sending a doomed write.
+      const live = await client(end).api.workspaces({ workspaceId: workspace.id }).get();
+      if (!current() || Date.now() >= end) throw new Error("Terminal context expired");
+      if (workspaceErrorStatus(live.error) === 401) onUnauthorized();
+      const liveWorkspace = live.error ? null : workspaceFromValue(live.data);
+      if (!liveWorkspace) throw new Error("Workspace layout unavailable");
+      if (liveWorkspace.archived) throw new Error("Workspace archived");
       const result = await client(end).api.workspaces({ workspaceId: workspace.id }).layout.put(next);
       if (!current() || Date.now() >= end) throw new Error("Terminal context expired");
       if (workspaceErrorStatus(result.error) === 401) onUnauthorized();
+      if (workspaceErrorStatus(result.error) === 409) throw new Error("Workspace archived");
       const confirmed = result.error ? null : workspaceLayoutResponseFromValue(result.data, workspace.id);
       if (!confirmed) throw new Error("Workspace layout not confirmed");
       layoutSavedAt.current = Date.now();
@@ -515,8 +525,10 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
         });
         setLayoutMessage(`Layout saved: ${confirmed.tabs.length} tab(s).`);
       }
-    } catch {
-      if (current()) setLayoutMessage("Layout is unconfirmed. Inspect state; nothing was overwritten blindly.");
+    } catch (error) {
+      if (current()) setLayoutMessage(error instanceof Error && error.message === "Workspace archived"
+        ? "Workspace is archived. Layout was not saved."
+        : "Layout is unconfirmed. Inspect state; nothing was overwritten blindly.");
     } finally { if (current()) { working.current = false; setBusy(false); } }
   }
 

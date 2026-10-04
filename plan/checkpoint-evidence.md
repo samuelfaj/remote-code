@@ -1397,3 +1397,9 @@ The historical checkpoint evidence below is retained in its original order and s
 
 - **X mac-use:** Bridge still closed (tenth consecutive check). No tab, nothing submitted.
 - **X eligibility (reused Space evidence, same UTC day):** Latest own post Sep 30 per page-HTML markers read earlier via local Space curl; <1h rule does not block. Headless Space Chromium cannot pass the X JS wall and holds no signed-in session, so no submission possible from there. Post waits on mac-use bridge recovery.
+
+# RC-033 layout archived guard — locally verified slice — 2026-10-04 (UTC)
+
+- **Scope:** saveLayout() live workspace GET before PUT aborts on archived; PUT 409 maps to exact "Workspace is archived. Layout was not saved." message; other errors keep generic unknown. Backend 409 workspace_archived stays the TOCTOU authority. No backend change.
+- **Evidence:** Typecheck clean; terminal tests 2/2. Review 01a107fa clean with TOCTOU verdict (narrowed not closed, acceptable); follow-up 01a107fb clean (sole PUT 409 source, exact-string mapping, no swallow).
+- **X:** Pending this checkpoint; bridge check follows.
