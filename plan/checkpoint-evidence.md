@@ -1435,3 +1435,8 @@ The historical checkpoint evidence below is retained in its original order and s
 - **Scope:** stop() 422 invalid clears optimistically set stopRequested fence (VALIDATION before makeContext/stopContext at :858-859) with honest message; retry allowed. Completes the 422-fence family: start/send/resize/stop all clear on validation-only refusals, keep fences on genuine unknowns. No backend change.
 - **Evidence:** Typecheck clean; terminal tests 13/13. Review 01a1080b clean on all four checks (pre-action, fence safety, status-only gate, symmetry + retry path).
 - **X:** Bridge check with timestamp follows.
+
+# RC-031 stop-422 checkpoint — X attempt 2026-10-04T17:55:55Z (UTC)
+
+- **X mac-use browser_status 2026-10-04T17:55:55Z:** bridge closed (fourteenth consecutive check). No tab, nothing submitted.
+- **X eligibility:** latest own post Sep 30 per same-day cua Space page-HTML read; no post within last hour, <1h rule not blocking. Submission waits on mac-use bridge recovery (user-side Chrome extension reconnect).
