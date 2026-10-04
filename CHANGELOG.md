@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-033 archived UI slice — disabled Save plus live-preflight guard with falsified E2E
+
+- saveLayout now refuses on a live-archived workspace before any layout traffic (stale-prop defense). E2E covers both halves: archived UI disables Save (zero PUTs, row intact) and stale-prop half archives via API behind a mounted panel then clicks enabled Save (unconfirmed, zero PUTs, row intact). Guard-removal falsification fails the stale half; restored file passes 16/16 E2E, typecheck clean, links + whitespace pass; two review rounds closed. X: extension disconnected at checkpoint (browser_status fail, no tab, nothing submitted); no timeline check possible, no receipt.
+
 ## RC-033 archived layout test — writes refuse 409, reads stay intact
 
 - New workspace-layout.test.ts case: create, save, archive via shipped PATCH, retry PUT with a different valid layout (t2/terminal) expecting 409 workspace_archived, GET still returns the original row. Review found the identical-payload gap (rewrite-same-content regression undetectable); fixed, follow-up clean. Verified: layout 6/6, full suite 173 pass/64 skip, typecheck clean, links + whitespace pass. Test-only, no shipped code changed. X: extension connected briefly, timeline read 30 Sep latest (>1h eligible), composer opened, then bridge closed mid-post; no text entered, nothing submitted; owned-tab cleanup unverifiable (browser_status + browser_close both fail). No receipt.

@@ -398,7 +398,8 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
     const current = currentCheck(); const end = Date.now() + budgetMs;
     working.current = true; setBusy(true);
     try {
-      await preflight(end, current);
+      const owned = await preflight(end, current);
+      if (owned.archived) throw new Error("Workspace archived");
       // Merge, never blind-replace: reload the stored layout first so file,
       // thread and pane entries the terminal panel does not own survive.
       const stored = await client(end).api.workspaces({ workspaceId: workspace.id }).layout.get();

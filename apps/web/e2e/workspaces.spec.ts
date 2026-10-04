@@ -437,6 +437,95 @@ test("saved layout returns after close and reopen with tabs and panes intact", a
   expect(returned.panes).toEqual([{ id: "pane-file", tabId: "tab-file", order: 0 }]);
 });
 
+test("archived workspace blocks layout save in the UI without a write", async ({
+  page,
+}) => {
+  // RC-033 archived slice: after archiving, the UI Save layout button must
+  // refuse without sending a layout PUT; the saved row stays intact.
+  const suffix = crypto.randomUUID();
+  const name = `RC033 archived ${suffix}`;
+  await signIn(page);
+  await page.getByLabel("Workspace name").fill(name);
+  await page.getByRole("button", { name: "Create workspace" }).click();
+  await expect(page.getByRole("button", { name: `Open workspace ${name}` })).toBeVisible();
+  await page.getByRole("button", { name: `Open workspace ${name}` }).click();
+  await expect(page.getByTestId("terminal-layout-state")).toContainText("No saved layout");
+
+  const listed = await page.request.get(`${apiUrl}/api/workspaces`);
+  const rows = ((await listed.json()) as { workspaces: Array<{ id: string; name: string }> }).workspaces;
+  const workspaceId = rows.find((row) => row.name === name)?.id;
+  expect(workspaceId).toBeTruthy();
+  const seed = await page.request.put(`${apiUrl}/api/workspaces/${workspaceId}/layout`, {
+    data: { tabs: [{ id: "tab-a", kind: "file", targetId: "a.txt" }], activeTabId: "tab-a" },
+  });
+  expect(seed.ok()).toBe(true);
+  await page.reload();
+  await expect(page.getByTestId("workspace-panel")).toBeVisible();
+  await page.getByRole("button", { name: `Open workspace ${name}` }).click();
+  await expect(page.getByTestId("terminal-layout-state")).toContainText("Shared tabs: 1");
+
+  let layoutPuts = 0;
+  await page.route(`**/api/workspaces/${workspaceId}/layout`, (route) => {
+    if (route.request().method() === "PUT") layoutPuts += 1;
+    return route.continue();
+  });
+  await page.getByRole("button", { name: "Archive workspace" }).click();
+  await expect(page.getByText("Archived workspaces are read-only.")).toBeVisible();
+  // The read-only UI disables Save layout: no click is possible, no layout
+  // PUT is sent, and the saved row stays intact.
+  await expect(page.getByRole("button", { name: "Save layout" })).toBeDisabled();
+  expect(layoutPuts).toBe(0);
+  // Stale-prop guard path: un-archive via API is not offered by the UI, so
+  // reload the unarchived state instead — reopen a fresh workspace where the
+  // panel mounts unarchived, archive it via API behind the panel's back, then
+  // click Save while the button is still enabled: the live preflight guard
+  // must refuse with zero PUTs and the row stays intact.
+  const name2 = `RC033 stale ${suffix}`;
+  await page.getByLabel("Workspace name").fill(name2);
+  await page.getByRole("button", { name: "Create workspace" }).click();
+  await expect(page.getByRole("button", { name: `Open workspace ${name2}` })).toBeVisible();
+  await page.getByRole("button", { name: `Open workspace ${name2}` }).click();
+  await expect(page.getByTestId("terminal-layout-state")).toContainText("No saved layout");
+  const listed2 = await page.request.get(`${apiUrl}/api/workspaces`);
+  const rows2 = ((await listed2.json()) as { workspaces: Array<{ id: string; name: string }> }).workspaces;
+  const workspaceId2 = rows2.find((row) => row.name === name2)?.id;
+  expect(workspaceId2).toBeTruthy();
+  const seed2 = await page.request.put(`${apiUrl}/api/workspaces/${workspaceId2}/layout`, {
+    data: { tabs: [{ id: "tab-s", kind: "file", targetId: "s.txt" }], activeTabId: "tab-s" },
+  });
+  expect(seed2.ok()).toBe(true);
+  await page.reload();
+  await expect(page.getByTestId("workspace-panel")).toBeVisible();
+  await page.getByRole("button", { name: `Open workspace ${name2}` }).click();
+  await expect(page.getByTestId("terminal-layout-state")).toContainText("Shared tabs: 1");
+  let layoutPuts2 = 0;
+  await page.route(`**/api/workspaces/${workspaceId2}/layout`, (route) => {
+    if (route.request().method() === "PUT") layoutPuts2 += 1;
+    return route.continue();
+  });
+  // Archive behind the mounted panel's back: the button stays enabled on the
+  // stale prop, but the live preflight guard must refuse the save.
+  const listed3 = await page.request.get(`${apiUrl}/api/workspaces`);
+  const wsRow = ((await listed3.json()) as { workspaces: Array<{ id: string; name: string }> }).workspaces.find((row) => row.name === name2);
+  expect(wsRow?.id).toBeTruthy();
+  const archiveCall = await page.request.patch(`${apiUrl}/api/workspaces/${workspaceId2}`, {
+    data: { requestId: crypto.randomUUID(), archived: true },
+  });
+  expect(archiveCall.ok()).toBe(true);
+  await expect(page.getByRole("button", { name: "Save layout" })).toBeEnabled();
+  await page.getByRole("button", { name: "Save layout" }).click();
+  await expect(page.getByTestId("terminal-layout-state")).toContainText("unconfirmed");
+  expect(layoutPuts2).toBe(0);
+  const row2 = ((await (await page.request.get(`${apiUrl}/api/workspaces/${workspaceId2}/layout`)).json()) as {
+    layout: { tabs: Array<{ id: string }> };
+  }).layout;
+  expect(row2.tabs.map((tab) => tab.id)).toEqual(["tab-s"]);
+  const row = ((await (await page.request.get(`${apiUrl}/api/workspaces/${workspaceId}/layout`)).json()) as {
+    layout: { tabs: Array<{ id: string }> };
+  }).layout;
+  expect(row.tabs.map((tab) => tab.id)).toEqual(["tab-a"]);
+});
+
 test("older host capability blocks create before any workspace POST", async ({
   page,
 }) => {
