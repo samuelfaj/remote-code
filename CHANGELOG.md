@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-031 invalid-start retry — 422 clears local reference for fresh try
+
+- start() on 422 now drops the unreserved local reference so Start re-enables with a fresh request ID; message says nothing started. First review caught a blocked-retry defect (reference kept, "try again" a lie); fixed, follow-up clean. Verified: typecheck clean, terminal tests 13/13. X: see checkpoint note.
+
 ## RC-031 start conflict message — same-ID different-dims reported honestly
 
 - start() on 409 request_id_conflict now reports the existing terminal with the original request ID retained instead of a generic unknown; no second POST, inspect receipt path intact. First review caught an unreachable receipt-lookup recovery (validator binds stored dims); fixed to honest message, follow-up clean. Verified: typecheck clean, terminal tests 13/13, full suite follows at push. X: see checkpoint note.

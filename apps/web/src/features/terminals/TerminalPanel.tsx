@@ -269,6 +269,13 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
         setMessage("A terminal already exists for this request with different dimensions. Original request ID retained; inspect its receipt. No second terminal was started.");
         return;
       }
+      if (workspaceErrorStatus(result.error) === 422) {
+        // Invalid request shape: nothing was reserved server-side, so drop
+        // the local reference and let the user try again with a fresh ID.
+        writeReference(null, value);
+        setMessage("Host rejected the start request as invalid. Nothing was started; try again.");
+        return;
+      }
       const confirmed = result.error ? null : terminalReceiptFromValue(result.data, value.start);
       if (!confirmed) throw new Error("Start outcome unknown");
       acceptReceipt(confirmed, value);

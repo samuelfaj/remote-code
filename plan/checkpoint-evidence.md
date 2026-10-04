@@ -1375,3 +1375,9 @@ The historical checkpoint evidence below is retained in its original order and s
 # RC-031 start-conflict checkpoint — X attempt 2026-10-04 (UTC)
 
 - **X:** Bridge still closed (eighth consecutive check this session). No tab, no timeline read, no 1h verification, nothing submitted.
+
+# RC-031 invalid-start retry — locally verified slice — 2026-10-04 (UTC)
+
+- **Scope:** start() 422 invalid-request clears the unreserved local reference (CAS writeReference(null,value)) so Start re-enables and the next attempt uses a fresh requestId; honest "nothing started, try again" message. No backend change.
+- **Evidence:** Typecheck clean; terminal tests 13/13. Review 01a107f0 found blocked-retry defect (kept reference made "try again" false); fixed. Follow-up 01a107f1 clean (CAS safe, fresh ID, message true).
+- **X:** Pending this checkpoint; bridge + cua fallback check follows.
