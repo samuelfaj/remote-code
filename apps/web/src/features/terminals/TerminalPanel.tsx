@@ -746,6 +746,21 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
         }
         return;
       }
+      if (workspaceErrorStatus(result.error) === 503) {
+        // Host failure on stop: the stop point is unknown (initiated or not),
+        // and the response carries no marker — so keep the fence and verify
+        // with a readonly poll the same way as the 404 path: observable →
+        // adopt the authoritative receipt; gone → outcome stays unknown.
+        // No resend either way.
+        try {
+          const settled = await poll(end, current, saved);
+          acceptReceipt(settled, next);
+          setMessage(settled.cleanup === "removed" ? "Host confirms the terminal ended and its process was removed." : "Stop is not complete. Inspect state; no automatic stop resend.");
+        } catch {
+          setMessage("Stop outcome is unconfirmed after a host failure. The terminal state is unknown for this login; inspect state. No stop request is resent automatically.");
+        }
+        return;
+      }
       const confirmed = result.error ? null : terminalReceiptFromValue(result.data, saved.start, saved.terminalId);
       if (!confirmed) throw new Error("Stop outcome unknown");
       acceptReceipt(confirmed, next);

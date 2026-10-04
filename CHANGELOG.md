@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-031 stop-503 poll-verify — host failure verifies instead of guessing
+
+- stop() 503 now poll-verifies like the 404 path: observable → adopt authoritative receipt; gone → fence kept + unknown + no resend. No false stop-worked claim (message branches on cleanup). Verified: typecheck clean, terminal tests 13/13, review clean on honesty, fence, order and messages. X: see checkpoint note.
+
 ## RC-031 resize-503 keeps fence — unmarked pre/post ambiguity stays unknown
 
 - resize() 503 terminals_unavailable keeps the fence with unknown message: post-update guard() re-checks throw the same message with no marker, so clearing could under-fence a server-unknown resize. First review caught the under-fence; safe direction verified clean. Verified: typecheck clean, terminal tests 13/13. X: see checkpoint note.
