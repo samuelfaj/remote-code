@@ -1392,3 +1392,8 @@ The historical checkpoint evidence below is retained in its original order and s
 - **Scope:** start() 503 terminals_closing clears unreserved local reference (CAS) with honest shutdown message; later retry uses fresh ID. No backend change; throw site pre-reservation (before workspace checks and INSERT).
 - **Evidence:** Typecheck clean; terminal tests 13/13. Review 01a107f6 clean (gate unique among start-route 503s, clear correct, message true, no resend).
 - **X:** Pending this checkpoint; bridge check follows.
+
+# RC-031 shutdown-slice checkpoint — X attempt 2026-10-04 (UTC)
+
+- **X mac-use:** Bridge still closed (tenth consecutive check). No tab, nothing submitted.
+- **X eligibility (reused Space evidence, same UTC day):** Latest own post Sep 30 per page-HTML markers read earlier via local Space curl; <1h rule does not block. Headless Space Chromium cannot pass the X JS wall and holds no signed-in session, so no submission possible from there. Post waits on mac-use bridge recovery.
