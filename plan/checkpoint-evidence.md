@@ -1572,3 +1572,9 @@ The historical checkpoint evidence below is retained in its original order and s
 
 - **X mac-use browser_status 2026-10-04T19:43:28Z:** bridge closed (twenty-sixth consecutive check). No tab, nothing submitted.
 - **X eligibility:** latest own post Sep 30 per same-day cua Space page-HTML read; no post within last hour, <1h rule not blocking. Submission waits on mac-use bridge recovery (user-side Chrome extension reconnect).
+
+# RC-031 offset-ahead recovery — locally verified slice — 2026-10-04 (UTC)
+
+- **Scope:** poll() 409 terminal_offset_ahead (pure cursor-vs-end function, no server state change) resets display refs via clearScreen(true); next poll re-reads retained window with gap disclosed. No fence, no resend. Tick surfaces honest retry message; inspect stays generic (shared cursor resets benignly). No backend change.
+- **Evidence:** Typecheck clean; terminal tests 13/13. Review 01a10874 clean (termination proven, consistency, honesty; redundancy + wording nits fixed in-slice).
+- **X:** Bridge check with WHY + timestamp follows.

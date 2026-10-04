@@ -151,6 +151,15 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
     if (result.error) {
       if (workspaceErrorStatus(result.error) === 401) onUnauthorized();
       if (workspaceErrorStatus(result.error) === 404) clearScreen(true);
+      if (workspaceErrorStatus(result.error) === 409 &&
+        terminalRejectionMessage(result.error) === "terminal_offset_ahead") {
+        // Client cursor ran past the producer end (stale cursor after a
+        // restart or a second reader advanced state). Reset to the retained
+        // window on the next poll instead of failing: no fence, no resend,
+        // next tick re-reads with the gap disclosed.
+        clearScreen(true);
+        throw new Error("Terminal cursor ran ahead. Re-reading retained output; nothing was resent.");
+      }
       if (workspaceErrorStatus(result.error) === 503) {
         // Host-side failure on a readonly read. Most 503s are host outages,
         // but receipt-validation 503s are not — so report unconfirmed state
@@ -197,7 +206,8 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
             await poll(end, current, saved);
           } catch (error) {
             // Surface the poll's own foreign-terminal verdict instead of
-            // flattening it; everything else stays unconfirmed.
+            // flattening it; everything else stays unconfirmed. Offset-ahead
+            // is transient (next poll re-reads), so it also stays generic.
             if (error instanceof Error &&
               error.message === "Terminal state unavailable for this login") throw error;
             throw new Error("Terminal state is unconfirmed. Original identity retained; inspect manually. No mutation was resent.");
@@ -276,7 +286,9 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
             setReceipt(null);
             setMessage(error instanceof Error && error.message === "Terminal state unavailable for this login"
               ? "Terminal not found for this login. State reads retry automatically; select the original workspace or start a new terminal."
-              : "Terminal state is unconfirmed. State reads retry automatically; nothing was resent.");
+              : error instanceof Error && error.message === "Terminal cursor ran ahead. Re-reading retained output; nothing was resent."
+                ? error.message
+                : "Terminal state is unconfirmed. State reads retry automatically; nothing was resent.");
           }
         }
         finally { if (current()) { working.current = false; setBusy(false); drainKeys(); } }

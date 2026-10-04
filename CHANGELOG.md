@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-031 offset-ahead recovery — stale cursor re-reads instead of failing
+
+- poll() 409 terminal_offset_ahead now resets display refs and re-reads the retained window with gap disclosed on the next tick; no fence, no resend. Review clean on termination, consistency, honesty (plus wording-redundancy nits fixed in-slice). Verified: typecheck clean, terminal tests 13/13. X: see checkpoint note.
+
 ## RC-031 stop-503 poll-verify — host failure verifies instead of guessing
 
 - stop() 503 now poll-verifies like the 404 path: observable → adopt authoritative receipt; gone → fence kept + unknown + no resend. No false stop-worked claim (message branches on cleanup). Verified: typecheck clean, terminal tests 13/13, review clean on honesty, fence, order and messages. X: see checkpoint note.
