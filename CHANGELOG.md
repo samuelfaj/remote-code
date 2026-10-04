@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-031 graceful-shutdown rerun — shipped SIGTERM settles live actor
+
+- Reran scripts/run-terminal-shutdown-proof.ts on current source (pinned image): one live producing actor (running, endOffset 563), SIGTERM to API PID 1 via shipped index.ts handler, readback exited/removed with exit 137 (Docker stop escalation, not graceful actor exit), container absent by exact ID, api + volume cleanup true, evidence.json in scratch. Reasoning review clean with honest 137 limit. One slice, not full RC-031 acceptance. No code changed. X: bridge closed at checkpoint; no tab, nothing submitted, no receipt, no valid <1h skip.
+
 ## RC-031 flow-totals reconciliation — gap-poll counters reconcile on real overflow
 
 - Proof script now captures totalBytes/retainedBytes/droppedBytes from shipped GET polls and asserts internal reconciliation (total == retained + dropped, retained == 65536, dropped > 0). Real Linux run: gap poll 300505 = 65536 + 234969, full proof passes, sourceUnchanged true, all cleanup true, evidence.json in scratch. Review narrowed 'honest not fabricated' to 'internally reconciled' (follow-up clean). One overflow slice, not full RC-031 flow-control acceptance. No shipped app code changed. X: bridge closed at checkpoint (no status, no tab, nothing submitted); no receipt, no valid <1h skip.
