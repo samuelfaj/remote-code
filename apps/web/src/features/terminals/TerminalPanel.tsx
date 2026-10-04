@@ -225,6 +225,7 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
           const result = await client(end).api.workspaces({ workspaceId: workspace.id }).terminals.receipts({ requestId: saved.start.requestId }).get();
           if (!current() || Date.now() >= end) throw new Error("Terminal context expired");
           if (workspaceErrorStatus(result.error) === 401) onUnauthorized();
+          if (workspaceErrorStatus(result.error) === 404) throw new Error("No terminal receipt is visible to this login");
           const value = result.error ? null : terminalReceiptFromValue(result.data, saved.start);
           if (!value) throw new Error("Original start remains unknown");
           acceptReceipt(value, saved);
@@ -242,7 +243,8 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
       if (current()) {
         setReceipt(null); setAvailable(false);
         setMessage(error instanceof Error &&
-          error.message === "Terminal state unavailable for this login"
+          (error.message === "Terminal state unavailable for this login" ||
+            error.message === "No terminal receipt is visible to this login")
           ? error.message
           : "Terminal state is unconfirmed or unavailable on this host. Original identity retained; inspect manually. No mutation was resent.");
       }

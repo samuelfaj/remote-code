@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-031 receipt-404 visibility message — lookup miss reads honestly
+
+- inspect() receipt-lookup 404 now says no receipt is visible to this login (never-started, rotated session and second login share one indistinguishable 404). First review caught a false non-existence claim; fixed, follow-up clean. Verified: typecheck clean, 49 pass/1 skip. X: see checkpoint note.
+
 ## RC-033 deleted-workspace message — save on gone workspace reads honestly
 
 - saveLayout() live-GET 404 + PUT 404 both map to "Workspace is gone on this host. Layout was not saved; pick another workspace." Panel B caught the live-GET gap (common deleted case died generic while PUT branch covered only the race); fixed, follow-up clean. Verified: typecheck clean, 49 pass/1 skip unit + panel clean. X: see checkpoint note.
