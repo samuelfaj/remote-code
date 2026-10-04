@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-033 mobile non-interference — current mobile paths touch no layout route
+
+- Static sweep over apps/mobile (explicit .layout refs, layout imports, string-URL/fetch paths): zero layout reads or writes; observed calls are workspaces list/get/mutate/receipts plus folder/files and /api/events. Rerunnable script + log in scratch (rc033-mobile-noninterference-check.sh/.log, exit 0). Reasoning review: no hidden layout path; wording narrowed — proves current-path no-direct-write only, not the full mobile-tab-switch journey (mobile renders no tabs) and not an enforced capability (shared Eden client retains full treaty). Full RC-033 acceptance remains open. No code changed. X skipped: extension disconnected (scratch x-failure-evidence.json); no tab, nothing submitted.
+
 ## RC-033 return covers both merge halves + re-index falsified
 
 - Close-and-return test now seeds file tab + stale terminal tab with terminal pane order 0 / file pane order 1, so UI Save must preserve the file half, prune the stale terminal half, and re-index file pane 1->0. Falsification: neutralizing the re-index map fails the test; restored file verified by full 15/15 E2E. Reasoning review found the non-load-bearing seed gap; follow-up clean. X: browser_status extension disconnected (evidence in scratch x-failure-evidence.json); no tab opened, nothing submitted, no timeline check possible. RC-002 unknown/unaccepted, untouched. No deployment.
