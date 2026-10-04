@@ -374,33 +374,26 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
         setMessage("Host is shutting down. Nothing was started; try again later.");
         return;
       }
-      if (workspaceErrorStatus(result.error) === 503 && terminalRejectionMessage(result.error) === "terminal_capacity") {
-        // Ambiguous: the count check throws before INSERT (nothing reserved),
-        // but makeContext can throw the same 503 after the reserved row
-        // commits — and the server attaches a receipt whenever a context
-        // exists. Prefer an attached valid receipt when present; otherwise
-        // keep the reference and report unknown with the request ID retained.
-        const attached = attachedReceipt(result.error, value);
-        if (attached) {
-          acceptReceipt(attached, value);
-          setMessage("Terminal start reported host capacity pressure, but the host receipt confirms state. Inspect it before acting.");
-          return;
-        }
-        setMessage("Host may be at terminal capacity. Start outcome is unknown. Original request ID retained; inspect its receipt. No automatic resend.");
-        return;
-      }
       if (workspaceErrorStatus(result.error) === 503) {
-        // Other 503s may or may not carry a reserved row: post-reservation
-        // failures attach a receipt alongside the error. Prefer it when
-        // present and valid; otherwise keep the reference and report unknown
-        // with the request ID retained for receipt inspect.
+        // All 503s share one posture: terminals_closing is handled above
+        // (proven pre-reservation clear); everything else is ambiguous
+        // because post-reservation failures attach a receipt alongside the
+        // error. Prefer an attached valid receipt when present; otherwise
+        // keep the reference and report unknown with the request ID retained.
+        // terminal_capacity keeps its own capacity wording, other 503s share
+        // the generic host-failure wording.
+        const reason = terminalRejectionMessage(result.error);
         const attached = attachedReceipt(result.error, value);
         if (attached) {
           acceptReceipt(attached, value);
-          setMessage("Terminal start reported a host failure, but the host receipt confirms state. Inspect it before acting.");
+          setMessage(reason === "terminal_capacity"
+            ? "Terminal start reported host capacity pressure, but the host receipt confirms state. Inspect it before acting."
+            : "Terminal start reported a host failure, but the host receipt confirms state. Inspect it before acting.");
           return;
         }
-        setMessage("Host failed to start the terminal. Start outcome is unknown. Original request ID retained; inspect its receipt. No automatic resend.");
+        setMessage(reason === "terminal_capacity"
+          ? "Host may be at terminal capacity. Start outcome is unknown. Original request ID retained; inspect its receipt. No automatic resend."
+          : "Host failed to start the terminal. Start outcome is unknown. Original request ID retained; inspect its receipt. No automatic resend.");
         return;
       }
       const confirmed = result.error ? null : terminalReceiptFromValue(result.data, value.start);

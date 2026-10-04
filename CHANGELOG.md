@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-031 start-503 dedup — one branch, four paths, same honesty
+
+- Merged the near-duplicate capacity/generic 503 branches into one attached-receipt branch with a wording split (net -7 lines); all four message paths and fence postures preserved. Verified: typecheck clean, 50 pass/1 skip, review clean. X: see checkpoint note.
+
 ## RC-031 start-404 stays unknown — post-INSERT miss shares the message
 
 - start() 404 keeps the reference with unknown + inspect message: post-INSERT guard/launch re-checks throw the same 404 after commit with receipt stripped, so clearing could orphan a row. First review caught the leak; fixed, follow-up clean. Verified: typecheck clean, 50 pass/1 skip. X: see checkpoint note.
