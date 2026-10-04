@@ -1321,3 +1321,7 @@ The historical checkpoint evidence below is retained in its original order and s
 - **Evidence:** packages/client/src/terminals.test.ts case covers three definitive + four unknown messages + non-409 statuses + Eden shape extraction. Full suite 189 pass/64 skip/0 fail/2307 assertions; typecheck + doc links clean. Reviews: 01a107bc found post-reservation defect (fixed), 01a107c1 found missing terminal_input_unknown (fixed), 01a107c4 scope check, 01a107c7 final clean.
 - **Falsification:** Initial blanket-409 version would clear fence on post-reservation refusal; caught by review reading backend order (update at :803, guard at :804). Test asserts ambiguous terminal_unavailable stays unknown.
 - **X:** Pending this checkpoint; rule: skip if own post <1h old with timestamp proof.
+
+# RC-031 409-refusal checkpoint — X attempt 2026-10-04 (UTC)
+
+- **X:** mac-use bridge still closed; browser_status fails twice (before and after 20s wait). No tab opened, no timeline read, no 1h check possible, nothing submitted. No cleanup obligation created (no owned tab). Previous checkpoint's owned-tab removal remains unverified.
