@@ -1381,3 +1381,8 @@ The historical checkpoint evidence below is retained in its original order and s
 - **Scope:** start() 422 invalid-request clears the unreserved local reference (CAS writeReference(null,value)) so Start re-enables and the next attempt uses a fresh requestId; honest "nothing started, try again" message. No backend change.
 - **Evidence:** Typecheck clean; terminal tests 13/13. Review 01a107f0 found blocked-retry defect (kept reference made "try again" false); fixed. Follow-up 01a107f1 clean (CAS safe, fresh ID, message true).
 - **X:** Pending this checkpoint; bridge + cua fallback check follows.
+
+# RC-031 422-slice checkpoint — X attempt 2026-10-04 (UTC)
+
+- **X mac-use:** Bridge still closed (ninth consecutive check). No tab, nothing submitted.
+- **X cua Space fallback (local:space-7d25e43636):** Space Chromium reaches x.com HTTP 200 via curl, and page HTML contains latest-post markers Sep 25/27/29/30 — latest own post Sep 30, four days before Oct 4, so the <1h rule does NOT block a post (eligible). But headless Chromium dump-dom fails on x.com (ERR_HTTP_RESPONSE_CODE_FAILURE) and nitter (SSL handshake fail in Space); example.com renders, so the browser works but X's JS wall blocks it. No signed-in session exists in the Space, so posting from there would need credentials the goal does not grant. No post made, no draft submitted. Result: eligible but unpostable from available environments.
