@@ -141,6 +141,7 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
     if (result.error) {
       if (workspaceErrorStatus(result.error) === 401) onUnauthorized();
       if (workspaceErrorStatus(result.error) === 404) clearScreen(true);
+      if (workspaceErrorStatus(result.error) === 503) throw new Error("Terminal host is unavailable");
       throw new Error("Terminal state unavailable for this login");
     }
     const confirmed = terminalPollFromValue(result.data, expected, offset);
@@ -235,7 +236,14 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
             : saved.stopRequested ? "Stop is unconfirmed. Input remains disabled."
             : "Terminal state read from the host. Input acknowledgements are not command results.");
         }
-        catch { if (current()) { setReceipt(null); setMessage("Terminal state is unconfirmed. Input is disabled; only state reads retry automatically."); } }
+        catch (error) {
+          if (current()) {
+            setReceipt(null);
+            setMessage(error instanceof Error && error.message === "Terminal host is unavailable"
+              ? "Terminal host is unavailable. State reads retry automatically; nothing was resent."
+              : "Terminal state is unconfirmed. Input is disabled; only state reads retry automatically.");
+          }
+        }
         finally { if (current()) { working.current = false; setBusy(false); drainKeys(); } }
       }
       if (!cancelled && current()) timer = setTimeout(tick, 750);

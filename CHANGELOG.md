@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-031 poll-503 message — host outage reads honestly on auto-poll
+
+- poll() 503 now throws "Terminal host is unavailable" and the 750ms tick shows it stays auto-retried with nothing resent; other poll failures keep generic. GET-only path, no behavior change. Verified: typecheck clean, terminal tests 13/13, review clean on host-side sources, string safety, inspect nuance and retry continuity. X: see checkpoint note.
+
 ## RC-031 resize-404 fence clear, stop-404 stays unknown — definitive split
 
 - resize() on 404 clears the fence + screen (definitive: ownedRow before update). stop() on 404 keeps the fence with an honest unknown message (404 may fire after stopContext, so "nothing changed" would lie). First review caught the overbroad stop-404 clear; fixed, follow-up clean. Verified: typecheck clean, terminal tests 13/13. X: see checkpoint note.
