@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-031 resize-409 poll fallback — refused resize reads authoritative state
+
+- resize() on 409 now falls back to readonly poll: applied with matching dims clears the uncertainty fence and confirms size; otherwise fence stays with input blocked. Mirrors the reviewed stop-409 shape; first review caught a stuck-fence defect on the applied path (fixed, follow-up clean). Verified: 190 pass/64 skip/0 fail, typecheck + links clean. X: see checkpoint note.
+
 ## RC-031 stop-409 poll fallback — refused stop reads authoritative state
 
 - stop() on 409 now falls back to readonly poll for the authoritative receipt instead of reporting unknown; stopRequested fence stays set so input stays disabled; poll failure still reports unknown with no resend. Verified: 190 pass/64 skip/0 fail, typecheck + links clean, review clean. X: see checkpoint note.

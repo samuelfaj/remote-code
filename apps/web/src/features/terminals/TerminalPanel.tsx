@@ -361,6 +361,20 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
       const result = await client(end).api.terminals({ terminalId: saved.terminalId }).resize.post({ cols: wantCols, rows: wantRows });
       if (!current() || Date.now() >= end) throw new Error("Resize outcome unknown");
       if (workspaceErrorStatus(result.error) === 401) onUnauthorized();
+      if (workspaceErrorStatus(result.error) === 409) {
+        // Resize refused on an unsettled terminal: fall back to a readonly
+        // poll for the authoritative receipt instead of failing.
+        const settled = await poll(end, current, saved);
+        if (settled.resizeState === "applied" && settled.cols === wantCols && settled.rows === wantRows) {
+          writeReference(saved, next);
+          acceptReceipt(settled, saved);
+          setMessage(`Host confirms ${settled.cols} columns × ${settled.rows} rows.`);
+        } else {
+          acceptReceipt(settled, next);
+          setMessage("Resize is not complete. Input stays blocked; Stop the terminal to release it.");
+        }
+        return;
+      }
       const confirmed = result.error ? null : terminalReceiptFromValue(result.data, saved.start, saved.terminalId);
       if (!confirmed || confirmed.resizeState !== "applied" || confirmed.cols !== wantCols || confirmed.rows !== wantRows) throw new Error("Resize outcome unknown");
       writeReference(saved, next);
