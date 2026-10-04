@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-031 shutdown-start message — 503 closing clears for later retry
+
+- start() on 503 terminals_closing now drops the unreserved local reference and says the host is shutting down; later retry uses a fresh ID. Pre-reservation confirmed (throws before workspace checks and INSERT). Verified: typecheck clean, terminal tests 13/13, review clean. X: see checkpoint note.
+
 ## RC-031 invalid-start retry — 422 clears local reference for fresh try
 
 - start() on 422 now drops the unreserved local reference so Start re-enables with a fresh request ID; message says nothing started. First review caught a blocked-retry defect (reference kept, "try again" a lie); fixed, follow-up clean. Verified: typecheck clean, terminal tests 13/13. X: see checkpoint note.

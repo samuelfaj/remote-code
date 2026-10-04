@@ -276,6 +276,13 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
         setMessage("Host rejected the start request as invalid. Nothing was started; try again.");
         return;
       }
+      if (workspaceErrorStatus(result.error) === 503 && terminalRejectionMessage(result.error) === "terminals_closing") {
+        // Host is shutting down: nothing was reserved for this request.
+        // Drop the local reference so a later try uses a fresh request ID.
+        writeReference(null, value);
+        setMessage("Host is shutting down. Nothing was started; try again later.");
+        return;
+      }
       const confirmed = result.error ? null : terminalReceiptFromValue(result.data, value.start);
       if (!confirmed) throw new Error("Start outcome unknown");
       acceptReceipt(confirmed, value);
