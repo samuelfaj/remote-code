@@ -1,5 +1,12 @@
 # Pivot policy
 
+## RC-033 acceptance pivot — blocked slice documented, no criteria weakened — 2026-10-04 (UTC)
+
+- **Decision:** Keep RC-033 In Progress with original Delivery/proof/Failure fields unchanged. No acceptance is claimed: (1) RC-033 Depends on RC-031, which is itself In Progress (flow-control journey proof open; only bounded slices verified); advancing RC-033 acceptance past its dependency violates the plan's own gating rule. (2) The mobile-tab-switch proof clause is vacuous against the current product — the mobile client renders no tabs and touches no layout route (static non-interference proof only); manufacturing a mobile tab UI to satisfy the clause would invent scope. (3) RC-002 remains Blocked with unknown provider effect; all Distill-gated work stays gated with no retry.
+- **What advanced instead:** The verifiable RC-033 surface is fully covered without weakening: per-workspace save/open/switch, two-pane persistence, per-device tab/pane focus with zero-PUT proofs, all-three-kinds merge with load-bearing re-index, workspace switching without contamination, archived 409 + read-only visibility + live-preflight guard, Linux API + Linux terminal Save reruns on current source. Workspaces E2E 19/19, layout unit 9/9 (6 API + 3 client), full suite 173/64, typecheck + links clean, every slice reasoning-reviewed with findings fixed and follow-ups clean.
+- **Next:** Unblock in dependency order: RC-031 flow-control journey acceptance first, then a real mobile tab surface (product decision, not test theater), then RC-033 acceptance against its unchanged contract. RC-002 reconciliation only through an authorized receipt; never blind retry. No deployment.
+
+
 ## RC-031 web disconnect/reconnect proof — locally verified bounded slice — 2026-10-03 (UTC)
 
 - **Decision:** Preserve original acceptance criteria and keep RC-031 In Progress. This checkpoint verified run10 evidence as a bounded reconnect slice (not full task acceptance) and committed/pushed it as `917379f`. No deployment.

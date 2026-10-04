@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-033 acceptance pivot + X attempt — bridge unstable, no post
+
+- PIVOT.md records why RC-033 acceptance stays open with criteria unchanged: RC-031 dependency In Progress, mobile-tab-switch clause vacuous (no mobile tabs), RC-002 Blocked with no retry; verifiable surface listed with next steps in dependency order. Reasoning review of the pivot entry clean. X: timeline read @samfajreldines / 458 posts / latest 30 Sep (eligible); profile tab closed cleanly, compose tab opened, then bridge closed before snapshot — no text entered, nothing submitted; compose-tab removal unproven. Evidence in scratch x-failure-evidence.json. No receipt.
+
 ## RC-033 zero-pane E2E — empty panes state proved visible
 
 - New workspaces.spec.ts test: panes-absent seed, reload, reopen, assert visible terminal-local-panes container + 'No panes on this tab.' text. Review found text-only gap (hidden container would pass); fixed with toBeVisible(), follow-up clean. Verified: workspaces E2E 19/19, typecheck clean, links + whitespace pass. Test-only, no shipped code changed. X: extension disconnected at checkpoint; no tab, nothing submitted, no receipt, no valid <1h skip.
