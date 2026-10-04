@@ -1758,3 +1758,7 @@ The historical checkpoint evidence below is retained in its original order and s
 - **Scope:** preflight() workspace GET 404 → gone, 503 → login-unavailable, before generic decode; send/resize/stop map both to No-sent + retry. Untouched start/inspect/saveLayout generics verified honest (nothing reserved/written on those paths). No backend change.
 - **Evidence:** Typecheck clean; 50 pass/1 skip. 3-person panel clean: A (order/honesty/reuse), B (all untouched paths honestly generic), C (4 hunks message-only, zero state writes).
 - **X:** Bridge check with WHY gates + timestamp follows.
+
+# RC-031 preflight-split checkpoint — X attempt 2026-10-04T23:10:23Z (UTC)
+
+- **WHY no post, three gates:** (1) mac-use bridge to signed-in Chrome — CLOSED (2026-10-04T23:10:23Z, 45th consecutive check; status+close both fail, no tab can open); (2) <1h rule — PASS (latest own post Sep 30 per same-day cua Space page-HTML read, four days old); (3) fallback environments — UNAVAILABLE (cua Space local:space-7d25e43636 still a fresh Ubuntu container: no signed-in X session, headless Chromium blocked by X JS wall; posting there needs ungranted credentials, and TWITTER.md forbids substituting methods without user instruction). Gate 1 closed → no submission possible. No tab opened, nothing submitted.
