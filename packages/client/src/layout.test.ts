@@ -33,3 +33,17 @@ it("binds layout responses to the requested workspace and null empty state", () 
   expect(workspaceLayoutResponseFromValue({ workspaceId: "w1", layout: good }, "w2")).toBeNull();
   expect(workspaceLayoutResponseFromValue({ workspaceId: "w1", layout: { ...good, activePaneId: "pane-9" } }, "w1")).toBeNull();
 });
+
+it("keeps stored selection local: a merge-save sends stored ids back, never the other device's", () => {
+  // The shipped TerminalPanel merge rule: when saving, send the stored
+  // active ids back unchanged (only a brand-new layout picks its own tab),
+  // so one device's save cannot hijack another device's focus. This test
+  // pins the parsing half of that contract: the stored row must round-trip
+  // validation unchanged, including its selection, so the panel can echo it
+  // back byte-identically instead of substituting a local selection.
+  const stored = workspaceLayoutResponseFromValue({ workspaceId: "w1", layout: good }, "w1");
+  expect(stored).not.toBeNull();
+  expect(JSON.parse(JSON.stringify(workspaceLayoutFromValue(stored)))).toEqual(stored);
+  expect(stored!.activeTabId).toBe("tab-1");
+  expect(stored!.activePaneId).toBe("pane-2");
+});

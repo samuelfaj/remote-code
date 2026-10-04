@@ -368,7 +368,19 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
     // A save that confirmed while this read was in flight wins: stale reads
     // must not overwrite it (>= covers same-millisecond clock ties).
     if (after !== undefined && layoutSavedAt.current >= after) return;
-    if (current()) { setLayout(parsed); setLayoutMessage(parsed ? `Layout restored: ${parsed.tabs.length} tab(s).` : "No saved layout for this workspace."); }
+    // Per-device selection: the server stores shared tabs/panes, but the
+    // active tab/pane it returns belongs to whichever client saved last.
+    // Never adopt it, or one device's selection hijacks this device's focus.
+    // Fall back to the first stored tab; keep a purely local selection.
+    if (current()) {
+      const tabsOnly = parsed ? {
+        tabs: parsed.tabs,
+        activeTabId: parsed.tabs[0]?.id ?? null,
+        ...(parsed.panes === undefined ? {} : { panes: parsed.panes, activePaneId: null }),
+      } : null;
+      setLayout(tabsOnly);
+      setLayoutMessage(tabsOnly ? `Layout restored: ${tabsOnly.tabs.length} tab(s).` : "No saved layout for this workspace.");
+    }
   }
 
   async function saveLayout() {
@@ -403,13 +415,23 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
         .sort((a, b) => a.order - b.order)
         .map((pane, index) => ({ ...pane, order: index }));
       const tabs = [...kept, ...terminalTab];
-      const next: WorkspaceLayout = { tabs, activeTabId: terminalTab[0]?.id ?? existing?.activeTabId ?? null };
+      // Merge keeps the stored shared structure but never adopts the stored
+      // selection: active tab/pane stays local to this device. Send the
+      // stored active ids back unchanged so a merge-save cannot move another
+      // device's focus; only a brand-new layout picks the fresh terminal tab.
+      const storedActiveTab = existing?.activeTabId ?? null;
+      const storedActivePane = existing?.activePaneId;
+      const next: WorkspaceLayout = { tabs, activeTabId: terminalTab.length > 0 && tabs.length === terminalTab.length ? terminalTab[0].id : storedActiveTab };
       const survivingPanes = keptPanes.filter((pane) => tabs.some((tab) => tab.id === pane.tabId));
       if (survivingPanes.length > 0 || existing?.panes !== undefined) {
         next.panes = survivingPanes;
-        next.activePaneId = survivingPanes.some((pane) => pane.id === existing?.activePaneId) ? existing?.activePaneId ?? null : null;
+        next.activePaneId = survivingPanes.some((pane) => pane.id === storedActivePane) ? storedActivePane ?? null : null;
       }
       if (terminalTab.length === 0 && tabs.length === 0) { next.activeTabId = null; }
+      // A pruned selection must fall back to a surviving tab, but locally:
+      // keep the stored id when valid so this save does not move it, else
+      // fall back to the first surviving tab.
+      if (next.activeTabId !== null && !tabs.some((tab) => tab.id === next.activeTabId)) next.activeTabId = tabs[0]?.id ?? null;
       if (!workspaceLayoutFromValue(next)) throw new Error("Invalid workspace layout");
       const result = await client(end).api.workspaces({ workspaceId: workspace.id }).layout.put(next);
       if (!current() || Date.now() >= end) throw new Error("Terminal context expired");
@@ -479,7 +501,7 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
         <button type="button" disabled={busy || !canInput} onClick={() => void send("\x03")}>Send Ctrl+C</button>
         <button type="button" disabled={busy || blocked || !storageReady || !workspace || workspace.archived} onClick={() => void saveLayout()}>Save layout</button>
       </div>
-      <p data-testid="terminal-layout-state">{layoutMessage || "Layout not loaded for this workspace."}{layout ? ` Active tab: ${layout.activeTabId ?? "none"}.` : ""}</p>
+      <p data-testid="terminal-layout-state">{layoutMessage || "Layout not loaded for this workspace."}{layout ? ` Shared tabs: ${layout.tabs.length}; selection stays on this device.` : ""}</p>
     </>}
   </section>;
 }
