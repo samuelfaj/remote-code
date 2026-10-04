@@ -1335,3 +1335,9 @@ The historical checkpoint evidence below is retained in its original order and s
 # RC-031 poll-fence checkpoint — X attempt 2026-10-04 (UTC)
 
 - **X:** Bridge still closed on fourth check (one per checkpoint this session). No tab, no timeline, no post, nothing submitted. Draft for next open bridge: "RemoteCode terminal input states now honest: host-buffered shows as queued, definitive 409 refusals no longer fake unknown, readonly polls never clear uncertainty. #buildingRemoteCode".
+
+# RC-031 stop-409 poll fallback — locally verified slice — 2026-10-04 (UTC)
+
+- **Scope:** TerminalPanel stop() treats a 409 stop refusal as "already settling": readonly poll() supplies the authoritative receipt via acceptReceipt; stopRequested fence set before POST keeps input disabled; poll failure still lands in the unknown catch with no resend. No backend change.
+- **Evidence:** Full suite 190 pass/64 skip/0 fail/2310 assertions; typecheck + doc links clean. Review 01a107d9 clean on all four checks (409-before-ack, poll readonly, fence-first, no unknown masking).
+- **X:** Pending this checkpoint; bridge check follows.

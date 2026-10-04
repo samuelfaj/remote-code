@@ -494,6 +494,14 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
       const result = await client(end).api.terminals({ terminalId: saved.terminalId }).stop.post();
       if (!current() || Date.now() >= end) throw new Error("Stop outcome unknown");
       if (workspaceErrorStatus(result.error) === 401) onUnauthorized();
+      if (workspaceErrorStatus(result.error) === 409) {
+        // Stop refused on an already-settling terminal: fall back to a
+        // readonly poll for the authoritative receipt instead of failing.
+        const settled = await poll(end, current, saved);
+        acceptReceipt(settled, next);
+        setMessage(settled.cleanup === "removed" ? "Host confirms the terminal ended and its process was removed." : "Stop is not complete. Inspect state; no automatic stop resend.");
+        return;
+      }
       const confirmed = result.error ? null : terminalReceiptFromValue(result.data, saved.start, saved.terminalId);
       if (!confirmed) throw new Error("Stop outcome unknown");
       acceptReceipt(confirmed, next);

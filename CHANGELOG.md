@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-031 stop-409 poll fallback — refused stop reads authoritative state
+
+- stop() on 409 now falls back to readonly poll for the authoritative receipt instead of reporting unknown; stopRequested fence stays set so input stays disabled; poll failure still reports unknown with no resend. Verified: 190 pass/64 skip/0 fail, typecheck + links clean, review clean. X: see checkpoint note.
+
 ## RC-031 readonly-poll unknown fence — regression test proves no silent clear
 
 - Test-only: uncertain poll stays inputState unknown through terminalPollFromValue and its embedded receipt, never upgraded to written. Verified: 190 pass/64 skip/0 fail, typecheck + links clean, review clean. X: see checkpoint note.
