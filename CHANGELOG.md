@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-031 wrapper removal — panel calls shared helper directly
+
+- Removed the one-line attachedReceipt wrapper; the call site uses shared terminalAttachedReceipt(result.error, value.start) with identical binding. Net -3 lines, no behavior change. Verified: typecheck clean, 50 pass/1 skip, review clean. X: see checkpoint note.
+
 ## RC-031 start-503 dedup — one branch, four paths, same honesty
 
 - Merged the near-duplicate capacity/generic 503 branches into one attached-receipt branch with a wording split (net -7 lines); all four message paths and fence postures preserved. Verified: typecheck clean, 50 pass/1 skip, review clean. X: see checkpoint note.

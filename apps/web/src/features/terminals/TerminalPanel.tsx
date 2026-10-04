@@ -135,11 +135,8 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
   }
 
   // A post-reservation start failure attaches the host receipt alongside the
-  // error; accept it only when it validates against this attempt's start
-  // identity, otherwise null. Shared client helper, also unit-tested there.
-  function attachedReceipt(error: unknown, expected: TerminalReference): TerminalReceipt | null {
-    return terminalAttachedReceipt(error, expected.start);
-  }
+  // error; shared terminalAttachedReceipt validates it against the attempt's
+  // start identity (called with .start below).
 
   async function poll(end: number, current: () => boolean, expected: TerminalReference) {
     if (!expected.terminalId) throw new Error("Start receipt is pending");
@@ -383,7 +380,7 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
         // terminal_capacity keeps its own capacity wording, other 503s share
         // the generic host-failure wording.
         const reason = terminalRejectionMessage(result.error);
-        const attached = attachedReceipt(result.error, value);
+        const attached = terminalAttachedReceipt(result.error, value.start);
         if (attached) {
           acceptReceipt(attached, value);
           setMessage(reason === "terminal_capacity"
