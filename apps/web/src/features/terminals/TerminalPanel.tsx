@@ -421,8 +421,16 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
       if (!confirmed) throw new Error("Start outcome unknown");
       acceptReceipt(confirmed, value);
       setMessage("Terminal start confirmed by the host. No command was executed on this device.");
-    } catch {
-      if (current()) { setReceipt(null); setMessage(sent ? "Terminal start outcome is unknown. Original request ID retained; inspect its receipt. No automatic resend." : "Terminal preflight or storage failed. No start was sent; repair or inspect before trying again."); }
+    } catch (error) {
+      if (current()) {
+        setReceipt(null);
+        setMessage(error instanceof Error && (error.message === "Workspace is archived" ||
+          error.message === "Workspace is gone on this host" ||
+          error.message === "Prepare the workspace folder first" ||
+          error.message === "Terminal login check is unavailable")
+          ? `${error.message}. No start was sent.`
+          : sent ? "Terminal start outcome is unknown. Original request ID retained; inspect its receipt. No automatic resend." : "Terminal preflight or storage failed. No start was sent; repair or inspect before trying again.");
+      }
     } finally { if (current()) { working.current = false; setBusy(false); } }
   }
 

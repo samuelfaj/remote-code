@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-031 start preflight map — refused start reads honestly, not unknown
+
+- start() outer catch now maps the four preflight literals to No-start-sent messages instead of generic preflight-failed text. All four reachable via starting=true preflight, sent=false forced, zero fence writes. 3-person panel clean. Verified: typecheck clean, 50 pass/1 skip. X: see checkpoint note.
+
 ## RC-031 tick-404 self-release — dead reference frees Start automatically
 
 - Auto-poll 404 now releases the stale reference (CAS-guarded, storage-failure safe) so Start re-enables; message no longer promises auto-retry on the idle tick. Verified: typecheck clean, 50 pass/1 skip, review clean on definitiveness, CAS, failure path and recovery (+1 wording nit fixed in-slice). X: see checkpoint note.
