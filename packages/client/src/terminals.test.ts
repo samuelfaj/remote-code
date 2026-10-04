@@ -236,3 +236,14 @@ it("treats a 409 input rejection as definitive refusal, never uncertain delivery
   expect(terminalRejectionMessage({ status: 409, value: "terminal_input_pending" })).toBe("terminal_input_pending");
   expect(terminalRejectionMessage({ status: 409 })).toBeNull();
 });
+
+it("keeps an input-uncertain poll visible as unknown, never as written", () => {
+  const uncertain = { ...poll, inputSequence: 1, inputState: "unknown" as const };
+  const parsed = terminalPollFromValue(uncertain, reference, 0);
+  expect(parsed?.inputState).toBe("unknown");
+  expect(parsed?.inputState).not.toBe("written");
+  // A readonly poll carries the receipt inside it: receipt fields stay unknown too.
+  const { outputAvailable: _o, baseOffset: _b, offset: _f, nextOffset: _n, endOffset: _e,
+    gap: _g, outputBase64: _c, retainedBytes: _r, totalBytes: _t, droppedBytes: _d, flow: _w, ...receiptFields } = uncertain;
+  expect(terminalReceiptFromValue(receiptFields, start, terminalId)?.inputState).toBe("unknown");
+});

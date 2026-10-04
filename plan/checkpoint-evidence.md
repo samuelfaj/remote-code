@@ -1325,3 +1325,9 @@ The historical checkpoint evidence below is retained in its original order and s
 # RC-031 409-refusal checkpoint — X attempt 2026-10-04 (UTC)
 
 - **X:** mac-use bridge still closed; browser_status fails twice (before and after 20s wait). No tab opened, no timeline read, no 1h check possible, nothing submitted. No cleanup obligation created (no owned tab). Previous checkpoint's owned-tab removal remains unverified.
+
+# RC-031 readonly-poll unknown fence — regression test — 2026-10-04 (UTC)
+
+- **Scope:** Test-only in packages/client/src/terminals.test.ts: uncertain poll (inputSequence 1, inputState unknown) parses as unknown through shipped terminalPollFromValue, and its embedded receipt fields parse as unknown through shipped terminalReceiptFromValue. No production change.
+- **Evidence:** Full suite 190 pass/64 skip/0 fail/2310 assertions; typecheck + doc links clean. Review 01a107d4 clean (real shipped path, falsifies unknown→written upgrade).
+- **X:** mac-use bridge closed across three checks (plus 60s wait); no timeline read, no 1h check, nothing submitted, no owned tab. Prior owned-tab removal still unverified.

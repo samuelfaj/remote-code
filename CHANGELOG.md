@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-031 readonly-poll unknown fence — regression test proves no silent clear
+
+- Test-only: uncertain poll stays inputState unknown through terminalPollFromValue and its embedded receipt, never upgraded to written. Verified: 190 pass/64 skip/0 fail, typecheck + links clean, review clean. X: see checkpoint note.
+
 ## RC-031 definitive 409 input refusal — no false unknown fence
 
 - Named pre-reservation 409s (terminal_input_pending/sequence_conflict/input_unknown) clear the unknown fence with "Host refused input" instead of blocking further input; post-reservation guard 409s and ambiguous terminal_unavailable stay unknown to protect ordering. New terminalRejectionMessage extracts Eden {status, value:{error}}. Verified: 189 pass/64 skip/0 fail, typecheck + links clean, three review rounds (two defects found and fixed, final clean). X: see checkpoint note.
