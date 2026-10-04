@@ -546,6 +546,12 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
         // Resize refused on an unsettled terminal: fall back to a readonly
         // poll for the authoritative receipt instead of failing. If the poll
         // itself throws, the outcome is unknown (fence kept) with no resend.
+        // terminal_not_running is definitive (the process ended — no resize
+        // can apply), so say so directly instead of polling a dead terminal.
+        if (terminalRejectionMessage(result.error) === "terminal_not_running") {
+          setMessage("Terminal process ended. Resize cannot apply; Stop the terminal to release it.");
+          return;
+        }
         try {
           const settled = await poll(end, current, saved);
           if (settled.resizeState === "applied" && settled.cols === wantCols && settled.rows === wantRows) {

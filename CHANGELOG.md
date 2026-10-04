@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-031 resize not_running split — dead process reads honestly, no wasted poll
+
+- resize() 409 terminal_not_running now says the process ended directly (fence kept, stop to release) instead of polling a dead terminal; all other 409s keep poll-fallback (verified correct for closing/unavailable/archived/changed/identity — poll reads via ownedRow, unaffected by guard refusals). 3-person panel clean. Verified: typecheck clean, 50 pass/1 skip. X: see checkpoint note.
+
 ## RC-031 login-503 mapped in send/resize/stop — preflight outage reads honestly
 
 - session() 503 now maps to No-sent + retry messages in all three mutation catches (was generic unknown/ambiguous there). 3-person panel clean on ordering, reachability and scope. Verified: typecheck clean, 50 pass/1 skip. X: see checkpoint note.

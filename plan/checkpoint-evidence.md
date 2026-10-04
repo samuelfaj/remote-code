@@ -1702,3 +1702,9 @@ The historical checkpoint evidence below is retained in its original order and s
 # RC-031 login-map checkpoint — X attempt 2026-10-04T22:16:06Z (UTC)
 
 - **WHY no post, three gates:** (1) mac-use bridge to signed-in Chrome — CLOSED (2026-10-04T22:16:06Z, 39th consecutive check; status+close both fail, no tab can open); (2) <1h rule — PASS (latest own post Sep 30 per same-day cua Space page-HTML read, four days old); (3) fallback environments — UNAVAILABLE (cua Space local:space-7d25e43636 still a fresh Ubuntu container: no signed-in X session, headless Chromium blocked by X JS wall; posting there needs ungranted credentials, and TWITTER.md forbids substituting methods without user instruction). Gate 1 closed → no submission possible. No tab opened, nothing submitted.
+
+# RC-031 resize not_running split — locally verified slice — 2026-10-04 (UTC)
+
+- **Scope:** resize() 409 terminal_not_running short-circuits with ended message (fence kept, no poll of dead terminal); other 409s keep poll-fallback. No backend change.
+- **Evidence:** Typecheck clean; 50 pass/1 skip. 3-person panel clean: A (inspect verdict definitive — transient reads give 503 not 409; fence/message honest), B (resize_unknown correctly polls; closing/unavailable/archived/changed/identity all poll-correct since poll bypasses guard), C (one hunk, message+return only).
+- **X:** Bridge check with WHY gates + timestamp follows.
