@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-033 cross-device merge E2E — foreign terminal tabs survive UI Save
+
+- New workspaces.spec.ts test: seed file + foreign terminal + own stale terminal tabs (stale pane order 0, survivors 1,2), click UI Save, assert exact tabs (file + foreign) and re-indexed panes (0,1). A behavior-change filter attempt proved identical to the original by case analysis and was reverted to a sharpened comment; re-index-removal falsification fails the test. Verified: workspaces E2E 17/17, typecheck clean, links + whitespace pass; two review rounds closed (non-load-bearing seed gap fixed, follow-up clean). X: extension disconnected at checkpoint; no tab, nothing submitted, no receipt.
+
 ## RC-033 archived stays visible — saved layout renders read-only after archive
 
 - Archived E2E half now asserts the saved layout stays visible after Archive: Shared tabs: 1, local tab-a, local selection tab-a, alongside disabled Save + zero PUTs. Verified: workspaces E2E 16/16, typecheck clean, links + whitespace pass; reasoning review clean. Test-only, no shipped code changed. X: extension disconnected at checkpoint (browser_status fail, no tab, nothing submitted); no timeline check possible, no receipt.

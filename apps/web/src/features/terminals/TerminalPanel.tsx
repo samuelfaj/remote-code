@@ -413,10 +413,13 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
       const terminalTab = saved?.terminalId && saved.start.workspaceId === workspace.id
         ? [{ id: `terminal-${saved.terminalId.slice(0, 8)}`, kind: "terminal" as const, targetId: saved.terminalId }]
         : [];
-      // This panel owns only the terminal tab: drop other terminal tabs the
-      // panel may have written before, keep file/thread tabs. Panes pointing
-      // at a dropped terminal tab are pruned too, so the merged layout stays
-      // valid instead of failing the save.
+      // This panel owns only its live terminal tab (matched by live
+      // terminalId) plus stale "terminal-"-prefixed tabs it wrote before:
+      // drop the stale ones, keep file/thread tabs AND foreign terminal tabs
+      // owned by other devices/sessions (no "terminal-" prefix and not this
+      // device's live id). Panes pointing at a dropped terminal tab are
+      // pruned too, so the merged layout stays valid instead of failing
+      // the save.
       const kept = (existing?.tabs ?? []).filter((tab) => tab.kind !== "terminal" || !(tab.targetId === saved?.terminalId || tab.id.startsWith("terminal-")));
       const keptIds = new Set(kept.map((tab) => tab.id));
       // Pruning a dropped terminal tab can leave pane order gaps; validators

@@ -529,6 +529,64 @@ test("archived workspace blocks layout save in the UI without a write", async ({
   expect(row.tabs.map((tab) => tab.id)).toEqual(["tab-a"]);
 });
 
+test("merge-save preserves another device terminal tab while pruning own stale one", async ({
+  page,
+}) => {
+  // RC-033 cross-device merge: a foreign terminal tab (no "terminal-"
+  // prefix, other session) must survive this device's UI Save, while this
+  // device's own stale "terminal-" tab is pruned with dense pane re-index.
+  const suffix = crypto.randomUUID();
+  const name = `RC033 merge ${suffix}`;
+  await signIn(page);
+  await page.getByLabel("Workspace name").fill(name);
+  await page.getByRole("button", { name: "Create workspace" }).click();
+  await expect(page.getByRole("button", { name: `Open workspace ${name}` })).toBeVisible();
+  await page.getByRole("button", { name: `Open workspace ${name}` }).click();
+  await expect(page.getByTestId("terminal-layout-state")).toContainText("No saved layout");
+
+  const listed = await page.request.get(`${apiUrl}/api/workspaces`);
+  const rows = ((await listed.json()) as { workspaces: Array<{ id: string; name: string }> }).workspaces;
+  const workspaceId = rows.find((row) => row.name === name)?.id;
+  expect(workspaceId).toBeTruthy();
+  const seed = await page.request.put(`${apiUrl}/api/workspaces/${workspaceId}/layout`, {
+    data: {
+      tabs: [
+        { id: "tab-file", kind: "file", targetId: "notes.txt" },
+        { id: "foreign-term", kind: "terminal", targetId: "11111111-1111-1111-1111-111111111111" },
+        { id: "terminal-deadbeef", kind: "terminal", targetId: "deadbeef-dead-beef-dead-beefdeadbeef" },
+      ],
+      activeTabId: "tab-file",
+      panes: [
+        { id: "pane-stale", tabId: "terminal-deadbeef", order: 0 },
+        { id: "pane-foreign", tabId: "foreign-term", order: 1 },
+        { id: "pane-file", tabId: "tab-file", order: 2 },
+      ],
+      activePaneId: "pane-file",
+    },
+  });
+  expect(seed.ok()).toBe(true);
+  await page.reload();
+  await expect(page.getByTestId("workspace-panel")).toBeVisible();
+  await page.getByRole("button", { name: `Open workspace ${name}` }).click();
+  await expect(page.getByTestId("terminal-layout-state")).toContainText("Shared tabs: 3");
+  await page.getByRole("button", { name: "Save layout" }).click();
+  await expect(page.getByTestId("terminal-layout-state")).toContainText("Layout saved: 2 tab(s).");
+  const saved = ((await (await page.request.get(`${apiUrl}/api/workspaces/${workspaceId}/layout`)).json()) as {
+    layout: {
+      tabs: Array<{ id: string; kind: string; targetId: string }>;
+      panes: Array<{ id: string; tabId: string; order: number }>;
+    };
+  }).layout;
+  expect(saved.tabs).toEqual([
+    { id: "tab-file", kind: "file", targetId: "notes.txt" },
+    { id: "foreign-term", kind: "terminal", targetId: "11111111-1111-1111-1111-111111111111" },
+  ]);
+  expect(saved.panes).toEqual([
+    { id: "pane-foreign", tabId: "foreign-term", order: 0 },
+    { id: "pane-file", tabId: "tab-file", order: 1 },
+  ]);
+});
+
 test("older host capability blocks create before any workspace POST", async ({
   page,
 }) => {
