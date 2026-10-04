@@ -485,7 +485,9 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
         setReceipt(null);
         setMessage(error instanceof Error && error.message === "Workspace is archived"
           ? `${error.message}. No input was sent.`
-          : sent ? "Input delivery is unknown. Further input is blocked, including after reload. State reads never resend input; inspect or stop the terminal." : "Input preflight or storage failed. No input was sent. Inspect the host before trying again.");
+          : error instanceof Error && error.message === "Terminal login check is unavailable"
+            ? `${error.message}. No input was sent; state reads retry automatically.`
+            : sent ? "Input delivery is unknown. Further input is blocked, including after reload. State reads never resend input; inspect or stop the terminal." : "Input preflight or storage failed. No input was sent. Inspect the host before trying again.");
       }
       if (keyQueue.current.length > 0) {
         const dropped = keyQueue.current.length;
@@ -602,7 +604,9 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
         setReceipt(null);
         setMessage(error instanceof Error && error.message === "Workspace is archived"
           ? `${error.message}. No resize was sent.`
-          : sent ? "Resize outcome is unknown. Further input and resize are blocked, including after reload. Stop the terminal to release it." : "Resize preflight or storage failed. No resize was sent. Inspect the host before trying again.");
+          : error instanceof Error && error.message === "Terminal login check is unavailable"
+            ? `${error.message}. No resize was sent; state reads retry automatically.`
+            : sent ? "Resize outcome is unknown. Further input and resize are blocked, including after reload. Stop the terminal to release it." : "Resize preflight or storage failed. No resize was sent. Inspect the host before trying again.");
       }
     } finally { if (current()) { working.current = false; setBusy(false); } }
   }
@@ -814,7 +818,14 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
       if (!confirmed) throw new Error("Stop outcome unknown");
       acceptReceipt(confirmed, next);
       setMessage(confirmed.cleanup === "removed" ? "Host confirms the terminal ended and its process was removed." : "Stop is not complete. Inspect state; no automatic stop resend.");
-    } catch { if (current()) { setReceipt(null); setMessage("Stop outcome is unconfirmed. Input stays disabled. Inspect state; no stop request is resent automatically."); } }
+    } catch (error) {
+      if (current()) {
+        setReceipt(null);
+        setMessage(error instanceof Error && error.message === "Terminal login check is unavailable"
+          ? `${error.message}. No stop was sent; state reads retry automatically.`
+          : "Stop outcome is unconfirmed. Input stays disabled. Inspect state; no stop request is resent automatically.");
+      }
+    }
     finally { if (current()) { working.current = false; setBusy(false); } }
   }
 

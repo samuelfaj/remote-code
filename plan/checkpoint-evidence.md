@@ -1692,3 +1692,9 @@ The historical checkpoint evidence below is retained in its original order and s
 # RC-031 preflight checkpoint — X attempt 2026-10-04T22:05:02Z (UTC)
 
 - **WHY no post, three gates:** (1) mac-use bridge to signed-in Chrome — CLOSED (2026-10-04T22:05:02Z, 38th consecutive check; status+close both fail, no tab can open); (2) <1h rule — PASS (latest own post Sep 30 per same-day cua Space page-HTML read, four days old); (3) fallback environments — UNAVAILABLE (cua Space local:space-7d25e43636 still a fresh Ubuntu container: no signed-in X session, headless Chromium blocked by X JS wall; posting there needs ungranted credentials, and TWITTER.md forbids substituting methods without user instruction). Gate 1 closed → no submission possible. No tab opened, nothing submitted.
+
+# RC-031 login-503 mapped in mutations — locally verified slice — 2026-10-04 (UTC)
+
+- **Scope:** send/resize/stop catches map session() 503 to No-sent + retry messages instead of generic unknown. session() runs first in preflight, so No-sent holds on all paths. No backend change.
+- **Evidence:** Typecheck clean; 50 pass/1 skip. 3-person panel clean: A (ordering/reachability/honesty), B (branch order, no shadowing), C (3 hunks message-only, zero fence writes).
+- **X:** Bridge check with WHY gates + timestamp follows.
