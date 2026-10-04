@@ -1588,3 +1588,7 @@ The historical checkpoint evidence below is retained in its original order and s
 - **Scope:** stop() 409 poll-fallback catches poll failure with fence-kept unknown message (previously escaped to outer catch which also wiped last-known receipt); resize() 409 gets the same guard per panel asymmetry note. No backend change.
 - **Evidence:** Typecheck clean; terminal tests 13/13. 3-person panel clean: A (fence kept both ways, last-known receipt shown under explicit unknown, no resend), B (shape matches 404/503 siblings, order sound, catch not dead; notes stop-route 409 currently unreachable server-side — harmless defense — and resize asymmetry, fixed in-slice), C (refusal-then-unknown scoping, Inspect actionable while Stop fenced, static literals, success path unchanged).
 - **X:** Bridge check with WHY gates + timestamp follows.
+
+# RC-031 409-nuance checkpoint — X attempt 2026-10-04T20:01:20Z (UTC)
+
+- **WHY no post, three gates:** (1) mac-use bridge to signed-in Chrome — CLOSED (2026-10-04T20:01:20Z, 28th consecutive check; status+close both fail, no tab can open); (2) <1h rule — PASS (latest own post Sep 30 per same-day cua Space page-HTML read, four days old); (3) fallback environments — UNAVAILABLE (cua Space local:space-7d25e43636 still a fresh Ubuntu container: no signed-in X session, headless Chromium blocked by X JS wall; posting there needs ungranted credentials, and TWITTER.md forbids substituting methods without user instruction). Gate 1 closed → no submission possible. No tab opened, nothing submitted.
