@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-031 capacity-503 stays unknown — ambiguous source keeps reference
+
+- start() on 503 terminal_capacity keeps the reference with unknown + inspect message instead of clearing: the count check throws pre-reservation but makeContext throws the same 503 post-reservation with no response marker, so clearing could orphan a row. First review caught the leak; fixed, follow-up clean. Verified: typecheck clean, terminal tests 13/13. X: see checkpoint note.
+
 ## RC-033 PUT-503 message — failed layout write reads honestly
 
 - saveLayout() PUT 503 now says the write failed with stored layout unchanged and retry safe (single transaction rolls back; retry is an idempotent layout-only PUT). Verified: typecheck clean, terminal tests 2/2, review clean on transaction atomicity, retry safety, string mapping and branch order. X: see checkpoint note.

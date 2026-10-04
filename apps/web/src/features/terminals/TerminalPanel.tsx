@@ -332,6 +332,15 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
         setMessage("Host is shutting down. Nothing was started; try again later.");
         return;
       }
+      if (workspaceErrorStatus(result.error) === 503 && terminalRejectionMessage(result.error) === "terminal_capacity") {
+        // Ambiguous: the count check throws before INSERT (nothing reserved),
+        // but makeContext can throw the same 503 after the reserved row
+        // commits. The response carries no marker, so keep the reference and
+        // report unknown with the request ID retained for receipt inspect.
+        // Retry uses the same ID only via inspect; a fresh start is separate.
+        setMessage("Host may be at terminal capacity. Start outcome is unknown. Original request ID retained; inspect its receipt. No automatic resend.");
+        return;
+      }
       const confirmed = result.error ? null : terminalReceiptFromValue(result.data, value.start);
       if (!confirmed) throw new Error("Start outcome unknown");
       acceptReceipt(confirmed, value);
