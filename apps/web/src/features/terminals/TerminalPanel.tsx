@@ -672,7 +672,10 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
         // path upserts unconditionally, so a fresh save repairs the row.
         // Seed empty and continue instead of throwing.
         if (current()) setLayoutMessage("Saved layout is unreadable on this host. Starting empty; saving repairs the stored row.");
-      } else if (stored.error) throw new Error("Workspace layout unavailable");
+      } else if (stored.error) {
+        if (workspaceErrorStatus(stored.error) === 404) throw new Error("Workspace is gone on this host");
+        throw new Error("Workspace layout unavailable");
+      }
       const existing = (stored.data as { layout?: unknown } | undefined)?.layout === null ||
         workspaceErrorStatus(stored.error) === 503
         ? { tabs: [], activeTabId: null } : workspaceLayoutResponseFromValue(stored.data, workspace.id);

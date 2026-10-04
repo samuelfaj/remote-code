@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-033 merge-GET 404 message — deleted workspace during merge reads honestly
+
+- saveLayout() stored-layout GET 404 now throws gone (caught by existing mapping) instead of generic unavailable; pure read, PUT never reached. 3-person panel clean. Verified: typecheck clean, 50 pass/1 skip. X: see checkpoint note.
+
 ## RC-031 named-409 receipt-first — post-INSERT refusals confirm state
 
 - start() named 409s (archived/changed/identity) now prefer an attached valid receipt (post-INSERT guard/launch re-checks attach one) before the clear-ref fallback. Verified: typecheck clean, 50 pass/1 skip, review clean on attach rule, binding, fallback, honesty. X: see checkpoint note.
