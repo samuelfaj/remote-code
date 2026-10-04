@@ -1578,3 +1578,7 @@ The historical checkpoint evidence below is retained in its original order and s
 - **Scope:** poll() 409 terminal_offset_ahead (pure cursor-vs-end function, no server state change) resets display refs via clearScreen(true); next poll re-reads retained window with gap disclosed. No fence, no resend. Tick surfaces honest retry message; inspect stays generic (shared cursor resets benignly). No backend change.
 - **Evidence:** Typecheck clean; terminal tests 13/13. Review 01a10874 clean (termination proven, consistency, honesty; redundancy + wording nits fixed in-slice).
 - **X:** Bridge check with WHY + timestamp follows.
+
+# RC-031 offset-ahead checkpoint — X attempt 2026-10-04T19:51:13Z (UTC)
+
+- **WHY no post:** three independent gates, all must pass: (1) mac-use bridge to the signed-in Chrome profile — CLOSED (2026-10-04T19:51:13Z, 27th consecutive check; browser_status/browser_close both fail, no tab can open); (2) <1h rule — PASS (latest own post Sep 30 per same-day cua Space page-HTML read, four days old); (3) fallback environments — UNAVAILABLE (cua Space local:space-7d25e43636 is a fresh Ubuntu container: no signed-in X session, headless Chromium blocked by X JS wall per prior probes; posting there needs credentials the goal does not grant, and TWITTER.md forbids substituting another posting method without user instruction). Gate 1 closed → no submission possible. No tab opened, nothing submitted.
