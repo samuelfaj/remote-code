@@ -1718,3 +1718,7 @@ The historical checkpoint evidence below is retained in its original order and s
 - **Scope:** start() named 409s prefer attached valid receipt (post-INSERT re-checks attach except 401/404) before clear-ref fallback. Validator binds identity. No backend change.
 - **Evidence:** Typecheck clean; 50 pass/1 skip. Review 01a1090a clean (attach rule, binding, fallback, honesty).
 - **X:** Bridge check with WHY gates + timestamp follows.
+
+# RC-031 named-409 checkpoint — X attempt 2026-10-04T22:34:31Z (UTC)
+
+- **WHY no post, three gates:** (1) mac-use bridge to signed-in Chrome — CLOSED (2026-10-04T22:34:31Z, 41st consecutive check; status+close both fail, no tab can open); (2) <1h rule — PASS (latest own post Sep 30 per same-day cua Space page-HTML read, four days old); (3) fallback environments — UNAVAILABLE (cua Space local:space-7d25e43636 still a fresh Ubuntu container: no signed-in X session, headless Chromium blocked by X JS wall; posting there needs ungranted credentials, and TWITTER.md forbids substituting methods without user instruction). Gate 1 closed → no submission possible. No tab opened, nothing submitted.
