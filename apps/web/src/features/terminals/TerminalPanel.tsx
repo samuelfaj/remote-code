@@ -41,12 +41,16 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
   const [queuedKeys, setQueuedKeys] = useState(0);
   const [layout, setLayout] = useState<WorkspaceLayout | null>(null);
   const [layoutMessage, setLayoutMessage] = useState("");
-  // This device's own tab selection. The shared layout row stores tabs/panes;
-  // the active ids it carries belong to whichever client saved last, so this
-  // device never adopts them and never writes its own selection back —
-  // switching tabs here cannot move another device's focus.
+  // This device's own tab/pane selection. The shared layout row stores
+  // tabs/panes; the active ids it carries belong to whichever client saved
+  // last, so this device never adopts them and never writes its own
+  // selection back — switching tabs or panes here cannot move another
+  // device's focus.
   const [localTabId, setLocalTabId] = useState<string | null>(null);
+  const [localPaneId, setLocalPaneId] = useState<string | null>(null);
   const layoutSavedAt = useRef(0);
+  const localTabIdRef = useRef<string | null>(null);
+  localTabIdRef.current = localTabId;
   const keyQueue = useRef<string[]>([]);
   const sameWorkspace = reference?.start.workspaceId === workspace?.id;
   const currentReceipt = receipt?.workspaceId === workspace?.id ? receipt : null;
@@ -204,7 +208,7 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
 
   useLayoutEffect(() => {
     epoch.current++; working.current = false; setBusy(false); setReceipt(null); setAvailable(false);
-    clearScreen(false); setDraft(""); setLayout(null); setLocalTabId(null); setLayoutMessage("");
+    clearScreen(false); setDraft(""); setLayout(null); setLocalTabId(null); setLocalPaneId(null); setLayoutMessage("");
     if (workspace && !blocked) {
       void inspect();
       const current = currentCheck(); const end = Date.now() + budgetMs;
@@ -379,9 +383,12 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
     // Fall back to the first stored tab; keep a purely local selection.
     if (current()) {
       setLayout(parsed);
-      // Local selection defaults to the first shared tab; a stored active id
-      // from another device is never adopted.
+      // Local selection defaults to the first shared tab and its first pane;
+      // a stored active id from another device is never adopted.
       setLocalTabId(parsed ? parsed.tabs[0]?.id ?? null : null);
+      const firstTab = parsed?.tabs[0]?.id;
+      const firstPane = parsed?.panes?.filter((pane) => pane.tabId === firstTab).sort((a, b) => a.order - b.order)[0]?.id ?? null;
+      setLocalPaneId(firstPane);
       setLayoutMessage(parsed ? `Layout restored: ${parsed.tabs.length} tab(s).` : "No saved layout for this workspace.");
     }
   }
@@ -445,9 +452,19 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
       if (current()) {
         // Keep rendering the shared tabs, but keep this device's own
         // selection: a confirmed save must not move local focus to the
-        // stored active id another device may have written.
+        // stored active id another device may have written. Compute the next
+        // tab id first (not via ref) so the pane fallback uses the tab this
+        // save actually selects, never a stale render value.
         setLayout(confirmed);
-        setLocalTabId((prior) => prior !== null && confirmed.tabs.some((tab) => tab.id === prior) ? prior : confirmed.tabs[0]?.id ?? null);
+        const nextTabId = localTabIdRef.current !== null && confirmed.tabs.some((tab) => tab.id === localTabIdRef.current)
+          ? localTabIdRef.current : confirmed.tabs[0]?.id ?? null;
+        setLocalTabId(nextTabId);
+        setLocalPaneId((prior) => {
+          const panes = confirmed.panes ?? [];
+          const inTab = panes.filter((pane) => pane.tabId === nextTabId).sort((a, b) => a.order - b.order);
+          if (prior !== null && inTab.some((pane) => pane.id === prior)) return prior;
+          return inTab[0]?.id ?? null;
+        });
         setLayoutMessage(`Layout saved: ${confirmed.tabs.length} tab(s).`);
       }
     } catch {
@@ -511,9 +528,16 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
         <button type="button" disabled={busy || !canInput} onClick={() => void send("\x03")}>Send Ctrl+C</button>
         <button type="button" disabled={busy || blocked || !storageReady || !workspace || workspace.archived} onClick={() => void saveLayout()}>Save layout</button>
       </div>
-      <p data-testid="terminal-layout-state">{layoutMessage || "Layout not loaded for this workspace."}{layout ? ` Shared tabs: ${layout.tabs.length}; this device: ${localTabId ?? "none"}; selection stays on this device.` : ""}</p>
+      <p data-testid="terminal-layout-state">{layoutMessage || "Layout not loaded for this workspace."}{layout ? ` Shared tabs: ${layout.tabs.length}; this device: ${localTabId ?? "none"}; pane: ${localPaneId ?? "none"}; selection stays on this device.` : ""}</p>
       {layout ? <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }} aria-label="Local tabs" data-testid="terminal-local-tabs">
-        {layout.tabs.length === 0 ? <span>No shared tabs yet.</span> : layout.tabs.map((tab) => <button key={tab.id} type="button" disabled={tab.id === localTabId} onClick={() => setLocalTabId(tab.id)}>Open {tab.id}{tab.id === localTabId ? " (this device)" : ""}</button>)}
+        {layout.tabs.length === 0 ? <span>No shared tabs yet.</span> : layout.tabs.map((tab) => <button key={tab.id} type="button" disabled={tab.id === localTabId} onClick={() => {
+          setLocalTabId(tab.id);
+          const inTab = (layout.panes ?? []).filter((pane) => pane.tabId === tab.id).sort((a, b) => a.order - b.order);
+          setLocalPaneId(inTab[0]?.id ?? null);
+        }}>Open {tab.id}{tab.id === localTabId ? " (this device)" : ""}</button>)}
+      </div> : null}
+      {layout?.panes && layout.panes.filter((pane) => pane.tabId === localTabId).length > 1 ? <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }} aria-label="Local panes" data-testid="terminal-local-panes">
+        {layout.panes.filter((pane) => pane.tabId === localTabId).sort((a, b) => a.order - b.order).map((pane) => <button key={pane.id} type="button" disabled={pane.id === localPaneId} onClick={() => setLocalPaneId(pane.id)}>Open {pane.id}{pane.id === localPaneId ? " (this device)" : ""}</button>)}
       </div> : null}
     </>}
   </section>;

@@ -292,6 +292,64 @@ test("two browser contexts keep per-device layout selection while sharing tabs",
   }
 });
 
+test("two browser contexts keep per-device pane selection while sharing panes", async ({
+  browser,
+  page,
+}) => {
+  // RC-033 pane slice: shared panes render on both devices, but switching
+  // the local pane on one must not move the other and must make zero PUTs.
+  const suffix = crypto.randomUUID();
+  const name = `RC033 panes ${suffix}`;
+  await signIn(page);
+  await page.getByLabel("Workspace name").fill(name);
+  await page.getByRole("button", { name: "Create workspace" }).click();
+  await expect(page.getByRole("button", { name: `Open workspace ${name}` })).toBeVisible();
+  await page.getByRole("button", { name: `Open workspace ${name}` }).click();
+  await expect(page.getByTestId("terminal-layout-state")).toContainText("No saved layout");
+
+  const listed = await page.request.get(`${apiUrl}/api/workspaces`);
+  const rows = ((await listed.json()) as { workspaces: Array<{ id: string; name: string }> }).workspaces;
+  const workspaceId = rows.find((row) => row.name === name)?.id;
+  expect(workspaceId).toBeTruthy();
+  const seed = await page.request.put(`${apiUrl}/api/workspaces/${workspaceId}/layout`, {
+    data: {
+      tabs: [{ id: "tab-a", kind: "file", targetId: "a.txt" }],
+      activeTabId: "tab-a",
+      panes: [{ id: "pane-1", tabId: "tab-a", order: 0 }, { id: "pane-2", tabId: "tab-a", order: 1 }],
+      activePaneId: "pane-2",
+    },
+  });
+  expect(seed.ok()).toBe(true);
+  await page.reload();
+  await expect(page.getByTestId("workspace-panel")).toBeVisible();
+  await page.getByRole("button", { name: `Open workspace ${name}` }).click();
+  await expect(page.getByTestId("terminal-layout-state")).toContainText("Shared tabs: 1");
+
+  const otherContext = await browser.newContext();
+  const other = await otherContext.newPage();
+  try {
+    await signIn(other);
+    await other.getByRole("button", { name: `Open workspace ${name}` }).click();
+    await expect(other.getByTestId("terminal-layout-state")).toContainText("Shared tabs: 1");
+    // Neither device adopts the stored pane-2.
+    await expect(page.getByTestId("terminal-layout-state")).toContainText("pane: pane-1");
+    await expect(other.getByTestId("terminal-layout-state")).toContainText("pane: pane-1");
+    let layoutPuts = 0;
+    await page.route(`**/api/workspaces/${workspaceId}/layout`, (route) => {
+      if (route.request().method() === "PUT") layoutPuts += 1;
+      return route.continue();
+    });
+    await page.getByRole("button", { name: "Open pane-2" }).click();
+    await expect(page.getByTestId("terminal-layout-state")).toContainText("pane: pane-2");
+    await expect(other.getByTestId("terminal-layout-state")).toContainText("pane: pane-1");
+    expect(layoutPuts).toBe(0);
+    const shared = await page.request.get(`${apiUrl}/api/workspaces/${workspaceId}/layout`);
+    expect(((await shared.json()) as { layout: { activePaneId: string } }).layout.activePaneId).toBe("pane-2");
+  } finally {
+    await otherContext.close();
+  }
+});
+
 test("older host capability blocks create before any workspace POST", async ({
   page,
 }) => {

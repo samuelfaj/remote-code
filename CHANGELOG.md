@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-033 pane focus slice — per-device pane switcher, zero PUTs, stale-ref fix
+
+- TerminalPanel gains localPaneId + Local-panes button row; load defaults to first pane of first tab, tab switch resets pane, save-confirm derives nextTabId before pane fallback. New two-context pane E2E: shared panes render on both devices with local pane-1, one-sided switch to pane-2 moves only that device, route counter asserts zero layout PUTs, shared row still reads pane-2. Verified: workspaces E2E 14/14, layout unit 8/8, typecheck + Vite build clean, doc links + whitespace pass. Reasoning review found save-confirm stale-ref P2 (pane fallback could read pre-update tab); fixed and follow-up review clean. RC-002 unknown/unaccepted, untouched, no retry. No deployment. X skipped: Chrome extension disconnected, no tab opened, nothing submitted.
+
 ## RC-033 two-context layout focus E2E — local switch makes zero PUTs
 
 - New Playwright test in workspaces.spec.ts: two isolated browser contexts share one seeded layout row (stored active tab-b); both render shared tabs with local tab-a, a one-sided Open tab-b click moves only the clicking context, a route-level PUT counter asserts zero layout PUTs, and the authoritative row still reads activeTabId tab-b. TerminalPanel always renders the Local-tabs container (empty-state span when zero tabs) with stable testid. Verified: workspaces E2E 13/13, layout unit 8/8, typecheck clean, doc links + whitespace pass; reasoning review found the no-PUT assertion gap (value-only check could miss a same-value PUT) and the PUT-counter fix passed follow-up review clean. RC-002 effect still unknown/unaccepted, untouched, no retry. No deployment. X skipped: Chrome extension disconnected, no tab opened, nothing submitted.
