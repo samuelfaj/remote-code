@@ -1632,3 +1632,9 @@ The historical checkpoint evidence below is retained in its original order and s
 # RC-031 receipt-404 checkpoint — X attempt 2026-10-04T20:41:37Z (UTC)
 
 - **WHY no post, three gates:** (1) mac-use bridge to signed-in Chrome — CLOSED (2026-10-04T20:41:37Z, 32nd consecutive check; status+close both fail, no tab can open); (2) <1h rule — PASS (latest own post Sep 30 per same-day cua Space page-HTML read, four days old); (3) fallback environments — UNAVAILABLE (cua Space local:space-7d25e43636 still a fresh Ubuntu container: no signed-in X session, headless Chromium blocked by X JS wall; posting there needs ungranted credentials, and TWITTER.md forbids substituting methods without user instruction). Gate 1 closed → no submission possible. No tab opened, nothing submitted.
+
+# RC-031 login-check 503 message — locally verified slice — 2026-10-04 (UTC)
+
+- **Scope:** session() 503 throws login-unavailable before generic umbrella; tick maps to auto-retry + nothing resent. Readonly GET, no reservation; other callers' generic unknown stays honest. No backend change.
+- **Evidence:** Typecheck clean; 49 pass/1 skip. Review 01a108ab clean (order, readonly honesty, caller consistency, string safety).
+- **X:** Bridge check with WHY gates + timestamp follows.

@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-031 login-check 503 message — session outage reads honestly on auto-poll
+
+- session() 503 now throws login-unavailable before the generic umbrella; tick maps it to auto-retry with nothing resent. Readonly check, no reservation. Verified: typecheck clean, 49 pass/1 skip, review clean on order, honesty and caller consistency. X: see checkpoint note.
+
 ## RC-031 receipt-404 visibility message — lookup miss reads honestly
 
 - inspect() receipt-lookup 404 now says no receipt is visible to this login (never-started, rotated session and second login share one indistinguishable 404). First review caught a false non-existence claim; fixed, follow-up clean. Verified: typecheck clean, 49 pass/1 skip. X: see checkpoint note.

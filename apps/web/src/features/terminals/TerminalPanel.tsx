@@ -103,6 +103,7 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
   async function session(end: number, current: () => boolean) {
     const result = await client(end).api.auth.session.get();
     if (!current() || Date.now() >= end) throw new Error("Terminal context expired");
+    if (workspaceErrorStatus(result.error) === 503) throw new Error("Terminal login check is unavailable");
     if (result.error || !result.data || !("userId" in result.data) || result.data.userId !== userId) {
       if (workspaceErrorStatus(result.error) === 401 || result.data && "userId" in result.data && result.data.userId !== userId) onUnauthorized();
       throw new Error("Terminal session unavailable");
@@ -294,12 +295,14 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
         catch (error) {
           if (current()) {
             setReceipt(null);
-            setMessage(error instanceof Error && error.message === "Terminal state unavailable for this login"
-              ? "Terminal not found for this login. State reads retry automatically; select the original workspace or start a new terminal."
-              : error instanceof Error && (error.message === "Terminal cursor ran ahead. Re-reading retained output; nothing was resent." ||
-                error.message === "Terminal cursor is invalid. Re-reading retained output; nothing was resent.")
-                ? error.message
-                : "Terminal state is unconfirmed. State reads retry automatically; nothing was resent.");
+            setMessage(error instanceof Error && error.message === "Terminal login check is unavailable"
+              ? "Terminal login check is unavailable. State reads retry automatically; nothing was resent."
+              : error instanceof Error && error.message === "Terminal state unavailable for this login"
+                ? "Terminal not found for this login. State reads retry automatically; select the original workspace or start a new terminal."
+                : error instanceof Error && (error.message === "Terminal cursor ran ahead. Re-reading retained output; nothing was resent." ||
+                  error.message === "Terminal cursor is invalid. Re-reading retained output; nothing was resent.")
+                  ? error.message
+                  : "Terminal state is unconfirmed. State reads retry automatically; nothing was resent.");
           }
         }
         finally { if (current()) { working.current = false; setBusy(false); drainKeys(); } }
