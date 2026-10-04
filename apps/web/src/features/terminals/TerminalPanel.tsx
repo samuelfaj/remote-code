@@ -434,6 +434,22 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
         setMessage("Terminal not found for this login. Nothing was queued; select the original workspace or start a new terminal.");
         return;
       }
+      if (workspaceErrorStatus(result.error) === 503 &&
+        terminalRejectionMessage(result.error) === "terminals_unavailable") {
+        // Host unavailable before any reservation: available() throws before
+        // liveContext/reservation, so nothing was queued. Clear the fence.
+        writeReference(saved, next);
+        setMessage("Terminal host is unavailable. Nothing was queued; try again when the host is back.");
+        return;
+      }
+      if (workspaceErrorStatus(result.error) === 503) {
+        // Any other host failure: the reservation point is unknown (the
+        // response carries no marker on this route), so keep the fence set
+        // before POST and report unknown with no resend; the next poll shows
+        // the durable input state.
+        setMessage("Host failed to write the input. Input delivery is unknown. Further input is blocked, including after reload. State reads never resend input; inspect or stop the terminal.");
+        return;
+      }
       const ack = result.error ? null : terminalInputAckFromValue(result.data, saved.terminalId, sequence);
       if (!ack || ack.state === "unknown") throw new Error("Input outcome unknown");
       writeReference(saved, next);

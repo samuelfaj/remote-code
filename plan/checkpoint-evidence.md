@@ -1539,3 +1539,9 @@ The historical checkpoint evidence below is retained in its original order and s
 
 - **X mac-use browser_status 2026-10-04T19:17:37Z:** bridge closed (twenty-third consecutive check). No tab, nothing submitted.
 - **X eligibility:** latest own post Sep 30 per same-day cua Space page-HTML read; no post within last hour, <1h rule not blocking. Submission waits on mac-use bridge recovery (user-side Chrome extension reconnect).
+
+# RC-031 send-503 split — locally verified slice — 2026-10-04 (UTC)
+
+- **Scope:** send() 503 terminals_unavailable clears fence (sole source available(), always pre-reservation on input route); all other 503s keep fence + unknown + no resend. Input route never attaches a receipt. No backend change.
+- **Evidence:** Typecheck clean; terminal tests 13/13. Review 01a1085d found keep-always over-fence defect (available() :790 pre-reservation stuck); split fix confirmed by 01a1085f (sole-source, wiring, generic-keep match).
+- **X:** Bridge check with timestamp follows.
