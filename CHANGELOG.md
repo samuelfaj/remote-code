@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-031 flow-totals reconciliation — gap-poll counters reconcile on real overflow
+
+- Proof script now captures totalBytes/retainedBytes/droppedBytes from shipped GET polls and asserts internal reconciliation (total == retained + dropped, retained == 65536, dropped > 0). Real Linux run: gap poll 300505 = 65536 + 234969, full proof passes, sourceUnchanged true, all cleanup true, evidence.json in scratch. Review narrowed 'honest not fabricated' to 'internally reconciled' (follow-up clean). One overflow slice, not full RC-031 flow-control acceptance. No shipped app code changed. X: bridge closed at checkpoint (no status, no tab, nothing submitted); no receipt, no valid <1h skip.
+
 ## RC-033 acceptance pivot + X attempt — bridge unstable, no post
 
 - PIVOT.md records why RC-033 acceptance stays open with criteria unchanged: RC-031 dependency In Progress, mobile-tab-switch clause vacuous (no mobile tabs), RC-002 Blocked with no retry; verifiable surface listed with next steps in dependency order. Reasoning review of the pivot entry clean. X: timeline read @samfajreldines / 458 posts / latest 30 Sep (eligible); profile tab closed cleanly, compose tab opened, then bridge closed before snapshot — no text entered, nothing submitted; compose-tab removal unproven. Evidence in scratch x-failure-evidence.json. No receipt.

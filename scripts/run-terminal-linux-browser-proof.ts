@@ -212,7 +212,8 @@ try {
       if (/\/api\/terminals\/[0-9a-f-]+$/.test(new URL(response.url()).pathname) && response.request().method() === "GET" && response.status() === 200) {
         const value = await response.json().catch(() => null);
         if (value) {
-          polls.push({ gap: value.gap, baseOffset: value.baseOffset, endOffset: value.endOffset });
+          polls.push({ gap: value.gap, baseOffset: value.baseOffset, endOffset: value.endOffset,
+            totalBytes: value.totalBytes, retainedBytes: value.retainedBytes, droppedBytes: value.droppedBytes });
           const chunk = typeof value.outputBase64 === "string" ? Buffer.from(value.outputBase64, "base64") : Buffer.alloc(0);
           if (chunk.length) edges.push({ head: chunk.subarray(0, 2).toString("hex"), tail: chunk.subarray(-2).toString("hex"), length: chunk.length });
         }
@@ -366,6 +367,14 @@ try {
     await showsText(page, "browser-overflow-011999");
     const ring = polls.find((value) => value.gap && value.endOffset > 65536);
     if (!polls.some((value) => value.endOffset - value.baseOffset === 65536) || !ring) throw Error("Root buffer did not stay at 64 KiB");
+    // Flow totals reconciliation on the real overflow path: the gap poll's
+    // counters must be internally consistent (produced == retained + dropped)
+    // with a full 64 KiB ring and positive drops. This proves reconciliation,
+    // not absence of fabrication against an independent byte count.
+    if (typeof ring.totalBytes !== "number" || typeof ring.retainedBytes !== "number" || typeof ring.droppedBytes !== "number" ||
+      ring.totalBytes !== ring.retainedBytes + ring.droppedBytes || ring.retainedBytes !== 65536 || ring.droppedBytes <= 0) {
+      throw Error(`Flow totals dishonest: total=${ring.totalBytes} retained=${ring.retainedBytes} dropped=${ring.droppedBytes}`);
+    }
     const bounded = await page.evaluate(() => ({
       items: [...document.querySelectorAll(".xterm-accessibility-tree > div")].map((el) => el.getAttribute("aria-setsize")),
       overflowRows: [...document.querySelectorAll(".xterm-rows > div")].filter((el) => (el.textContent ?? "").includes("browser-overflow-")).length,
@@ -424,7 +433,8 @@ try {
       if (/\/api\/terminals\/[0-9a-f-]+$/.test(new URL(response.url()).pathname) && response.request().method() === "GET" && response.status() === 200) {
         const value = await response.json().catch(() => null);
         if (value) {
-          polls.push({ gap: value.gap, baseOffset: value.baseOffset, endOffset: value.endOffset });
+          polls.push({ gap: value.gap, baseOffset: value.baseOffset, endOffset: value.endOffset,
+            totalBytes: value.totalBytes, retainedBytes: value.retainedBytes, droppedBytes: value.droppedBytes });
           const chunk = typeof value.outputBase64 === "string" ? Buffer.from(value.outputBase64, "base64") : Buffer.alloc(0);
           if (chunk.length) edges.push({ head: chunk.subarray(0, 2).toString("hex"), tail: chunk.subarray(-2).toString("hex"), length: chunk.length });
         }
