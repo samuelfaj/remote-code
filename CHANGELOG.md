@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-031 resize-503 keeps fence — unmarked pre/post ambiguity stays unknown
+
+- resize() 503 terminals_unavailable keeps the fence with unknown message: post-update guard() re-checks throw the same message with no marker, so clearing could under-fence a server-unknown resize. First review caught the under-fence; safe direction verified clean. Verified: typecheck clean, terminal tests 13/13. X: see checkpoint note.
+
 ## RC-031 send-503 split — unavailable clears, other host failures stay unknown
 
 - send() 503 terminals_unavailable (sole source available(), always pre-reservation) clears the fence with nothing-queued message; all other 503s keep fence + unknown + no resend. First review caught a keep-always over-fence on pre-reservation 503s; split verified clean. Verified: typecheck clean, terminal tests 13/13. X: see checkpoint note.

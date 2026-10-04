@@ -540,6 +540,24 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
         setMessage("Terminal not found for this login. Nothing changed; select the original workspace or start a new terminal.");
         return;
       }
+      if (workspaceErrorStatus(result.error) === 503 &&
+        terminalRejectionMessage(result.error) === "terminals_unavailable") {
+        // Host unavailable: available() throws this only pre-reservation on
+        // the top-level call, but post-update guard() calls re-check it too,
+        // and the response carries no marker. The safe posture is unknown:
+        // keep the fence and let the next poll show the durable resize state.
+        // (A proven pre-update unavailable would clear; unprovable here.)
+        setMessage("Terminal host is unavailable. Resize outcome is unknown. Further input and resize are blocked, including after reload. Stop the terminal to release it.");
+        return;
+      }
+      if (workspaceErrorStatus(result.error) === 503) {
+        // Any other host failure: the resize_state update point is unknown
+        // (the response carries no marker on this route), so keep the fence
+        // and report unknown with no resend; the next poll shows the durable
+        // resize state.
+        setMessage("Host failed to apply the size. Resize outcome is unknown. Further input and resize are blocked, including after reload. Stop the terminal to release it.");
+        return;
+      }
       const confirmed = result.error ? null : terminalReceiptFromValue(result.data, saved.start, saved.terminalId);
       if (!confirmed || confirmed.resizeState !== "applied" || confirmed.cols !== wantCols || confirmed.rows !== wantRows) throw new Error("Resize outcome unknown");
       writeReference(saved, next);
