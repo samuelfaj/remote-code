@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-029 mobile inspect parity — read-only and refresh named 2026-10-05T19:30:00Z (UTC)
+
+- Mobile inspect() post-inspection messages now match web char-identical: not_provisioned names read-only inspection, unknown names manual refresh. Review 01a10d11 CLEAN. Verified: typecheck clean, 59 pass/1 skip. X: per <1h rule (see checkpoint note).
+
 ## RC-029 mobile capability parity — Linux host named 2026-10-05T19:00:00Z (UTC)
 
 - Mobile inspect() unsupported-host message now names Linux host requirement char-identical to web. Verified: typecheck clean, 59 pass/1 skip (same suites as prior slices). X: per <1h rule (see checkpoint note).
