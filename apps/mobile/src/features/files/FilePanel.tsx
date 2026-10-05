@@ -417,14 +417,14 @@ export function FilePanel({ origin, userId, workspace, blocked, onUnauthorized }
           editorRef.current = { ...item, draft };
           setEditor(value => value?.host === item.host ? { ...value, draft } : value);
         }} style={styles.textarea}/>
-        {dirty ? <><Text>Draft differs from last read host text.</Text><TextInput accessibilityLabel="Last read host text" multiline editable={false} value={currentEditor.host.content} style={styles.textarea}/></> : null}
-        {!validText(currentEditor.draft) ? <Text accessibilityRole="alert">SAVE requires valid UTF-8 without NUL, at most 1 MiB.</Text> : null}
+        {dirty ? <><Text>Draft differs from last read host text. Reading does not replace your draft.</Text><TextInput accessibilityLabel="Last read host text" multiline editable={false} value={currentEditor.host.content} style={styles.textarea}/></> : null}
+        {!validText(currentEditor.draft) ? <Text accessibilityRole="alert">SAVE requires valid UTF-8 text without NUL, at most 1 MiB.</Text> : null}
         <Pressable accessibilityRole="button" accessibilityLabel="Read current file" disabled={busy || blocked} onPress={() => void read(currentEditor.host.path, true)} style={styles.secondary}><Text>Read current file (keep draft)</Text></Pressable>
         <Pressable accessibilityRole="button" accessibilityLabel="Save file" disabled={disabled || currentEditor.needsRead || !dirty || !validText(currentEditor.draft)} onPress={() => void mutate("save")} style={[styles.button, (disabled || currentEditor.needsRead || !dirty) && styles.disabled]}><Text style={styles.buttonText}>Save file</Text></Pressable>
         <TextInput accessibilityLabel="Move destination path" value={moveDestination} editable={!workspace.archived && !inspected?.archived}
           autoCapitalize="none" autoCorrect={false} onChangeText={path => { if (active.current && inputScopeRef.current === inputScope) setMoveDestination(path); }} style={styles.input}/>
-        <Text>MOVE uses this explicitly OPEN current version, never an unsaved draft. Destination parent must exist; MOVE never overwrites.</Text>
-        {dirty ? <Text>MOVE requires a clean draft. SAVE or explicitly discard it before moving.</Text> : null}
+        <Text>MOVE uses the current verified open version, never the unsaved draft. Destination is relative to the workspace root; its parent directory must exist.</Text>
+        {dirty ? <Text>Save or explicitly discard the dirty draft before moving. No draft will be saved by MOVE.</Text> : null}
         <Pressable accessibilityRole="button" accessibilityLabel="Move file" disabled={disabled || currentEditor.needsRead || dirty || !validPath(moveDestination) || moveDestination === currentEditor.host.path}
           onPress={() => void mutate("move")} style={[styles.button, (disabled || currentEditor.needsRead || dirty || !validPath(moveDestination) || moveDestination === currentEditor.host.path) && styles.disabled]}>
           <Text style={styles.buttonText}>Move file</Text>
