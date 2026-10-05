@@ -1,5 +1,8 @@
 # Changelog
 
+## RC-028 open 404 split — deleted workspace named, dead selection cleared 2026-10-05T07:21:07Z (UTC)
+
+- WorkspacePanel openWorkspace(): 404 clears the selection and says the workspace may have been deleted (instead of generic open-failure on a dead id). Owner-scoped 404 hedged correctly. Review 01a10aed CLEAN (reachability, honesty, selection-clear safe, staleness guarded). Verified: typecheck clean, 64 focused pass/1 skip. X: per <1h rule (see checkpoint note).
 ## RC-029 file inspect split — wrong-workspace row named 2026-10-05T06:57:31Z (UTC)
 
 - FilePanel inspect(): validator-reject → invalid-metadata throw; valid-shaped wrong-id → different-workspace throw (was one combined literal with zero dependents). Both land in honest bare catches (read/prepare/mutate fallbacks, no request sent). Review 01a10ad5 DEFECT (redundant error guard added in-slice) → removed before commit → 01a10ad8 CLEAN. Verified: typecheck clean, 64 focused pass/1 skip. X: per <1h rule (see checkpoint note).
