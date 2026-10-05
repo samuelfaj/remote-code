@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-029 proof re-run — passed on current source 2026-10-06T03:00:00Z (UTC)
+
+- `run-file-editor-linux-browser-proof.ts --frozen-inputs` passed on 9b9320c: Linux ARM64/Bun 1.3.13, first SAVE 201 + second 409 version_conflict without overwrite, source unchanged, cleanup clean. mac-use hasTab:false. X: per <1h rule (see checkpoint note).
+
 ## RC-029 preflight-guidance parity — folder inspection named 2026-10-06T02:30:00Z (UTC)
 
 - Mobile mutate() unsent branch now says "refresh folder inspection manually" like web. Review 01a10dae CLEAN. Verified: typecheck clean, 74 pass/1 skip. X: per <1h rule (see checkpoint note).
