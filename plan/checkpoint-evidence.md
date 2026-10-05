@@ -1964,3 +1964,7 @@ The historical checkpoint evidence below is retained in its original order and s
 # RC-031 folder-501 X check — 2026-10-05 (UTC)
 
 - **SKIPPED per <1h rule:** last post ~59 min old. Standing rule: max one tweet/hour, always via /humanizer. No post composed or submitted. No browser tab opened.
+
+# X 1h boundary check — 2026-10-05T2026-10-05T02:31:34Z (UTC)
+
+- **SKIPPED (boundary, conservative):** profile readback shows latest own post 57m old (humanized backpressure post). Wall-clock since publish ~60min but displayed age <1h; rule says skip when a post went out less than one hour before. No post composed or submitted. Tab opened for read-only age check only; cleanup verified (browser_close closed:true/released:true, hasTab:false).
