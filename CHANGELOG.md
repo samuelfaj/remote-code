@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-029 mobile refusal split — version prefix + MOVE retry 2026-10-05T13:55:00Z (UTC)
+
+- Mobile mutate() refusals split into version-conflict (host prefix + kind retry) vs target vs unconfirmed, mirroring web. Review 01a10c3f CLEAN. Verified: typecheck clean, 59 pass/1 skip. X: gate passed (8h gap), intent route tried, Post click unverified again — see checkpoint note, no retry.
+
 ## RC-029 mobile archived-guard split — web parity 2026-10-05T13:40:00Z (UTC)
 
 - Mobile mutate() pre-PUT guard names archived workspace + deadline disjunct, mirroring web. Review 01a10c39 CLEAN. Verified: typecheck clean, 59 pass/1 skip. X: gate passed (8h gap) but Post click unverified again — see checkpoint note, no retry.

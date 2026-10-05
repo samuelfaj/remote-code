@@ -2247,3 +2247,14 @@ The historical checkpoint evidence below is retained in its original order and s
 
 - **UNVERIFIED submit (not claimed):** X gate PASSED (profile 463 posts, newest own post 8h). Fresh draft composed ("Our iOS file writer now says the workspace is archived before sending anything, same as web. No silent return, no wasted request. Local proof, not deployed. #buildingRemoteCode") via /compose/post textbox, text verified in composer, but Post click failed "page did not return snapshot" again; composer still full on readback, no URL/timestamp. No blind retry, no double-post. Code commit 4ef6d8e pushed, remote in sync.
 - **Cleanup proof:** browser_close closed:true/released:true; browser_status connected:true/hasTab:false.
+
+# RC-029 mobile refusal-split slice — 2026-10-05 (UTC)
+
+- **Scope:** apps/mobile/src/features/files/FilePanel.tsx mutate() refusal branch split into version-conflict (8-char prefix + MOVE/SAVE retry) vs target-refused vs unconfirmed, mirroring reviewed web. +13/-7 incl. fileConflictVersion import. No backend change.
+- **Evidence:** Typecheck clean; 59 pass/1 skip (mobile file-rules + client). Review 01a10c3f CLEAN (exact-shape prefix gate, clearConfirmed gating, kind guards, messages-only).
+- **X:** see X-check record below.
+
+# RC-029 mobile refusal-split X check — 2026-10-05 (UTC)
+
+- **UNVERIFIED submit (not claimed):** X gate PASSED (profile 463 posts, newest own post 8h). New route tried per /sam-pivot: /intent/post URL landed on home timeline (no prefill), draft filled in visible composer and verified ("Our iOS file writer now splits refusals honestly: version conflict names the host version, target issues say so, rest stays unconfirmed. Same as web. Local proof, not deployed. #buildingRemoteCode"), but Post click failed "page did not return snapshot" again; composer still full, no URL/timestamp. No blind retry, no double-post. Code commit fdb8d53 pushed, remote in sync.
+- **Cleanup proof:** browser_close closed:true/released:true; browser_status connected:true/hasTab:false.
