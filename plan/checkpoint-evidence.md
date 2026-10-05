@@ -1974,3 +1974,14 @@ The historical checkpoint evidence below is retained in its original order and s
 - **Scope:** preflight() folder-state classification split. +5/-1, message-only, pre-POST. No backend change.
 - **Evidence:** Typecheck clean; 64 focused pass/1 skip. Review 01a109ea DEFECT → fixed in-slice → 01a109ec CLEAN.
 - **X:** see X-check record below.
+
+# RC-031 folder-states X check — 2026-10-05T2026-10-05T02:39:40Z (UTC)
+
+- **Cross-check:** FilePanel inspect() already classifies folder states the same way (not_provisioned → no-folder message; unknown/pending → unknown + writes-disabled). Terminal preflight now consistent. No FilePanel change needed.
+- **X 1h check:** last post 68+ min old → 1h rule PASS. Composing humanized draft and posting via mac-use next.
+
+# RC-031 folder-states X outcome — 2026-10-05 (UTC)
+
+- **POSTED via mac-use with humanizer:** 70 min since prior post (rule PASS). Draft humanized per skill (voice-matched plain sentences, no invented facts, all claims from slice). Profile readback: 462 posts, newest 45s old with exact draft text. One post only.
+- **Cleanup verified:** browser_close closed:true/released:true; browser_status hasTab:false. No owned tab remains.
+- **Code checkpoint pushed:** 0dd9477 on checkpoint/rc002-linux-runtime-evidence, remote in sync.

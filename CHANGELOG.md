@@ -1,5 +1,8 @@
 # Changelog
 
+## RC-031 folder-states X POSTED + checkpoint push 2026-10-05T02:45:10Z (UTC)
+
+- Code commit 0dd9477 pushed. X post published via mac-use after 70-min gap (1h rule PASS): humanized draft "Taught our terminal start to read the room: ..." live on @samfajreldines (462 posts, 45s old readback). Single post, no duplicate. Cleanup verified: browser_close closed:true/released:true, hasTab:false. No canonical URL captured.
 ## RC-031 preflight folder states — only validated unprepared prescribes prep 2026-10-05T02:39:06Z (UTC)
 
 - preflight() folder classification: transport/unknown errors, validator-null, and valid "unknown" (in-flight) → "Workspace folder state is unknown"; only validated "not_provisioned" → "Prepare the workspace folder first". Both No-start-sent, pre-POST. Review 01a109ea DEFECT (validator-null + valid-unknown falsely prescribed prep) → fixed in-slice → 01a109ec CLEAN (exhaustive parser, pre-POST, literal identity). Verified: typecheck clean, 64 focused pass/1 skip. X: per <1h rule (see checkpoint note).
