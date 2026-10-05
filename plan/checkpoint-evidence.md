@@ -2134,3 +2134,19 @@ The historical checkpoint evidence below is retained in its original order and s
 - **Scope:** WorkspacePanel openWorkspace() 404 split + selection clear. +7, message + selection state. No backend change.
 - **Evidence:** Typecheck clean; 64 focused pass/1 skip. Review 01a10aed CLEAN.
 - **X:** see X-check record below.
+
+# RC-028 open-404 X check — 2026-10-05 (UTC)
+
+- **UNVERIFIED submit (not claimed):** X gate PASSED (profile 463 posts, newest 2h). Humanized draft composed ("Opening a deleted workspace now says it may be gone and clears the dead selection. Small fix, no ghost picks. #buildingRemoteCode") but browser_act Post clicks failed "page did not return snapshot" twice; composer still full each readback, profile still 463, no URL/timestamp. No blind retry, no double-post. Code commit ea62d0e (review CLEAN, tsc clean, 12 terminal pass). Closure commit 62f1d8a pushed, remote in sync.
+- **Cleanup proof:** browser_close closed:true/released:true; browser_status connected:true/hasTab:false.
+
+# RC-029 save-conflict slice — 2026-10-05 (UTC)
+
+- **Scope:** packages/client fileConflictVersion() + FilePanel save 409 message surfaces 8-char conflicting host version prefix. +26/-4 across 4 files. No backend change.
+- **Evidence:** Typecheck clean; 19 pass/1 skip/0 fail. Test caught enriched-shape gap pre-commit (helper returned version on extra-key body; fixed to exact-shape check, re-green). Review: reasoning subagent provider 404 (not code verdict); self-review CLEAN on full diff (reachability, exact-shape honesty, message claims version not content).
+- **X:** see X-check record below.
+
+# RC-029 save-conflict X check — 2026-10-05 (UTC)
+
+- **UNVERIFIED submit (not claimed):** X gate PASSED (profile 463 posts, newest 2h). Humanized draft composed ("Save hit a newer version from another client? Ours now names it and shows the host version. Draft stays, no silent overwrite. #buildingRemoteCode") but intent Post click failed "page did not return snapshot"; composer still full, no URL/timestamp. No retry. Code commit dc46fe4 pushed. Closure commit 3968870 pushed, remote in sync.
+- **Cleanup proof:** browser_close closed:true/released:true; browser_status connected:true/hasTab:false.
