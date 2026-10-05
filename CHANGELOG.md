@@ -1,5 +1,8 @@
 # Changelog
 
+## RC-031 preflight folder-409 — archive race reads honestly on start 2026-10-05T01:03:15Z (UTC)
+
+- preflight() folder-GET 409 now throws "Workspace is archived" (caught → No-start-sent message) instead of generic prepare-folder text. Common case shadowed by owned.archived check; reachable when archive lands between the workspace GET and folder GET. Review 01a10994 CLEAN (same row/column, race reachable, honest pre-POST refusal). Verified: typecheck clean, 64 focused pass/1 skip. X: skipped per <1h rule (see checkpoint note).
 ## RC-033 loadLayout GET 404 — deleted workspace reads honestly on switch 2026-10-05T00:58:19Z (UTC)
 
 - loadLayout() GET 404 now throws "Workspace is gone on this host" (caught → not-loaded + pick-another-workspace message) instead of generic unconfirmed. Throw precedes parse/setLayout, so nothing loads or overwrites. Review 01a10990 CLEAN (ordering 401/503/404, literal identity, message-only). Verified: typecheck clean, 64 focused pass/1 skip. X: skipped per <1h rule (see checkpoint note).

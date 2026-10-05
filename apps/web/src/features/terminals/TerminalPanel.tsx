@@ -126,6 +126,7 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
       if (!current() || Date.now() >= end) throw new Error("Terminal context expired");
       if (workspaceErrorStatus(folder.error) === 401) onUnauthorized();
       if (workspaceErrorStatus(folder.error) === 404) throw new Error("Workspace is gone on this host");
+      if (workspaceErrorStatus(folder.error) === 409) throw new Error("Workspace is archived");
       if (folder.error || fileFolderStateFromValue(folder.data, workspace.id) !== "provisioned") throw new Error("Prepare the workspace folder first");
     }
     return owned;

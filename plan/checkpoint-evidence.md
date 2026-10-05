@@ -1833,3 +1833,9 @@ The historical checkpoint evidence below is retained in its original order and s
 - **Scope:** loadLayout() GET 404 → gone + not-loaded message on workspace switch. +3/-1, message-only. Mirrors saveLayout merge-GET 404. No backend change.
 - **Evidence:** Typecheck clean; 64 focused pass/1 skip. Review 01a10990 CLEAN (ordering, nothing-loaded, catch message-only, literal identity).
 - **X:** SKIPPED per standing <1h rule — posts landed 2026-10-05T00:28Z (~90s apart, double-submit). Standing rule: max one tweet/hour, always via /humanizer. No post composed or submitted. No browser tab opened.
+
+# RC-031 folder-409 slice — 2026-10-05 (UTC)
+
+- **Scope:** preflight() folder-GET 409 → archived + No-start-sent message. +1 line, message-only, pre-POST. No backend change.
+- **Evidence:** Typecheck clean; 64 focused pass/1 skip. Review 01a10994 CLEAN (shadowed common case, race reachable via separate requests, honest refusal).
+- **X:** SKIPPED per standing <1h rule — posts landed 2026-10-05T00:28Z (~90s apart, double-submit). Standing rule: max one tweet/hour, always via /humanizer. No post composed or submitted. No browser tab opened.
