@@ -331,7 +331,7 @@ export function FilePanel({ origin, userId, workspace, blocked, onUnauthorized }
       else if (current()) setMessage("Pending file identity could not be safely cleared. Writes are disabled; keep the request ID and repair storage before reloading.");
     } catch {
       if (!sent && operation) cleanupUnsent(operation, storeGeneration);
-      if (current()) { setInspection(null); setMessage(sent ? `${kind.toUpperCase()} outcome is unknown. Draft, inputs and pending identity are kept; check its receipt manually. No automatic write retry.` : persistFailed ? `No ${kind.toUpperCase()} was sent. Storage remains unverified; repair storage before writing.` : `No ${kind.toUpperCase()} was sent. Preflight or storage failed; refresh manually.`); }
+      if (current()) { setInspection(null); setMessage(sent ? `${kind.toUpperCase()} outcome is unknown. Draft, inputs and pending identity are kept; check its receipt manually. No automatic write retry.` : persistFailed ? `No ${kind.toUpperCase()} was sent. Storage remains unverified; repair storage before writing.` : `No ${kind.toUpperCase()} was sent. Preflight or storage failed; refresh folder inspection manually.`); }
     } finally { if (current()) { working.current = false; setBusy(false); } }
   }
   async function checkReceipt() {
