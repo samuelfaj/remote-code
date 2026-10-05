@@ -1,5 +1,8 @@
 # Changelog
 
+## RC-031 stop-409 poll wording — removal credited to follow-up read, not refusal 2026-10-05T00:50:52Z (UTC)
+
+- stop() 409 poll-fallback removed-message now reads "Stop confirmed by a follow-up state read; ..." instead of "Host confirms ...". The 409 only proves refusal; removal is proven by the readonly poll. Review 01a10989 CLEAN (no overclaim either way; 503-fallback/success siblings intentionally untouched; no test depends on the string). Verified: typecheck clean, 64 focused pass/1 skip. X: skipped per <1h rule (see checkpoint note).
 ## RC-031 drainKeys !canInput drop notice — silent keystroke loss now announced 2026-10-05T00:46:32Z (UTC)
 
 - drainKeys() !canInput branch now posts "N queued keystroke(s) discarded unsent." (appended when a prior message exists) instead of clearing silently. Keys never sent on this path, so the claim holds. Review 01a10985 CLEAN (reachable via stale poll closure; no double-count with send-catch announcement; toggle clearKeys silent sibling unchanged/out of scope). Verified: typecheck clean, 64 focused pass/1 skip. X: skipped per <1h rule (see checkpoint note).

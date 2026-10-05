@@ -1815,3 +1815,9 @@ The historical checkpoint evidence below is retained in its original order and s
 - **Evidence:** Typecheck clean; 64 focused pass/1 skip. Review 01a10985 CLEAN (reachability via stale poll closure, honesty, no double-count, updater form; toggle clearKeys silent sibling noted out of scope).
 - **Rejected in-slice:** a leading-space cosmetic guard on the send-catch drop notice — reverted, no file proves it; cosmetic-only fix with no user-visible defect is out of scope per minimal-change rules.
 - **X:** SKIPPED per standing <1h rule — two posts landed 2026-10-05T00:28Z (~90s apart, double-submit). Standing rule: max one tweet/hour, always via /humanizer. No post composed or submitted. No browser tab opened.
+
+# RC-031 stop-409-wording slice — 2026-10-05 (UTC)
+
+- **Scope:** stop() 409 poll-fallback removed-message credits the follow-up state read; +1 comment line. Message-only, no fence/state change. 503-fallback and success-path siblings intentionally untouched (different/same provenance noted, no contradiction).
+- **Evidence:** Typecheck clean; 64 focused pass/1 skip. Review 01a10989 CLEAN (honesty, consistency, literal search, scope).
+- **X:** SKIPPED per standing <1h rule — posts landed 2026-10-05T00:28Z (~90s apart, double-submit). Standing rule: max one tweet/hour, always via /humanizer. No post composed or submitted. No browser tab opened.

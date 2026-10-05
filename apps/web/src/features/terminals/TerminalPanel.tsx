@@ -824,10 +824,11 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
         // readonly poll for the authoritative receipt instead of failing.
         // If the poll itself throws, the outcome is unknown (fence kept);
         // an observable receipt is adopted with a cleanup-branched message.
+        // The 409 only proves the refusal; removal is proven by the poll.
         try {
           const settled = await poll(end, current, saved);
           acceptReceipt(settled, next);
-          setMessage(settled.cleanup === "removed" ? "Host confirms the terminal ended and its process was removed." : "Stop is not complete. Inspect state; no automatic stop resend.");
+          setMessage(settled.cleanup === "removed" ? "Stop confirmed by a follow-up state read; the terminal ended and its process was removed." : "Stop is not complete. Inspect state; no automatic stop resend.");
         } catch {
           setMessage("Stop outcome is unconfirmed after a refusal. The terminal state is unknown for this login; inspect state. No stop request is resent automatically.");
         }
