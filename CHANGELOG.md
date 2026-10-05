@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-029 mobile archived-guard split — web parity 2026-10-05T13:40:00Z (UTC)
+
+- Mobile mutate() pre-PUT guard names archived workspace + deadline disjunct, mirroring web. Review 01a10c39 CLEAN. Verified: typecheck clean, 59 pass/1 skip. X: gate passed (8h gap) but Post click unverified again — see checkpoint note, no retry.
+
 ## RC-029 mobile pre-fence wording parity 2026-10-05T13:30:00Z (UTC)
 
 - Mobile session/ownership/folder pre-fence throws now match web char-identical. Review 01a10c32 CLEAN. Verified: typecheck clean, 59 pass/1 skip. X: gate passed (7h gap) but submit deferred after 3 identical Post-click failures — draft retained, no retry without new evidence.

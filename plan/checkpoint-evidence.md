@@ -2236,3 +2236,14 @@ The historical checkpoint evidence below is retained in its original order and s
 
 - **SKIPPED (deferred, not lost):** X gate PASSED on readback (profile 463 posts, newest own post 7h). Three consecutive Post-click attempts across checkpoints failed identically ("page did not return snapshot", composer full, no URL). Pivoting per /sam-pivot: no fourth blind submit — same action without new evidence repeats a known failure. Draft retained for next checkpoint: "Our iOS file checks now use the same honest wording as web: session, ownership, folder status each named on failure. Parity, no new claims. Local proof, not deployed. #buildingRemoteCode". Next round retries the submit once; hourly rule still enforced.
 - **Cleanup proof:** browser_close closed:true/released:true; browser_status connected:true/hasTab:false.
+
+# RC-029 mobile archived-guard slice — 2026-10-05 (UTC)
+
+- **Scope:** apps/mobile/src/features/files/FilePanel.tsx mutate() pre-PUT archived guard names the case + deadline disjunct, mirroring web. +4/-1, message-only. No backend change.
+- **Evidence:** Typecheck clean; 59 pass/1 skip (mobile file-rules + client). Review 01a10c39 CLEAN (current-gated message, PUT precedes return verified, literal identity, no mislabel, no dependents).
+- **X:** see X-check record below.
+
+# RC-029 mobile archived-guard X check — 2026-10-05 (UTC)
+
+- **UNVERIFIED submit (not claimed):** X gate PASSED (profile 463 posts, newest own post 8h). Fresh draft composed ("Our iOS file writer now says the workspace is archived before sending anything, same as web. No silent return, no wasted request. Local proof, not deployed. #buildingRemoteCode") via /compose/post textbox, text verified in composer, but Post click failed "page did not return snapshot" again; composer still full on readback, no URL/timestamp. No blind retry, no double-post. Code commit 4ef6d8e pushed, remote in sync.
+- **Cleanup proof:** browser_close closed:true/released:true; browser_status connected:true/hasTab:false.
