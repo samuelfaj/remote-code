@@ -146,10 +146,18 @@ export function FilePanel({ origin, userId, workspace, blocked, onUnauthorized }
         const response = await files.content.get({ query: { path } });
         if (!current()) return;
         if (Date.now() >= end) throw new Error("File deadline expired");
-        if (response.error) { unauthorized(response.error); throw new Error("File unavailable"); }
+        if (response.error) {
+          unauthorized(response.error);
+          setInspection(null);
+          setMessage(workspaceErrorStatus(response.error) === 503 && (response.error as { value?: { error?: unknown } }).value?.error === "request_outcome_unknown"
+            ? "File read was not confirmed. Draft kept; retry the read manually."
+            : "Host refused the file read. Binary, invalid UTF-8 and files over 1 MiB cannot be edited. Draft kept; retry the read manually.");
+          return;
+        }
         const host = await openFileFromValue(response.data, workspace.id, path);
         if (!current()) return;
-        if (!host || Date.now() >= end) throw new Error("Invalid file content");
+        if (Date.now() >= end) throw new Error("File deadline expired");
+        if (!host) { setInspection(null); setMessage("Host response did not match the requested file. Draft kept; retry the read manually."); return; }
         if (!same && editorRef.current?.draft !== old?.draft) { setMessage("Draft changed while reading another file. Draft kept; open again to confirm discard."); return; }
         setEditor(value => ({ host, draft: same && value ? value.draft : host.content, needsRead: false }));
         setMessage(same ? "Current host text read. Draft kept; compare before writing." : "Text and version read from host.");
@@ -157,14 +165,21 @@ export function FilePanel({ origin, userId, workspace, blocked, onUnauthorized }
         const response = await files.get({ query: path ? { path } : {} });
         if (!current()) return;
         if (Date.now() >= end) throw new Error("File deadline expired");
-        if (response.error) { unauthorized(response.error); throw new Error("Directory unavailable"); }
+        if (response.error) {
+          unauthorized(response.error);
+          setInspection(null); setListing(null);
+          setMessage(workspaceErrorStatus(response.error) === 503 && (response.error as { value?: { error?: unknown } }).value?.error === "request_outcome_unknown"
+            ? "Folder listing was not confirmed. Refresh manually; writes stay disabled."
+            : "Host refused the folder listing. Refresh manually; writes stay disabled.");
+          return;
+        }
         const entries = directoryFromValue(response.data, path);
-        if (!entries) throw new Error("Invalid listing");
+        if (!entries) { setInspection(null); setListing(null); setMessage("Host response did not match the requested folder. Refresh manually; writes stay disabled."); return; }
         setListing({ workspaceId: workspace.id, path, entries });
         setMessage(state.archived ? "Archived workspace. Files are read-only." : "Folder and files confirmed by host.");
       }
     } catch {
-      if (current()) { setInspection(null); if (!content) setListing(null); setMessage("Could not read current files. Draft kept; refresh manually before writing."); }
+      if (current()) { setInspection(null); if (!content) setListing(null); setMessage(content ? "File read was not confirmed. Draft kept; retry the read manually." : "Folder listing was not confirmed. Refresh manually; writes stay disabled."); }
     } finally { if (current()) { working.current = false; setBusy(false); } }
   }
   async function clearConfirmed(operation: PendingFile, end: number, current: () => boolean) {
