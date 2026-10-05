@@ -1,5 +1,8 @@
 # Changelog
 
+## RC-031 input 409 split — conflict vs unplaceable read honestly 2026-10-05T02:06:51Z (UTC)
+
+- send() definitive-409 branch: sequence_conflict → out-of-order + inspect-to-resync message; input_unknown → cannot-place message; pending unchanged. Both pre-reservation with fence cleared and nothing queued. Review 01a109cf CLEAN (resync path, producer lines, shared fence clear, no stale-string dependents). Verified: typecheck clean, 64 focused pass/1 skip. X: per <1h rule (see checkpoint note).
 ## RC-031 resize unknown split — unsettled resize reads honestly pre-fence 2026-10-05T02:02:19Z (UTC)
 
 - resize() pre-send guard split: non-running still throws "Resize is not ready"; resizeState unknown throws "Resize outcome is still unknown" (caught → previous-resize-unsettled + wait-for-poll + nothing-sent message). Throw precedes fence + POST. Unknown-state sole producer is the resize route itself. Review 01a109cb CLEAN (reachability, honesty, sole producer, old-literal coverage, literal identity). Verified: typecheck clean, 64 focused pass/1 skip. X: per <1h rule (see checkpoint note).

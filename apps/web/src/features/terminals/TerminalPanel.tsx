@@ -491,7 +491,9 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
         writeReference(saved, next);
         setMessage(terminalRejectionMessage(result.error) === "terminal_input_pending"
           ? "Host is still writing the previous input. Wait for the next state poll, then try again; nothing was queued."
-          : "Host refused input. Nothing was queued; inspect state before trying again.");
+          : terminalRejectionMessage(result.error) === "terminal_input_sequence_conflict"
+            ? "Input arrived out of order. Inspect state to resync, then try again; nothing was queued."
+            : "Host cannot place this input. Inspect state before trying again; nothing was queued.");
         return;
       }
       if (workspaceErrorStatus(result.error) === 422) {
