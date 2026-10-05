@@ -2436,3 +2436,11 @@ The historical checkpoint evidence below is retained in its original order and s
 - **X:** per <1h rule (see checkpoint note).
 - **mac-use:** browser_status connected:true/hasTab:false — no owned tabs this segment.
 - **Resume state:** branch checkpoint/rc002-linux-runtime-evidence in sync with remote; tree clean. Open: RC-002 blocked (no retry without receipt reconciliation); RC-029 file parity continues; RC-031 terminal + RC-033 layout + RC-030 Git API untouched; remaining To-do per plan/tasks.html deps.
+
+# RC-029 mobile read-busy slice — 2026-10-06 (UTC)
+
+- **Scope:** apps/mobile/src/features/files/FilePanel.tsx read() busy split + pending-draft guard char-identical to web. Message-only. No backend change.
+- **Evidence:** Typecheck clean; 59 pass/1 skip (mobile + client). Review 01a10da2 CLEAN. Commit 9463674 pushed.
+- **X:** per <1h rule (see checkpoint note).
+- **mac-use:** browser_status connected:true/hasTab:false — no owned tabs this segment.
+- **Resume state:** branch checkpoint/rc002-linux-runtime-evidence in sync with remote; tree clean. Open: RC-002 blocked (no retry without receipt reconciliation); RC-029 file parity continues; RC-031 terminal + RC-033 layout + RC-030 Git API untouched; remaining To-do per plan/tasks.html deps.

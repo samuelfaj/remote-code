@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-029 mobile read-busy parity — file vs folder named 2026-10-06T01:30:00Z (UTC)
+
+- Mobile read() busy message now splits file vs folder like web, and pending-draft guard matches web char-identical. Review 01a10da2 CLEAN. Verified: typecheck clean, 59 pass/1 skip. X: per <1h rule (see checkpoint note).
+
 ## RC-029 mobile empty-state parity — folder inspection named 2026-10-06T01:00:00Z (UTC)
 
 - Mobile no-workspace empty state now "Select a workspace to inspect its folder.", char-identical to web. Review 01a10d9e CLEAN. Verified: typecheck clean, 59 pass/1 skip. X: per <1h rule (see checkpoint note).
