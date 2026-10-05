@@ -2214,3 +2214,14 @@ The historical checkpoint evidence below is retained in its original order and s
 
 - **UNVERIFIED submit (not claimed):** X gate PASSED (profile 463 posts, newest own post 7h). Draft composed ("Our iOS file reader caught up with web: failed opens now say if the host refused, the reply didn't match, or the read just didn't confirm. Same honest split, both clients. Local proof, not deployed. #buildingRemoteCode") via /compose/post textbox, text verified in composer, but Post click failed "page did not return snapshot"; composer still full on readback, no URL/timestamp. No blind retry, no double-post. Code commit 0a0a8e9 pushed, remote in sync.
 - **Cleanup proof:** browser_close closed:true/released:true; browser_status connected:true/hasTab:false.
+
+# RC-029 mobile workspace-guard slice — 2026-10-05 (UTC)
+
+- **Scope:** apps/mobile/src/features/files/FilePanel.tsx inspect() workspace guard split, char-identical to reviewed web branch. +2/-1, message-only. No backend change.
+- **Evidence:** Typecheck clean; 59 pass/1 skip (mobile file-rules + client). Review 01a10c2c CLEAN (catch honesty, no dependents, literal identity, success path untouched).
+- **X:** see X-check record below.
+
+# RC-029 mobile workspace-guard X check — 2026-10-05 (UTC)
+
+- **UNVERIFIED submit (not claimed):** X gate PASSED (profile 463 posts, newest own post 7h; prior ambiguous draft absent from timeline). Fresh draft composed ("Our iOS file panel now names a wrong workspace honestly instead of one lumped error. Small parity fix with web, same plain wording. Local proof, not deployed. #buildingRemoteCode") via /compose/post textbox, text verified in composer, but Post click failed "page did not return snapshot"; composer still full on readback, no URL/timestamp. No blind retry, no double-post. Code commit c35c57b pushed, remote in sync.
+- **Cleanup proof:** browser_close closed:true/released:true; browser_status connected:true/hasTab:false.

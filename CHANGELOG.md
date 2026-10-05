@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-029 mobile workspace-guard split — web parity 2026-10-05T13:24:00Z (UTC)
+
+- Mobile inspect() workspace guard split into invalid-metadata vs different-workspace, char-identical to web. Review 01a10c2c CLEAN. Verified: typecheck clean, 59 pass/1 skip. X: gate passed (7h gap) but Post click unverified — see checkpoint note, no retry.
+
 ## RC-029 mobile read split — web parity on iOS 2026-10-05T13:03:12Z (UTC)
 
 - Mobile FilePanel open reads port the reviewed web three-way split: host refusal vs synthetic-transport unconfirmed vs invalid-body mismatch, for both file content and folder listing. Review 01a10c25 CLEAN. Verified: typecheck clean, 10 mobile + 49 client pass/1 skip. X: gate passed (7h gap) but Post click unverified — see checkpoint note, no retry.
