@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-029 mobile folder-prepare split — deadline vs refusal 2026-10-05T14:05:00Z (UTC)
+
+- Mobile prepareFolder() POST handling split into deadline-unknown vs host-refused, mirroring web. Review 01a10c49 CLEAN. Verified: typecheck clean, 59 pass/1 skip. X: gate passed (8h gap) but Post click unverified again — see checkpoint note, no retry.
+
 ## RC-029 mobile refusal split — version prefix + MOVE retry 2026-10-05T13:55:00Z (UTC)
 
 - Mobile mutate() refusals split into version-conflict (host prefix + kind retry) vs target vs unconfirmed, mirroring web. Review 01a10c3f CLEAN. Verified: typecheck clean, 59 pass/1 skip. X: gate passed (8h gap), intent route tried, Post click unverified again — see checkpoint note, no retry.

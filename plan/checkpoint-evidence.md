@@ -2258,3 +2258,14 @@ The historical checkpoint evidence below is retained in its original order and s
 
 - **UNVERIFIED submit (not claimed):** X gate PASSED (profile 463 posts, newest own post 8h). New route tried per /sam-pivot: /intent/post URL landed on home timeline (no prefill), draft filled in visible composer and verified ("Our iOS file writer now splits refusals honestly: version conflict names the host version, target issues say so, rest stays unconfirmed. Same as web. Local proof, not deployed. #buildingRemoteCode"), but Post click failed "page did not return snapshot" again; composer still full, no URL/timestamp. No blind retry, no double-post. Code commit fdb8d53 pushed, remote in sync.
 - **Cleanup proof:** browser_close closed:true/released:true; browser_status connected:true/hasTab:false.
+
+# RC-029 mobile folder-prepare split slice — 2026-10-05 (UTC)
+
+- **Scope:** apps/mobile/src/features/files/FilePanel.tsx prepareFolder() POST handling split into deadline-unknown vs host-refused, mirroring web. +2/-1, message-only. No backend change.
+- **Evidence:** Typecheck clean; 59 pass/1 skip (mobile file-rules + client). Review 01a10c49 CLEAN (no unauthorized(undefined), deadline-first ordering honest, literals identical, POST precedes handling, no dependents).
+- **X:** see X-check record below.
+
+# RC-029 mobile folder-prepare split X check — 2026-10-05 (UTC)
+
+- **UNVERIFIED submit (not claimed):** X gate PASSED (profile 463 posts, newest own post 8h). Fresh draft composed ("Our iOS folder setup now tells deadline apart from refusal: timed out means unknown, host said no means check status first. Same honest split as web. Local proof, not deployed. #buildingRemoteCode") via /compose/post textbox, text verified in composer, but Post click failed "page did not return snapshot" again; composer still full, no URL/timestamp. No blind retry, no double-post. Code commit 0e686a0 pushed, remote in sync.
+- **Cleanup proof:** browser_close closed:true/released:true; browser_status connected:true/hasTab:false.
