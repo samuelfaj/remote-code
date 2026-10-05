@@ -258,7 +258,10 @@ export function FilePanel({ origin, userId, workspace, blocked, onUnauthorized }
     let sent = false;
     try {
       const state = await inspect(end, current);
-      if (!current() || state?.folder !== "provisioned" || state.archived) return;
+      if (!current() || state?.folder !== "provisioned" || state.archived || Date.now() >= end) {
+        if (current() && state?.archived) setMessage(`Workspace is archived. No ${kind.toUpperCase()} request was sent.`);
+        return;
+      }
       if (kind === "move" && (editorRef.current?.host !== value!.host || editorRef.current.needsRead || editorRef.current.draft !== editorRef.current.host.content)) {
         setMessage("MOVE requires the same current verified OPEN. No MOVE request was sent; draft kept.");
         return;
