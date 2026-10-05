@@ -327,7 +327,7 @@ export function FilePanel({ origin, userId, workspace, blocked, onUnauthorized }
         return;
       }
       if (!fileReceiptFromValue(response.data, identity, workspace.id)) { setMessage(`${kind.toUpperCase()} receipt did not match pending identity. Outcome unknown; request ID kept.`); return; }
-      if (await clearConfirmed(identity, end, current)) setMessage(`${kind.toUpperCase()} receipt confirmed. Inputs and draft kept. Historical receipt is not a writable baseline; explicitly OPEN current file content before writing again.`);
+      if (await clearConfirmed(identity, end, current)) { setEditor(item => item?.host.workspaceId === workspace.id ? { ...item, needsRead: true } : item); setMessage(`${kind.toUpperCase()} receipt confirmed. Inputs and draft kept. Historical receipt is not a writable baseline; explicitly OPEN current file content before writing again.`); }
       else if (current()) setMessage("Receipt found, but identity cleanup is unverified. Writes remain blocked.");
     } catch {
       if (!sent && operation) cleanupUnsent(operation, storeGeneration);
