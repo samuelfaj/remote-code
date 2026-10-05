@@ -257,7 +257,8 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
             error.message === "No terminal receipt is visible to this login" ||
             error.message === "Terminal state is unconfirmed. State reads retry automatically; nothing was resent." ||
             error.message === "Workspace is gone on this host" ||
-            error.message === "Terminal login check is unavailable")
+            error.message === "Terminal login check is unavailable" ||
+            error.message === "Protected terminal routes unavailable")
           ? error.message
           : error instanceof Error && (error.message === "Invalid terminal poll" ||
             error.message === "Invalid terminal state")

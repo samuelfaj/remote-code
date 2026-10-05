@@ -1,5 +1,8 @@
 # Changelog
 
+## RC-031 inspect routes-unavailable — no-reference path stops implying identity 2026-10-05T02:24:35Z (UTC)
+
+- inspect() outer catch identity-maps "Protected terminal routes unavailable" instead of generic fallback. The generic's "Original identity retained" falsely implied a reference on the no-saved-reference branch. Review 01a109de CLEAN (reachability, honesty fix, available=false coverage, message-only). Verified: typecheck clean, 64 focused pass/1 skip. X: per <1h rule (see checkpoint note).
 ## RC-033 load invalid-shape — corrupt stored layout reads honestly 2026-10-05T02:19:18Z (UTC)
 
 - Workspace-switch load catch maps "Invalid workspace layout" to invalid-shape + tabs-empty + inspect-before-saving message instead of generic unconfirmed. First version promised save-repair (false — review 01a109d9 DEFECT: save merge-GET rejects before PUT); fixed in-slice, follow-up 01a109da CLEAN (no promise, empty-tabs true, save fallback truthful). Seeding-empty rejected as data-loss risk to other clients' tabs. Verified: typecheck clean, 64 focused pass/1 skip. X: per <1h rule (see checkpoint note).

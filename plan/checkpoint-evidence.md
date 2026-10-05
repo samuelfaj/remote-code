@@ -1944,3 +1944,9 @@ The historical checkpoint evidence below is retained in its original order and s
 # RC-033 load-invalid-shape X check — 2026-10-05 (UTC)
 
 - **SKIPPED per <1h rule:** last post ~48 min old. Standing rule: max one tweet/hour, always via /humanizer. No post composed or submitted. No browser tab opened.
+
+# RC-031 routes-unavailable slice — 2026-10-05 (UTC)
+
+- **Scope:** inspect() outer catch identity-maps routes-unavailable literal. +1 line, message-only. No backend change. Fixes a real inaccuracy (generic implied retained identity with none).
+- **Evidence:** Typecheck clean; 64 focused pass/1 skip. Review 01a109de CLEAN.
+- **X:** see X-check record below.
