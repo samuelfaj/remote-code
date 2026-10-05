@@ -820,3 +820,9 @@
 - FilePanel version-conflict branch: MOVE now says "Re-open the source path to read its current version before another explicit MOVE" (was save-oriented compare-draft text, wrong action for MOVE since MOVE binds expectedVersion from the open source). SAVE wording unchanged. Message-only, +5/-2.
 - Verified: tsc clean, 19 pass/1 skip file+client focused, 62 pass/1 skip wider files+client. Review 01a10b22 CLEAN (MOVE binds host.version, needsRead gates, re-open refreshes). Commit 47d5a23 pushed, remote in sync.
 - X: gate PASSED (newest 3h, 463 posts) but intent Post click failed "page did not return snapshot"; composer still full, no URL. UNVERIFIED, no retry. Cleanup: closed:true/hasTab:false.
+
+## RC-029 bare-conflict slice — absent version named without causal guess 2026-10-05T09:35Z (UTC)
+
+- FilePanel bare 409 message now says "The host did not return the conflicting version" (first draft claimed "changed again during the save"; review 01a10b2b DEFECT cited renameat2 syscall-failure path workspace-files.ts:749-751; fixed in-slice, re-review 01a10b2c CLEAN). Enriched-shape branch unchanged. Message-only, 1 line.
+- Verified: tsc clean, 62 pass/1 skip wider files+client. Commit c9309ef pushed, remote in sync.
+- X: gate PASSED (newest 3h, 463 posts) but intent Post click failed "page did not return snapshot"; composer still full, no URL. UNVERIFIED, no retry. Cleanup: closed:true/hasTab:false.

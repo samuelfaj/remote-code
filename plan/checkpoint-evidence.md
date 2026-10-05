@@ -2166,3 +2166,14 @@ The historical checkpoint evidence below is retained in its original order and s
 
 - **UNVERIFIED submit (not claimed):** X gate PASSED (profile 463 posts, newest 3h). Humanized draft composed ("Move hit a newer file version? Ours now says re-open the source instead of compare-the-draft. Right retry for the right action. #buildingRemoteCode") but intent Post click failed "page did not return a snapshot"; composer still full, no URL/timestamp. No retry. Code commit 47d5a23 pushed, remote in sync.
 - **Cleanup proof:** browser_close closed:true/released:true; browser_status connected:true/hasTab:false.
+
+# RC-029 bare-conflict slice — 2026-10-05 (UTC)
+
+- **Scope:** FilePanel bare-409 message states only that the host did not return the conflicting version; no causal claim. +1/-1, message-only. No backend change.
+- **Evidence:** Typecheck clean; 62 pass/1 skip wider files+client. Review 01a10b2b DEFECT (causal overclaim vs renameat2 path) → fixed in-slice → re-review 01a10b2c CLEAN.
+- **X:** see X-check record below.
+
+# RC-029 bare-conflict X check — 2026-10-05 (UTC)
+
+- **UNVERIFIED submit (not claimed):** X gate PASSED (profile 463 posts, newest 3h). Humanized draft composed ("Save refused with no version back? Ours now says the host didn't return it, not a guess why. Draft kept. #buildingRemoteCode") but intent Post click failed "page did not return a snapshot"; composer still full, no URL/timestamp. No retry. Code commit c9309ef pushed, remote in sync.
+- **Cleanup proof:** browser_close closed:true/released:true; browser_status connected:true/hasTab:false.
