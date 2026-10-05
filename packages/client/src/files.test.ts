@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApi } from "../../../apps/api/src/app";
-import { createApiClient, fileMissingPath, fileReceiptFromValue, fileTargetExists, fileFolderStateFromValue, pendingFolderFromValue, pendingFolderMatches, pendingFileFromValue, pendingFileValueMatches, workspaceErrorStatus, type PendingFile } from "./index";
+import { createApiClient, fileConflictVersion, fileMissingPath, fileReceiptFromValue, fileTargetExists, fileFolderStateFromValue, pendingFolderFromValue, pendingFolderMatches, pendingFileFromValue, pendingFileValueMatches, workspaceErrorStatus, type PendingFile } from "./index";
 
 const requestId = "123e4567-e89b-42d3-a456-426614174000";
 const workspaceId = "123e4567-e89b-42d3-a456-426614174001";
@@ -23,6 +23,17 @@ it("binds folder recovery to exact workspace and original request ID and preserv
   expect(fileFolderStateFromValue({ workspaceId, state: "provisioned", requestId: crypto.randomUUID() }, workspaceId, requestId)).toBeNull();
   expect(fileFolderStateFromValue({ workspaceId, state: "unknown", requestId }, workspaceId, requestId)).toBe("unknown");
   expect(fileFolderStateFromValue({ workspaceId, state: "not_provisioned" }, workspaceId, requestId)).toBe("not_provisioned");
+});
+
+it("returns only a valid conflicting host version, never a guess", () => {
+  expect(fileConflictVersion({ status: 409, value: { error: "version_conflict", currentVersion: version } })).toBe(version);
+  for (const error of [
+    { status: 409, value: { error: "version_conflict" } },
+    { status: 409, value: { error: "version_conflict", currentVersion: "bad" } },
+    { status: 409, value: { error: "version_conflict", currentVersion: version, extra: true } },
+    { status: 503, value: { error: "version_conflict", currentVersion: version } },
+    null,
+  ]) expect(fileConflictVersion(error)).toBeNull();
 });
 
 it("clears only exact known no-effect CREATE/MOVE refusals, never generic or enriched errors", () => {

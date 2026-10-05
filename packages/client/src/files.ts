@@ -157,6 +157,14 @@ export function fileVersionConflict(error: unknown) {
   return keys === "error" || keys === "currentVersion,error" && typeof value.currentVersion === "string" && sha256.test(value.currentVersion);
 }
 
+export function fileConflictVersion(error: unknown): string | null {
+  const data = fileRow(error);
+  const value = fileRow(data?.value);
+  if (data?.status !== 409 || value?.error !== "version_conflict") return null;
+  if (Object.keys(value).sort().join(",") !== "currentVersion,error") return null;
+  return typeof value.currentVersion === "string" && sha256.test(value.currentVersion) ? value.currentVersion : null;
+}
+
 export function fileTargetExists(error: unknown) {
   const data = fileRow(error);
   const value = fileRow(data?.value);

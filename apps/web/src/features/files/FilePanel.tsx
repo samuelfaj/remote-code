@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native-web";
-import { createApiClient, fileReceiptFromValue, workspaceErrorStatus, workspaceFromValue, type PendingFile, type Workspace } from "@remotecode/client";
+import { createApiClient, fileConflictVersion, fileReceiptFromValue, workspaceErrorStatus, workspaceFromValue, type PendingFile, type Workspace } from "@remotecode/client";
 import { clearPendingFile, clearPendingFolder, directoryFromValue, fileStorageKey, folderStorageKey, folderStateFromValue, isMissingFilePath, isTargetExists, isVersionConflict, openFileFromValue, persistPendingFile, persistPendingFolder, readPendingFile, readPendingFolder, textSha256, validPath, validText, type FileEntry, type FolderState, type OpenFile } from "./file-editor";
 
 const deadlineMs = 10_000;
@@ -314,7 +314,10 @@ export function FilePanel({ userId, workspace, blocked, onUnauthorized }: Props)
       if (response.error) {
         unauthorized(response.error);
         if (operation.kind !== "create" && isVersionConflict(response.error)) {
-          if (clearMatching(operation)) setMessage(`Version conflict: ${label} was refused. Draft kept. Read current host text and compare before another explicit ${label}.`);
+          const currentVersion = fileConflictVersion(response.error);
+          if (clearMatching(operation)) setMessage(currentVersion
+            ? `Version conflict: ${label} was refused. Another client saved first; current host version starts ${currentVersion.slice(0, 8)}. Draft kept. Read current host text and compare before another explicit ${label}.`
+            : `Version conflict: ${label} was refused. Draft kept. Read current host text and compare before another explicit ${label}.`);
         } else if (operation.kind !== "save" && (isTargetExists(response.error) || isMissingFilePath(response.error, operation.kind))) {
           if (clearMatching(operation)) setMessage(`${label} was refused: ${isTargetExists(response.error) ? "target already exists" : "source or parent directory is unavailable"}. No file change occurred. Inputs and draft kept; choose an existing parent and current source explicitly.`);
         } else setMessage(`${label} was not confirmed. Keep the draft and inputs and check its receipt manually; no write will be resent automatically.`);
