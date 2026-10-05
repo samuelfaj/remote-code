@@ -1884,3 +1884,9 @@ The historical checkpoint evidence below is retained in its original order and s
 # RC-031 corrupt-reference X check — 2026-10-05 (UTC)
 
 - **SKIPPED per <1h rule:** last post ~13 min old (humanized backpressure post). Standing rule: max one tweet/hour, always via /humanizer. No post composed or submitted. No browser tab opened.
+
+# RC-031 tick-invalid-shape slice — 2026-10-05 (UTC)
+
+- **Scope:** tick maps both invalid-shape throws to unreadable-data message. +7/-4, message-only. No backend change.
+- **Evidence:** Typecheck clean; 64 focused pass/1 skip. Review 01a109bf CLEAN.
+- **X:** see X-check record below.

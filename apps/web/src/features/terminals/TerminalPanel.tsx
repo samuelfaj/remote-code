@@ -322,10 +322,13 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
               ? "Terminal login check is unavailable. State reads retry automatically; nothing was resent."
               : error instanceof Error && error.message === "Terminal state unavailable for this login"
                 ? "Terminal not found for this login. Start a new terminal when ready."
-                : error instanceof Error && (error.message === "Terminal cursor ran ahead. Re-reading retained output; nothing was resent." ||
-                  error.message === "Terminal cursor is invalid. Re-reading retained output; nothing was resent.")
-                  ? error.message
-                  : "Terminal state is unconfirmed. State reads retry automatically; nothing was resent.");
+                : error instanceof Error && (error.message === "Invalid terminal poll" ||
+                  error.message === "Invalid terminal state")
+                  ? "Host returned unreadable terminal data. State reads retry automatically; nothing was resent."
+                  : error instanceof Error && (error.message === "Terminal cursor ran ahead. Re-reading retained output; nothing was resent." ||
+                    error.message === "Terminal cursor is invalid. Re-reading retained output; nothing was resent.")
+                    ? error.message
+                    : "Terminal state is unconfirmed. State reads retry automatically; nothing was resent.");
           }
         }
         finally { if (current()) { working.current = false; setBusy(false); drainKeys(); } }

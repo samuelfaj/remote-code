@@ -1,5 +1,8 @@
 # Changelog
 
+## RC-031 tick invalid-shape mapping — bad host data reads honestly 2026-10-05T01:50:08Z (UTC)
+
+- Tick catch maps "Invalid terminal poll"/"Invalid terminal state" to unreadable-data + auto-retry message instead of generic unconfirmed. 200-with-bad-shape producer; readonly path so nothing-resent holds; no reference release. Review 01a109bf CLEAN (reachability, honesty, no-release, literal identity; inspect allowlist generic-correct as tick-only scope). Verified: typecheck clean, 64 focused pass/1 skip. X: per <1h rule (see checkpoint note).
 ## RC-031 corrupt saved reference — mount names corruption, not outage 2026-10-05T01:43:59Z (UTC)
 
 - Mount catch splits "Invalid terminal reference" to corrupt-data-ignored message; readReference() normalizes malformed JSON to the same literal (getItem failures still generic). Reference stays null, writes stay disabled. Reviews 01a109b8 + follow-up 01a109ba CLEAN (reachability, honesty, getItem untouched, writeReference callers unaffected, literal identity). Verified: typecheck clean, 64 focused pass/1 skip. X: per <1h rule + humanizer (see checkpoint note).
