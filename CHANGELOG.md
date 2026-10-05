@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-029 mobile capability parity — Linux host named 2026-10-05T19:00:00Z (UTC)
+
+- Mobile inspect() unsupported-host message now names Linux host requirement char-identical to web. Verified: typecheck clean, 59 pass/1 skip (same suites as prior slices). X: per <1h rule (see checkpoint note).
+
 ## RC-029 mobile stale-editor fix — confirmed write forces re-OPEN 2026-10-05T18:30:00Z (UTC)
 
 - Mobile mutate() success now marks the open editor needsRead:true, forcing explicit re-OPEN before the next SAVE/MOVE instead of reusing the pre-write version. Mirrors checkReceipt() path. Review 01a10cea CLEAN. Verified: typecheck clean, 59 pass/1 skip. X: per <1h rule (see checkpoint note).

@@ -82,7 +82,7 @@ export function FilePanel({ origin, userId, workspace, blocked, onUnauthorized }
     if (version.error || !Array.isArray(version.data?.capabilities)) throw new Error("Capabilities unavailable");
     if (!version.data.capabilities.includes("workspace-files-v1")) {
       setInspection({ workspaceId: workspace.id, supported: false, folder: "unknown", archived: workspace.archived });
-      setMessage("This host does not support workspace-files-v1. No file request was sent.");
+      setMessage("This host does not support workspace-files-v1. Files require a Linux host; no file request was sent.");
       return null;
     }
     if (!await session(end, current)) return null;
