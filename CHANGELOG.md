@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-028 mobile workspace-list/open parity — malformed named, wrong-id split 2026-10-05T16:30:00Z (UTC)
+
+- Mobile refresh()/openWorkspace() now mirror web char-identical: invalid list body sets invalid-metadata message (no list/selection update); open validator-reject keeps generic load-failure while valid-shaped wrong-id names metadata mismatch. Review 01a10ca2 CLEAN. Verified: typecheck clean, 59 pass/1 skip. X: per <1h rule (see checkpoint note).
+
 ## RC-029 mobile mutate persist split — storage vs preflight named 2026-10-05T16:00:00Z (UTC)
 
 - Mobile mutate() catch now names persist/write-identity failure ("Storage remains unverified; repair storage before writing") vs generic preflight failure. Review 01a10c9c CLEAN. Verified: typecheck clean, 59 pass/1 skip. X: per <1h rule (see checkpoint note).
