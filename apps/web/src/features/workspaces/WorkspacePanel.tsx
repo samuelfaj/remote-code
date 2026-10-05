@@ -112,7 +112,12 @@ export function WorkspacePanel({ userId, onUnauthorized }: Props) {
         return;
       }
       const rows = workspaceListFromValue(data);
-      if (!rows) throw new Error("Invalid workspace list");
+      if (!rows) {
+        setReadError(
+          "Host returned invalid workspace metadata.",
+        );
+        return;
+      }
       setWorkspaces(rows);
       if (selectedId && !rows.some((workspace) => workspace.id === selectedId))
         setSelectedId(null);

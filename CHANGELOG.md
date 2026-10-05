@@ -1,5 +1,8 @@
 # Changelog
 
+## RC-028 workspace-list honesty — malformed list named, not load failure 2026-10-05T06:21:26Z (UTC)
+
+- WorkspacePanel refresh(): validator-reject on the workspace list sets "Host returned invalid workspace metadata." directly instead of throwing into the generic "Could not load workspaces" catch. Same literal as openWorkspace() path. Review 01a10ab7 CLEAN (reachability, consistency, no staleness regression — synchronous continuation, message-only). Verified: typecheck clean, 64 focused pass/1 skip. X: per <1h rule (see checkpoint note).
 ## RC-033 save live-check error split — transport vs malformed named 2026-10-05T06:03:11Z (UTC)
 
 - saveLayout() live-check: unhandled-status errors keep "Workspace layout unavailable" (generic unconfirmed fallback, PUT never sent); validator-reject/wrong-id throws unreadable-workspace message (caught → not-saved wording). Mirrors the preflight workspace split. Review 01a10aa5 CLEAN (reachability, pre-PUT honesty, literal identity, message-only). Verified: typecheck clean, 64 focused pass/1 skip. X: per <1h rule (see checkpoint note).
