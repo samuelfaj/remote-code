@@ -228,6 +228,7 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
           if (!current() || Date.now() >= end) throw new Error("Terminal context expired");
           if (workspaceErrorStatus(result.error) === 401) onUnauthorized();
           if (workspaceErrorStatus(result.error) === 404) throw new Error("No terminal receipt is visible to this login");
+          if (workspaceErrorStatus(result.error) === 503) throw new Error("Terminal login check is unavailable");
           const value = result.error ? null : terminalReceiptFromValue(result.data, saved.start);
           if (!value) throw new Error("Original start remains unknown");
           acceptReceipt(value, saved);

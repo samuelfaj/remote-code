@@ -1,5 +1,8 @@
 # Changelog
 
+## RC-031 inspect receipts-503 — failed receipt read no longer claims unknown start 2026-10-05T01:15:22Z (UTC)
+
+- inspect() receipts-GET 503 now throws "Terminal login check is unavailable" (outer catch identity-maps it) instead of falling through to "Original start remains unknown". A failed read never meant the start was unknown. Review 01a1099f CLEAN (reachable via available()/refreshed; ordering; no receipt adopted, no resend). Verified: typecheck clean, 64 focused pass/1 skip. X: skipped per <1h rule (see checkpoint note).
 ## RC-031 session() 401 narrowing — wrong-login session no longer logs out 2026-10-05T01:11:22Z (UTC)
 
 - session() onUnauthorized() now fires on 401 only, not on mismatched-userId 200. Prior review 01a1099a proved the logout unmounted the panel (destroying any explanation) and that "sign in as original login" cannot restore token-bound references. Generic unavailable throw unchanged; panel stays mounted. Review 01a1099c CLEAN. Verified: typecheck clean, 64 focused pass/1 skip. X: skipped per <1h rule (see checkpoint note).

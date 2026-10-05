@@ -1846,3 +1846,9 @@ The historical checkpoint evidence below is retained in its original order and s
 - **Evidence:** Typecheck clean; 64 focused pass/1 skip. Review 01a1099c CLEAN (401 logout preserved, mismatch still rejected, no fence/state change).
 - **Rejected in-slice:** a session-login split adding "belongs to another login" wording — review 01a1099a found DEFECT (logout unmounts panel hiding the message; "original login" remediation false since backend binds token hash+expiry; stop catch would falsely report unknown outcome). Fully reverted before commit; only the 401 narrowing survived.
 - **X:** SKIPPED per standing <1h rule — posts landed 2026-10-05T00:28Z (~90s apart, double-submit). Standing rule: max one tweet/hour, always via /humanizer. No post composed or submitted. No browser tab opened.
+
+# RC-031 receipts-503 slice — 2026-10-05 (UTC)
+
+- **Scope:** inspect() receipts-GET 503 → login-unavailable instead of false start-unknown. +1 line, message-only. No backend change.
+- **Evidence:** Typecheck clean; 64 focused pass/1 skip. Review 01a1099f CLEAN (reachability, honesty, ordering, outer-catch mapping, no auto-retry overclaim).
+- **X:** SKIPPED per standing <1h rule — posts landed 2026-10-05T00:28Z (~90s apart, double-submit). Standing rule: max one tweet/hour, always via /humanizer. No post composed or submitted. No browser tab opened.
