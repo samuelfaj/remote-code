@@ -1,5 +1,8 @@
 # Changelog
 
+## RC-031 session() 401 narrowing — wrong-login session no longer logs out 2026-10-05T01:11:22Z (UTC)
+
+- session() onUnauthorized() now fires on 401 only, not on mismatched-userId 200. Prior review 01a1099a proved the logout unmounted the panel (destroying any explanation) and that "sign in as original login" cannot restore token-bound references. Generic unavailable throw unchanged; panel stays mounted. Review 01a1099c CLEAN. Verified: typecheck clean, 64 focused pass/1 skip. X: skipped per <1h rule (see checkpoint note).
 ## RC-031 preflight folder-409 — archive race reads honestly on start 2026-10-05T01:03:15Z (UTC)
 
 - preflight() folder-GET 409 now throws "Workspace is archived" (caught → No-start-sent message) instead of generic prepare-folder text. Common case shadowed by owned.archived check; reachable when archive lands between the workspace GET and folder GET. Review 01a10994 CLEAN (same row/column, race reachable, honest pre-POST refusal). Verified: typecheck clean, 64 focused pass/1 skip. X: skipped per <1h rule (see checkpoint note).

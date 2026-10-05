@@ -105,7 +105,7 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
     if (!current() || Date.now() >= end) throw new Error("Terminal context expired");
     if (workspaceErrorStatus(result.error) === 503) throw new Error("Terminal login check is unavailable");
     if (result.error || !result.data || !("userId" in result.data) || result.data.userId !== userId) {
-      if (workspaceErrorStatus(result.error) === 401 || result.data && "userId" in result.data && result.data.userId !== userId) onUnauthorized();
+      if (workspaceErrorStatus(result.error) === 401) onUnauthorized();
       throw new Error("Terminal session unavailable");
     }
   }

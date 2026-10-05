@@ -1839,3 +1839,10 @@ The historical checkpoint evidence below is retained in its original order and s
 - **Scope:** preflight() folder-GET 409 → archived + No-start-sent message. +1 line, message-only, pre-POST. No backend change.
 - **Evidence:** Typecheck clean; 64 focused pass/1 skip. Review 01a10994 CLEAN (shadowed common case, race reachable via separate requests, honest refusal).
 - **X:** SKIPPED per standing <1h rule — posts landed 2026-10-05T00:28Z (~90s apart, double-submit). Standing rule: max one tweet/hour, always via /humanizer. No post composed or submitted. No browser tab opened.
+
+# RC-031 session-401-narrowing slice — 2026-10-05 (UTC)
+
+- **Scope:** session() logout callback narrowed to 401; mismatched-userId 200 keeps generic unavailable without unmount. -1/+1, callback routing only. No backend change.
+- **Evidence:** Typecheck clean; 64 focused pass/1 skip. Review 01a1099c CLEAN (401 logout preserved, mismatch still rejected, no fence/state change).
+- **Rejected in-slice:** a session-login split adding "belongs to another login" wording — review 01a1099a found DEFECT (logout unmounts panel hiding the message; "original login" remediation false since backend binds token hash+expiry; stop catch would falsely report unknown outcome). Fully reverted before commit; only the 401 narrowing survived.
+- **X:** SKIPPED per standing <1h rule — posts landed 2026-10-05T00:28Z (~90s apart, double-submit). Standing rule: max one tweet/hour, always via /humanizer. No post composed or submitted. No browser tab opened.
