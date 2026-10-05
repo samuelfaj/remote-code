@@ -222,7 +222,8 @@ export function FilePanel({ origin, userId, workspace, blocked, onUnauthorized }
       if (!current() || Date.now() >= end) { setMessage("Preparation expired before submission. Original request ID retained."); return; }
       const response = await request(end).api.workspaces({ workspaceId: operation.workspaceId }).folder.post({ requestId: operation.requestId });
       if (!current()) return;
-      if (Date.now() >= end || response.error) { unauthorized(response.error); setMessage("Folder preparation was not confirmed. Original request ID retained; no automatic retry."); return; }
+      if (Date.now() >= end) { setMessage("Folder preparation outcome is unknown. Original request ID retained; no automatic retry."); return; }
+      if (response.error) { unauthorized(response.error); setMessage("Folder preparation was not confirmed. Original request ID retained; inspect status before any same-ID continuation."); return; }
       const confirmed = await inspect(end, current, operation);
       if (current() && confirmed?.folder === "provisioned") {
         setMessage("Workspace folder confirmed with the original request ID.");
