@@ -1,5 +1,8 @@
 # Changelog
 
+## RC-031 inspect invalid-shape — manual inspect matches tick wording 2026-10-05T01:57:42Z (UTC)
+
+- inspect() poll-catch rethrows raw "Invalid terminal poll"/"Invalid terminal state"; outer catch maps both to the same unreadable-data message as tick. First version matched the converted message (unreachable — review 01a109c4 DEFECT caught it); fixed in-slice, follow-up 01a109c6 CLEAN (raw literals, identical wording, ordering, message-only). Verified: typecheck clean, 64 focused pass/1 skip. X: per <1h rule (see checkpoint note).
 ## RC-031 tick invalid-shape mapping — bad host data reads honestly 2026-10-05T01:50:08Z (UTC)
 
 - Tick catch maps "Invalid terminal poll"/"Invalid terminal state" to unreadable-data + auto-retry message instead of generic unconfirmed. 200-with-bad-shape producer; readonly path so nothing-resent holds; no reference release. Review 01a109bf CLEAN (reachability, honesty, no-release, literal identity; inspect allowlist generic-correct as tick-only scope). Verified: typecheck clean, 64 focused pass/1 skip. X: per <1h rule (see checkpoint note).

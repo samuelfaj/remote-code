@@ -218,10 +218,13 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
             // Surface the poll's own honest verdicts instead of flattening
             // them; everything else stays unconfirmed. Offset-ahead and
             // invalid-cursor are transient (next poll re-reads), so they
-            // also stay generic here.
+            // also stay generic here. Invalid-shape throws surface as the
+            // same unreadable-data verdict the tick reports.
             if (error instanceof Error &&
               (error.message === "Terminal state unavailable for this login" ||
-                error.message === "Terminal state is unconfirmed. State reads retry automatically; nothing was resent.")) throw error;
+                error.message === "Terminal state is unconfirmed. State reads retry automatically; nothing was resent." ||
+                error.message === "Invalid terminal poll" ||
+                error.message === "Invalid terminal state")) throw error;
             throw new Error("Terminal state is unconfirmed. Original identity retained; inspect manually. No mutation was resent.");
           }
         }
@@ -256,7 +259,10 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
             error.message === "Workspace is gone on this host" ||
             error.message === "Terminal login check is unavailable")
           ? error.message
-          : "Terminal state is unconfirmed or unavailable on this host. Original identity retained; inspect manually. No mutation was resent.");
+          : error instanceof Error && (error.message === "Invalid terminal poll" ||
+            error.message === "Invalid terminal state")
+            ? "Host returned unreadable terminal data. State reads retry automatically; nothing was resent."
+            : "Terminal state is unconfirmed or unavailable on this host. Original identity retained; inspect manually. No mutation was resent.");
       }
     } finally { if (current()) { working.current = false; setBusy(false); } }
   }
