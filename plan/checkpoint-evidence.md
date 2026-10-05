@@ -2045,3 +2045,9 @@ The historical checkpoint evidence below is retained in its original order and s
 # RC-031 workspace-guard X check — 2026-10-05 (UTC)
 
 - **SKIPPED per <1h rule:** profile readback shows latest own post 1h old (boundary, conservative). Standing rule: max one tweet/hour, always via /humanizer. No post composed or submitted. Tab opened for read-only age check only; cleanup verified (browser_close closed:true/released:true, hasTab:false).
+
+# RC-031 inspect-receipts slice — 2026-10-05 (UTC)
+
+- **Scope:** inspect() receipts-branch split with error-null guard. +5/-2, message-only, reference retained. No backend change.
+- **Evidence:** Typecheck clean; 64 focused pass/1 skip. Review 01a10a56 CLEAN (transport-generic, validator-named, reference retained, sibling wording consistent, no cross-catching).
+- **X:** see X-check record below (51min → SKIP expected).

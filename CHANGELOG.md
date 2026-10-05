@@ -1,5 +1,8 @@
 # Changelog
 
+## RC-031 inspect-receipts split — unreadable receipt named on manual lookup 2026-10-05T04:33:55Z (UTC)
+
+- inspect() receipts branch: validator-reject (error null) throws unreadable-start-receipt message (caught → unknown-start + manual-inspect wording, reference retained); transport errors keep generic unknown path. Same literal as start path, different catch texts per context, no cross-catching (separate function trys). Review 01a10a56 CLEAN. Verified: typecheck clean, 64 focused pass/1 skip. X: per <1h rule (see checkpoint note).
 ## RC-031 preflight workspace split + stop pre-fence mapping 2026-10-05T04:21:42Z (UTC)
 
 - preflight() workspace guard split: unhandled-status errors keep "Workspace unavailable"; validator-reject/wrong-id throws "Host returned unreadable workspace" (start maps to No-start-sent). stop() catch maps the four reachable pre-fence literals (login-check, gone, unavailable, unreadable-workspace) to "No stop was sent." instead of false unconfirmed-outcome. Review 01a10a18 (split CLEAN for start; stop DEFECT pre-existing) + 01a10a1d (DEFECT four dead archived/folder mappings — stop uses non-starting preflight) → trimmed → 01a10a20 CLEAN. Verified: typecheck clean, 64 focused pass/1 skip. X: per <1h rule (see checkpoint note).

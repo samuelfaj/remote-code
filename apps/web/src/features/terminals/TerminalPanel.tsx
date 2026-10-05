@@ -240,6 +240,7 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
           if (workspaceErrorStatus(result.error) === 404) throw new Error("No terminal receipt is visible to this login");
           if (workspaceErrorStatus(result.error) === 503) throw new Error("Terminal login check is unavailable");
           const value = result.error ? null : terminalReceiptFromValue(result.data, saved.start);
+          if (!value && !result.error) throw new Error("Host returned unreadable start receipt");
           if (!value) throw new Error("Original start remains unknown");
           acceptReceipt(value, saved);
         }
@@ -265,8 +266,10 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
             error.message === "Terminal login check is unavailable" ||
             error.message === "Protected terminal routes unavailable")
           ? error.message
-          : error instanceof Error && (error.message === "Invalid terminal poll" ||
-            error.message === "Invalid terminal state")
+          : error instanceof Error && error.message === "Host returned unreadable start receipt"
+            ? "Host returned an unreadable start receipt. Original start remains unknown; inspect manually. No mutation was resent."
+            : error instanceof Error && (error.message === "Invalid terminal poll" ||
+              error.message === "Invalid terminal state")
             ? "Host returned unreadable terminal data. State reads retry automatically; nothing was resent."
             : "Terminal state is unconfirmed or unavailable on this host. Original identity retained; inspect manually. No mutation was resent.");
       }
