@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-029 mobile empty-state parity — folder inspection named 2026-10-06T01:00:00Z (UTC)
+
+- Mobile no-workspace empty state now "Select a workspace to inspect its folder.", char-identical to web. Review 01a10d9e CLEAN. Verified: typecheck clean, 59 pass/1 skip. X: per <1h rule (see checkpoint note).
+
 ## RC-029 mobile create-copy parity — path help named 2026-10-06T00:30:00Z (UTC)
 
 - Mobile create-section help intro + invalid-path guidance now char-identical to web. Review 01a10d9b CLEAN. Verified: typecheck clean, 59 pass/1 skip. X: per <1h rule (see checkpoint note).
