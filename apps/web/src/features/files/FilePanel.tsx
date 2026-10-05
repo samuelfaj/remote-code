@@ -84,7 +84,8 @@ export function FilePanel({ userId, workspace, blocked, onUnauthorized }: Props)
     if (Date.now() >= end) throw new Error("File operation deadline expired");
     if (owner.error) { unauthorized(owner.error); throw new Error("Workspace ownership unavailable"); }
     const confirmed = workspaceFromValue(owner.data);
-    if (!confirmed || confirmed.id !== workspace.id) throw new Error("Invalid workspace metadata");
+    if (!confirmed) throw new Error("Host returned invalid workspace metadata");
+    if (confirmed.id !== workspace.id) throw new Error("Host returned metadata for a different workspace");
     const result = await requestClient(end).api.workspaces({ workspaceId: workspace.id }).folder.get();
     if (!current()) return null;
     if (Date.now() >= end) throw new Error("File operation deadline expired");

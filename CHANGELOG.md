@@ -1,5 +1,8 @@
 # Changelog
 
+## RC-029 file inspect split — wrong-workspace row named 2026-10-05T06:57:31Z (UTC)
+
+- FilePanel inspect(): validator-reject → invalid-metadata throw; valid-shaped wrong-id → different-workspace throw (was one combined literal with zero dependents). Both land in honest bare catches (read/prepare/mutate fallbacks, no request sent). Review 01a10ad5 DEFECT (redundant error guard added in-slice) → removed before commit → 01a10ad8 CLEAN. Verified: typecheck clean, 64 focused pass/1 skip. X: per <1h rule (see checkpoint note).
 ## RC-028 openWorkspace split — wrong-id named, malformed stays load-failure 2026-10-05T06:38:12Z (UTC)
 
 - WorkspacePanel openWorkspace(): validator-reject keeps generic "Could not open this workspace" (truthful load-failure, no transport claim); valid-shaped wrong-id → "Host returned invalid workspace metadata." (matches list-validation literal). Review 01a10ac6 CLEAN (reachability, both-sides honesty argued, staleness safe, no E2E dependents). Verified: typecheck clean, 64 focused pass/1 skip. X: per <1h rule (see checkpoint note).
