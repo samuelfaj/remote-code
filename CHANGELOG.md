@@ -808,3 +808,9 @@
 - Code commit ea62d0e (open 404 split + selection clear, review CLEAN). Verified fresh: tsc clean, terminal suite 12 pass/0 fail.
 - X: gate PASSED (newest 2h) but browser_act Post clicks failed "page did not return snapshot" twice; composer still full each readback, profile still 463 posts, no URL/timestamp. No blind retry, no double-post. Recorded as UNVERIFIED submit, not claimed.
 - Cleanup verified: browser_close closed:true/released:true, browser_status connected:true/hasTab:false.
+
+## RC-029 save-conflict slice — host version surfaced on 409 2026-10-05T08:45Z (UTC)
+
+- packages/client fileConflictVersion(): returns only exact 409 version_conflict currentVersion sha (rejects enriched/malformed shapes). FilePanel save 409 message now names "another client saved first" + 8-char host version prefix; draft kept, explicit re-read required. Test caught enriched-shape gap before commit (helper returned version on extra-key body; fixed to exact-shape check).
+- Verified: tsc clean, 19 pass/1 skip/0 fail. Review: subagent provider 404 (not code); self-review CLEAN (reachability, exact-shape honesty, message claims version not content). Commit dc46fe4 pushed, remote in sync.
+- X: gate PASSED (newest 2h, 463 posts) but intent Post click failed "page did not return snapshot"; composer still full, no URL/timestamp. Recorded UNVERIFIED, no retry. Cleanup: closed:true/hasTab:false.
