@@ -354,10 +354,10 @@ export function FilePanel({ origin, userId, workspace, blocked, onUnauthorized }
           : "Receipt lookup failed. Outcome remains unknown; no write was resent.");
         return;
       }
-      if (!fileReceiptFromValue(response.data, operation, workspace.id)) { setMessage("Receipt did not match persisted identity. Outcome unknown; request ID retained."); return; }
+      if (!fileReceiptFromValue(response.data, operation, workspace.id)) { setMessage("Receipt did not match the persisted pending identity. Outcome remains unknown; draft kept."); return; }
       if (await clearConfirmed(operation, end, current)) { setEditor(item => item?.host.workspaceId === workspace.id ? { ...item, needsRead: true } : item); setMessage("Historical file receipt confirmed. Read current host text before writing again."); }
       else if (current()) setMessage("Receipt found, but storage cleanup is unverified. Writes remain blocked.");
-    } catch { if (current()) { setStorageReady(false); setMessage("Receipt or pending storage could not be checked. Outcome unknown; no file mutation resent."); } }
+    } catch { if (current()) setMessage("Receipt or pending identity could not be checked. Outcome remains unknown; no write was resent."); }
     finally { if (current()) { working.current = false; setBusy(false); } }
   }
   useLayoutEffect(() => {
