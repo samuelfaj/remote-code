@@ -2177,3 +2177,14 @@ The historical checkpoint evidence below is retained in its original order and s
 
 - **UNVERIFIED submit (not claimed):** X gate PASSED (profile 463 posts, newest 3h). Humanized draft composed ("Save refused with no version back? Ours now says the host didn't return it, not a guess why. Draft kept. #buildingRemoteCode") but intent Post click failed "page did not return a snapshot"; composer still full, no URL/timestamp. No retry. Code commit c9309ef pushed, remote in sync.
 - **Cleanup proof:** browser_close closed:true/released:true; browser_status connected:true/hasTab:false.
+
+# RC-029 open-read slice — 2026-10-05 (UTC)
+
+- **Scope:** openFile() error three-way split: host refusal vs synthetic-transport unconfirmed vs invalid-body mismatch. +10/-3, message-only. No backend change.
+- **Evidence:** Typecheck clean; 62 pass/1 skip wider files+client. Review 01a10b34 DEFECT (client synthesizes result.error on transport) → synthetic 503/request_outcome_unknown split in-slice → re-review 01a10b36 CLEAN.
+- **X:** see X-check record below.
+
+# RC-029 open-read X check — 2026-10-05 (UTC)
+
+- **UNVERIFIED submit (not claimed):** X gate PASSED (profile 463 posts, newest 3h). Humanized draft composed ("File open failed? Ours now says whether the host refused, the reply didn't match, or the read just didn't confirm. No more one lump message. #buildingRemoteCode") but intent Post click failed "page did not return a snapshot"; composer still full, no URL/timestamp. No retry. Code commit 09871ec pushed, remote in sync.
+- **Cleanup proof:** browser_close closed:true/released:true; browser_status connected:true/hasTab:false.
