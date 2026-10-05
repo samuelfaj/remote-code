@@ -1,5 +1,8 @@
 # Changelog
 
+## RC-031 corrupt saved reference — mount names corruption, not outage 2026-10-05T01:43:59Z (UTC)
+
+- Mount catch splits "Invalid terminal reference" to corrupt-data-ignored message; readReference() normalizes malformed JSON to the same literal (getItem failures still generic). Reference stays null, writes stay disabled. Reviews 01a109b8 + follow-up 01a109ba CLEAN (reachability, honesty, getItem untouched, writeReference callers unaffected, literal identity). Verified: typecheck clean, 64 focused pass/1 skip. X: per <1h rule + humanizer (see checkpoint note).
 ## RC-031 send-backpressure X POSTED + checkpoint push 2026-10-05T01:35:59Z (UTC)
 
 - Code commit 7e7b9a1 pushed. X post published via mac-use after 63-min gap (1h rule PASS): humanized draft "Spent today making our terminal tell the truth: ..." live on @samfajreldines (461 posts, 1m old readback). Single post, no duplicate this time. Cleanup verified: browser_close closed:true/released:true, hasTab:false. No canonical URL captured.

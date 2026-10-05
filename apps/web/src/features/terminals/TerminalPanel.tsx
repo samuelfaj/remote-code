@@ -70,7 +70,9 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
   function readReference() {
     const raw = sessionStorage.getItem(key);
     if (raw === null) return null;
-    const parsed = terminalReferenceFromValue(JSON.parse(raw));
+    let data: unknown;
+    try { data = JSON.parse(raw); } catch { throw new Error("Invalid terminal reference"); }
+    const parsed = terminalReferenceFromValue(data);
     if (!parsed) throw new Error("Invalid terminal reference");
     return parsed;
   }
@@ -262,7 +264,12 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
   useLayoutEffect(() => {
     active.current = true;
     try { const saved = readReference(); referenceRef.current = saved; setReference(saved); setStorageReady(true); }
-    catch { setStorageReady(false); setMessage("Terminal storage is unavailable. Writes are disabled; no terminal request was sent."); }
+    catch (error) {
+      setStorageReady(false);
+      setMessage(error instanceof Error && error.message === "Invalid terminal reference"
+        ? "Saved terminal data is corrupt, so it was ignored. Writes are disabled until storage is repaired; no terminal request was sent."
+        : "Terminal storage is unavailable. Writes are disabled; no terminal request was sent.");
+    }
     return () => { active.current = false; epoch.current++; };
   }, [userId]);
 
