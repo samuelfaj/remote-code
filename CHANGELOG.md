@@ -1,5 +1,10 @@
 # Changelog
 
+## RC-031/RC-033 full verification — no new slice, suite + E2E green 2026-10-05T01:22:33Z (UTC)
+
+- Slice hunt found no honest unmapped backend status: layout GET/PUT (401/404/422/503/409) all mapped; terminal routes (start/send/resize/stop/poll/inspect/receipts/list/preflight/session) mapped. Two cosmetic wordings and one unreachable 501 branch proposed and reverted in-slice per minimal-change rules. Review: no code change, nothing to review.
+- Evidence: typecheck clean; full suite 176 pass/64 skip/0 fail/2160 assertions (22 files); terminal component E2E 10 pass incl desktop+mobile overflow, direct-key gating, readonly focus (real Chromium via Playwright, local API+Vite). No backend change; tree clean at a351359.
+- X: SKIPPED per standing <1h rule — posts landed 2026-10-05T00:28Z. Standing rule: max one tweet/hour, always via /humanizer. No post composed or submitted. No browser tab opened.
 ## RC-031 inspect receipts-503 — failed receipt read no longer claims unknown start 2026-10-05T01:15:22Z (UTC)
 
 - inspect() receipts-GET 503 now throws "Terminal login check is unavailable" (outer catch identity-maps it) instead of falling through to "Original start remains unknown". A failed read never meant the start was unknown. Review 01a1099f CLEAN (reachable via available()/refreshed; ordering; no receipt adopted, no resend). Verified: typecheck clean, 64 focused pass/1 skip. X: skipped per <1h rule (see checkpoint note).

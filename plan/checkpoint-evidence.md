@@ -1852,3 +1852,8 @@ The historical checkpoint evidence below is retained in its original order and s
 - **Scope:** inspect() receipts-GET 503 → login-unavailable instead of false start-unknown. +1 line, message-only. No backend change.
 - **Evidence:** Typecheck clean; 64 focused pass/1 skip. Review 01a1099f CLEAN (reachability, honesty, ordering, outer-catch mapping, no auto-retry overclaim).
 - **X:** SKIPPED per standing <1h rule — posts landed 2026-10-05T00:28Z (~90s apart, double-submit). Standing rule: max one tweet/hour, always via /humanizer. No post composed or submitted. No browser tab opened.
+
+# RC-031/RC-033 verification checkpoint — 2026-10-05 (UTC)
+
+- **Slice hunt (no change):** audited all TerminalPanel status branches against backend producers. All reachable statuses mapped. Reverted in-slice: (1) accidental comment deletion (restored), (2) cosmetic "still waiting in order" wording, (3) unreachable layout-GET 501 branch (layout route never returns 501 — verified against workspace-layout.ts). No commit for reverts; tree verified clean.
+- **Evidence:** typecheck clean; full `bun run test` 176 pass/64 skip/0 fail/2160 assertions across 22 files; Playwright terminal-screen-component 10 pass (real Chromium, local API+Vite servers, desktop+mobile). No reasoning review — zero code change. X skipped per <1h rule (no tab opened).
