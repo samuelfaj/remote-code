@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-029 success-guidance link parity — folder-and-files button named 2026-10-06T02:00:00Z (UTC)
+
+- Both receipt-success messages (mutate + checkReceipt, web + mobile) now name the "refresh folder and files" button. First review 01a10da7 DEFECT (direction inverted) → web fixed to match renamed button → 01a10da9 CLEAN. Verified: typecheck clean, 59+15 pass, workspaces E2E 19/19. X: per <1h rule (see checkpoint note).
+
 ## RC-029 mobile read-busy parity — file vs folder named 2026-10-06T01:30:00Z (UTC)
 
 - Mobile read() busy message now splits file vs folder like web, and pending-draft guard matches web char-identical. Review 01a10da2 CLEAN. Verified: typecheck clean, 59 pass/1 skip. X: per <1h rule (see checkpoint note).
