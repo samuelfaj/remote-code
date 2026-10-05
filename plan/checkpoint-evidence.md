@@ -2348,3 +2348,11 @@ The historical checkpoint evidence below is retained in its original order and s
 - **Evidence:** Typecheck clean; 59 pass/1 skip. Review 01a10d11 CLEAN (GET-only inspection, caller contexts honest, no test dependents). Commit ab05ef9 pushed with CHANGELOG entry.
 - **X:** per <1h rule (see checkpoint note).
 - **Next resumption point:** continue RC-029 file-op parity or RC-031/RC-033 slices; RC-002 remains blocked (no retry without receipt reconciliation).
+
+# RC-029 mobile mutate receipt-message slice — 2026-10-05 (UTC)
+
+- **Scope:** apps/mobile/src/features/files/FilePanel.tsx mutate() post-response mismatch + success + clearance messages mirror web (manual receipt check, confirmed path named, historical-receipt-stale warning, storage-repair guidance). needsRead invalidation from prior slice preserved. Message-only. No backend change.
+- **Evidence:** Typecheck clean; 59 pass/1 skip (mobile file-rules + client). Review 01a10d18 CLEAN (path equivalence via files.ts receipt binding, native-test substrings preserved). Commit 4dbcfcd pushed with CHANGELOG entry.
+- **X:** per <1h rule (see checkpoint note).
+- **mac-use:** browser_status connected:true/hasTab:false — no owned tabs this segment.
+- **Resume state:** branch checkpoint/rc002-linux-runtime-evidence in sync with remote; tree clean. Open: RC-002 blocked (no retry without receipt reconciliation); RC-029/RC-031/RC-033 file/terminal/layout slices continue; RC-030 Git API untouched (needs RC-029 done); remaining To-do tasks per plan/tasks.html dependency list.
