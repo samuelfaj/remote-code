@@ -336,7 +336,12 @@ export function FilePanel({ origin, userId, workspace, blocked, onUnauthorized }
       const response = await request(end).api.workspaces({ workspaceId: operation.workspaceId }).files.receipts({ requestId: operation.requestId }).get();
       if (!current()) return;
       if (Date.now() >= end) throw new Error("File deadline expired");
-      if (response.error) { unauthorized(response.error); setMessage("Receipt unavailable. Outcome unknown; request ID retained."); return; }
+      if (response.error) {
+        unauthorized(response.error);
+        setMessage(workspaceErrorStatus(response.error) === 404 ? "No matching receipt is available. Outcome remains unknown; pending identity and draft are kept."
+          : "Receipt lookup failed. Outcome remains unknown; no write was resent.");
+        return;
+      }
       if (!fileReceiptFromValue(response.data, operation, workspace.id)) { setMessage("Receipt did not match persisted identity. Outcome unknown; request ID retained."); return; }
       if (await clearConfirmed(operation, end, current)) { setEditor(item => item?.host.workspaceId === workspace.id ? { ...item, needsRead: true } : item); setMessage("Historical file receipt confirmed. Read current host text before writing again."); }
       else if (current()) setMessage("Receipt found, but storage cleanup is unverified. Writes remain blocked.");
