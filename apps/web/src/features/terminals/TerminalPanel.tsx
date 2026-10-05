@@ -759,6 +759,7 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
       if (!current() || Date.now() >= end) throw new Error("Terminal context expired");
       if (workspaceErrorStatus(result.error) === 401) onUnauthorized();
       if (workspaceErrorStatus(result.error) === 409) throw new Error("Workspace is archived");
+      if (workspaceErrorStatus(result.error) === 422) throw new Error("Saved layout shape is invalid");
       if (workspaceErrorStatus(result.error) === 503) throw new Error("Layout write failed on this host");
       if (workspaceErrorStatus(result.error) === 404) throw new Error("Workspace is gone on this host");
       const confirmed = result.error ? null : workspaceLayoutResponseFromValue(result.data, workspace.id);
@@ -785,7 +786,9 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
     } catch (error) {
       if (current()) setLayoutMessage(error instanceof Error && error.message === "Workspace is archived"
         ? "Workspace is archived. Layout was not saved."
-        : error instanceof Error && error.message === "Layout write failed on this host"
+        : error instanceof Error && error.message === "Saved layout shape is invalid"
+          ? "Saved layout shape is invalid. Stored layout unchanged; reload and save again."
+          : error instanceof Error && error.message === "Layout write failed on this host"
           ? "Layout write failed on this host. Stored layout unchanged; try saving again."
           : error instanceof Error && error.message === "Workspace is gone on this host"
             ? "Workspace is gone on this host. Layout was not saved; pick another workspace."

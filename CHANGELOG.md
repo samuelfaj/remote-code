@@ -1,5 +1,8 @@
 # Changelog
 
+## RC-033 saveLayout PUT 422 — invalid shape reads honestly, not unconfirmed 2026-10-05T00:40:16Z (UTC)
+
+- saveLayout() PUT 422 now throws "Saved layout shape is invalid" (caught → stored-unchanged + reload-and-save message) instead of generic unconfirmed. Pre-write server validation, so unchanged claim holds. Review 01a1097f CLEAN (defensive branch for version skew; ordering 401/409/422/503/404; literal identity). Verified: typecheck clean, 64 focused pass/1 skip, backend layout 6 pass incl 422 cases. X: skipped per <1h rule (see checkpoint note).
 ## RC-031 inspect checkpoint — X POSTED 2026-10-05T00:28:09Z (UTC)
 
 - Posted via mac-use after bridge recovery; profile readback shows newest post 30s old with the checkpoint text. An earlier eligible draft also posted ~90s before (double-submit), so the next checkpoint must SKIP per the <1h rule. Cleanup verified: browser_close closed:true/released:true, hasTab:false. No canonical post URL captured (timestamp-link click lost snapshot).

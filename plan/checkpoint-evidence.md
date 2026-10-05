@@ -1801,3 +1801,10 @@ The historical checkpoint evidence below is retained in its original order and s
 - **Dedup/1h rule:** second (30s) post violates the spirit of the <1h rule — it duplicates the 2m post. No delete attempted (no authorized delete path; editing/deleting someone's live post via automation risks wrong-target mutation). Next checkpoint must SKIP posting (latest own post seconds old, <1h rule BLOCKS).
 - **No URL/timestamp captured:** post-timestamp link click returned "page did not return a snapshot"; evidence is profile-order readback (460 posts, 30s/2m ages, exact texts above) from saved MCP snapshots, not a canonical status URL.
 - **Cleanup verified:** browser_close closed:true/released:true; browser_status connected:true/hasTab:false. No owned tab remains.
+
+# RC-033 saveLayout-422 slice — 2026-10-05 (UTC)
+
+- **Scope:** saveLayout() PUT 422 → "Saved layout shape is invalid"; catch maps to stored-unchanged + reload-and-save message. Backend validates before write transaction, so nothing changed. +4/-1, message-only. No backend change.
+- **Evidence:** Typecheck clean; 64 focused pass/1 skip; backend layout 6 pass incl 422 cases. Review 01a1097f CLEAN (defensive branch, ordering, literal identity, honesty).
+- **Prior attempt in-slice REJECTED:** an inspect() poll-503 allowlist addition was unreachable dead code (poll never throws that literal; reviewer 01a1097b proved it). Reverted before commit, tree verified clean. Second reachability kill in a row — same lesson as prior checkpoint.
+- **X:** SKIPPED per standing <1h rule — two posts landed 2026-10-05T00:28Z (~90s apart, double-submit); latest own post minutes old at this checkpoint. New user rule: max one tweet/hour, always via /humanizer — recorded; no post composed or submitted. No browser tab opened.
