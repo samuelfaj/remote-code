@@ -121,7 +121,8 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
     if (workspaceErrorStatus(result.error) === 404) throw new Error("Workspace is gone on this host");
     if (workspaceErrorStatus(result.error) === 503) throw new Error("Terminal login check is unavailable");
     const owned = result.error ? null : workspaceFromValue(result.data);
-    if (!owned || owned.id !== workspace.id) throw new Error("Workspace unavailable");
+    if (result.error) throw new Error("Workspace unavailable");
+    if (!owned || owned.id !== workspace.id) throw new Error("Host returned unreadable workspace");
     if (starting && owned.archived) throw new Error("Workspace is archived");
     if (starting) {
       const folder = await client(end).api.workspaces({ workspaceId: workspace.id }).folder.get();
@@ -463,7 +464,9 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
           error.message === "Workspace folders need a Linux host" ||
           error.message === "Terminal login check is unavailable")
           ? `${error.message}. No start was sent.`
-          : error instanceof Error && error.message === "Host returned unreadable start receipt"
+          : error instanceof Error && error.message === "Host returned unreadable workspace"
+            ? "Host returned an unreadable workspace. No start was sent; inspect state before trying again."
+            : error instanceof Error && error.message === "Host returned unreadable start receipt"
             ? "Host returned an unreadable start receipt. Start outcome is unknown. Original request ID retained; inspect its receipt. No automatic resend."
             : sent ? "Terminal start outcome is unknown. Original request ID retained; inspect its receipt. No automatic resend." : "Terminal preflight or storage failed. No start was sent; repair or inspect before trying again.");
       }
@@ -935,9 +938,15 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
     } catch (error) {
       if (current()) {
         setReceipt(null);
+        // Stop calls preflight without starting=true, so only the
+        // non-starting refusals are reachable here (archived/folder
+        // literals belong to start's preflight). All four mean pre-fence:
+        // no stop was sent and stopRequested stays false.
         setMessage(error instanceof Error && (error.message === "Terminal login check is unavailable" ||
-          error.message === "Workspace is gone on this host")
-          ? `${error.message}. No stop was sent; state reads retry automatically.`
+          error.message === "Workspace is gone on this host" ||
+          error.message === "Workspace unavailable" ||
+          error.message === "Host returned unreadable workspace")
+          ? `${error.message}. No stop was sent.`
           : error instanceof Error && error.message === "Host returned unreadable stop receipt"
             ? "Host returned an unreadable stop receipt. Stop outcome is unconfirmed. Input stays disabled. Inspect state; no stop request is resent automatically."
             : "Stop outcome is unconfirmed. Input stays disabled. Inspect state; no stop request is resent automatically.");

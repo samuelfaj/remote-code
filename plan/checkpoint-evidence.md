@@ -2035,3 +2035,9 @@ The historical checkpoint evidence below is retained in its original order and s
 # RC-033 save-confirm X check — 2026-10-05 (UTC)
 
 - **SKIPPED per <1h rule:** last post ~41 min old. Standing rule: max one tweet/hour, always via /humanizer. No post composed or submitted. No browser tab opened.
+
+# RC-031 workspace-guard slice — 2026-10-05 (UTC)
+
+- **Scope:** preflight workspace split + stop pre-fence mapping. +13/-4, message-only. No backend change.
+- **Evidence:** Typecheck clean; 64 focused pass/1 skip. Reviews 01a10a18 → 01a10a1d (dead mappings caught) → trimmed → 01a10a20 CLEAN (four reachable, generics honest, literal identity).
+- **X:** see X-check record below.
