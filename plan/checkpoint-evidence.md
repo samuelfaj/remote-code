@@ -2280,3 +2280,28 @@ The historical checkpoint evidence below is retained in its original order and s
 
 - **UNVERIFIED submit (not claimed):** X gate PASSED (profile 463 posts, newest own post 8h). Fresh draft composed ("Our iOS receipt lookup now tells apart no receipt from failed lookup. Absent keeps identity and draft, failure says no write was resent. Same honest split as web. Local proof, not deployed. #buildingRemoteCode") via /compose/post textbox, text verified in composer, but Post click failed "page did not return snapshot" again; composer still full, no URL/timestamp. No blind retry, no double-post. Code commit ea71e0f pushed, remote in sync.
 - **Cleanup proof:** browser_close closed:true/released:true; browser_status connected:true/hasTab:false.
+
+# RC-029 mobile pre-submit deadline slice — 2026-10-05 (UTC)
+
+- **Scope:** apps/mobile/src/features/files/FilePanel.tsx mutate() pre-submit deadline expiry sets honest message; cleanupUnsent takes optional doneMessage. Message-only. No backend change.
+- **Evidence:** Typecheck clean; 59 pass/1 skip. Review 01a10c8e CLEAN. Commit 0aa0d6f pushed.
+- **X:** per <1h rule (see checkpoint note).
+
+# RC-029 mobile mutate persist-split slice — 2026-10-05 (UTC)
+
+- **Scope:** apps/mobile/src/features/files/FilePanel.tsx mutate() catch distinguishes persist/write-identity failure from preflight. Message-only. No backend change.
+- **Evidence:** Typecheck clean; 59 pass/1 skip. Review 01a10c9c CLEAN. Commit 2962073 pushed.
+- **X:** per <1h rule (see checkpoint note).
+
+# RC-028 mobile workspace-list/open parity slice — 2026-10-05 (UTC)
+
+- **Scope:** apps/mobile/src/features/workspaces/WorkspacePanel.tsx refresh()/openWorkspace() mirror web char-identical: invalid list sets invalid-metadata message; open splits validator-reject vs wrong-id. Message-only. No backend change.
+- **Evidence:** Typecheck clean; 59 pass/1 skip. Review 01a10ca2 CLEAN. Commit abae466 pushed.
+- **X:** per <1h rule (see checkpoint note).
+
+# RC-028 mobile open 404 slice — 2026-10-05 (UTC)
+
+- **Scope:** apps/mobile/src/features/workspaces/WorkspacePanel.tsx openWorkspace() 404 clears selection and names deleted workspace, mirroring web. Message-only. No backend change.
+- **Evidence:** Typecheck clean; 59 pass/1 skip. Review 01a10ca6 CLEAN. Commit 66f0703 pushed.
+- **X:** per <1h rule (see checkpoint note).
+- **Next resumption point:** continue RC-029 file-op parity or RC-031/RC-033 slices; RC-002 remains blocked (no retry without receipt reconciliation).
