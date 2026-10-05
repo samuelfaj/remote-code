@@ -461,7 +461,8 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
       const owned = await preflight(end, current);
       if (owned.archived) throw new Error("Workspace is archived");
       const fresh = await poll(end, current, saved);
-      if (!current() || fresh.state !== "running" || fresh.inputState !== null && fresh.inputState !== "written") throw new Error("Input is not ready");
+      if (!current() || fresh.state !== "running") throw new Error("Input is not ready");
+      if (fresh.inputState !== null && fresh.inputState !== "written") throw new Error("Host is still writing the previous input");
       const next = { ...saved, inputUncertain: true };
       writeReference(next, saved);
       if (!current() || Date.now() >= end) { writeReference(saved, next); return; }
@@ -526,7 +527,9 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
           : error instanceof Error && (error.message === "Terminal login check is unavailable" ||
             error.message === "Workspace is gone on this host")
             ? `${error.message}. No input was sent; state reads retry automatically.`
-            : sent ? "Input delivery is unknown. Further input is blocked, including after reload. State reads never resend input; inspect or stop the terminal." : "Input preflight or storage failed. No input was sent. Inspect the host before trying again.");
+            : error instanceof Error && error.message === "Host is still writing the previous input"
+              ? "Host is still writing the previous input. Wait for the next state poll, then try again; nothing was queued."
+              : sent ? "Input delivery is unknown. Further input is blocked, including after reload. State reads never resend input; inspect or stop the terminal." : "Input preflight or storage failed. No input was sent. Inspect the host before trying again.");
       }
       if (keyQueue.current.length > 0) {
         const dropped = keyQueue.current.length;

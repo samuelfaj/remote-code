@@ -1,5 +1,8 @@
 # Changelog
 
+## RC-031 send backpressure split — busy host reads honestly pre-fence 2026-10-05T01:30:44Z (UTC)
+
+- send() pre-send guard split: non-running still throws "Input is not ready"; queued/unknown inputState throws "Host is still writing the previous input" (caught → wait-for-next-poll + nothing-queued message, identical to the 409 pending refusal). Throw precedes fence + POST so nothing sent. Review 01a109ae CLEAN (reachability, honesty, consistency, old-producer coverage, fence safety, literal identity). Verified: typecheck clean, 64 focused pass/1 skip. X: per <1h rule + humanizer (see checkpoint note).
 ## Goal close-out — honest pivot, backlog NOT 100% (2026-10-05T01:25:37Z UTC)
 
 - PIVOT.md records why full completion is unclaimable: 13 Complete / 7 In progress / 1 Blocked (RC-002) / 47 To do. This run's delivered slices all pushed, reviewed, and verified (see entries below). Commit 8de8950 pushed; tree clean; remote in sync. Resume order documented in PIVOT.md. X: skipped per <1h rule (57 min; see checkpoint note).

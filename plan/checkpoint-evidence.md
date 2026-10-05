@@ -1862,3 +1862,9 @@ The historical checkpoint evidence below is retained in its original order and s
 
 - **Pivot recorded:** PIVOT.md close-out entry (commit 8de8950, pushed). No criteria weakened, no invented evidence. Resume order: RC-031 flow control → RC-033 acceptance → RC-018 closure, per dependency fields.
 - **X:** SKIPPED per standing <1h rule (57 min since 00:28Z posts). Standing rule: max one tweet/hour, always via /humanizer. No post composed or submitted. No browser tab opened.
+
+# RC-031 send-backpressure slice — 2026-10-05 (UTC)
+
+- **Scope:** send() busy-host guard split with honest pre-fence message. +5/-2, message-only. No backend change.
+- **Evidence:** Typecheck clean; 64 focused pass/1 skip. Review 01a109ae CLEAN.
+- **X:** see X-check record below.
