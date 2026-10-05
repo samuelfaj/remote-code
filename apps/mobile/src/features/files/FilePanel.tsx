@@ -159,9 +159,9 @@ export function FilePanel({ origin, userId, workspace, blocked, onUnauthorized }
         if (!current()) return;
         if (Date.now() >= end) throw new Error("File deadline expired");
         if (!host) { setInspection(null); setMessage("Host response did not match the requested file. Draft kept; retry the read manually."); return; }
-        if (!same && editorRef.current?.draft !== old?.draft) { setMessage("Draft changed while reading another file. Draft kept; open again to confirm discard."); return; }
+        if (!same && editorRef.current?.draft !== old?.draft) { setMessage("The draft changed while another file was loading. Draft kept; open the other file again to confirm discarding it."); return; }
         setEditor(value => ({ host, draft: same && value ? value.draft : host.content, needsRead: false }));
-        setMessage(same ? "Current host text read. Draft kept; compare before writing." : "Text and version read from host.");
+        setMessage(same ? "Current host text and version read. Your editable draft was kept; compare before saving." : "Text and version read from the host.");
       } else {
         const response = await files.get({ query: path ? { path } : {} });
         if (!current()) return;

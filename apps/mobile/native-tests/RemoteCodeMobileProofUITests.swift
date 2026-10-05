@@ -491,7 +491,7 @@ final class RemoteCodeMobileProofUITests: XCTestCase {
         guard (draft.value as? String) == "X" else { XCTFail("The user must change the shipped draft while MOVE waits"); return }
         try await observer.releaseFileSaveLoss(at: api)
         let status = app.staticTexts.matching(identifier: "file-status").firstMatch
-        guard status.waitForLabelContaining("same current verified OPEN", timeout: 8) else { XCTFail("Changed draft must stop MOVE before identity or POST"); return }
+        guard status.waitForLabelContaining("current verified open file", timeout: 8) else { XCTFail("Changed draft must stop MOVE before identity or POST"); return }
         diagnostics = try await observer.fileSaveLossDiagnostics(at: api)
         XCTAssertEqual(diagnostics.mutationPosts, 0)
         XCTAssertNil(diagnostics.requestId)
@@ -602,7 +602,7 @@ final class RemoteCodeMobileProofUITests: XCTestCase {
         let occupied = try await observer.openFile(at: api, workspaceId: workspace.id, path: "native-occupied.txt")
         XCTAssertEqual(occupied.content, "keep occupied target")
         try tapFileControl("Read current file", in: app)
-        guard status.waitForLabelContaining("Current host text read", timeout: 15) else { XCTFail("MOVE baseline must be explicitly read after refusal"); return }
+        guard status.waitForLabelContaining("Current host text and version read", timeout: 15) else { XCTFail("MOVE baseline must be explicitly read after refusal"); return }
         let draft = app.textViews["File draft"]
         try draft.clearAndTypeText("unsaved draft", in: app)
         XCTAssertFalse(app.buttons["Move file"].isEnabled, "MOVE must never save or move an unsaved draft")
@@ -618,7 +618,7 @@ final class RemoteCodeMobileProofUITests: XCTestCase {
         let afterConflict = try await observer.openFile(at: api, workspaceId: workspace.id, path: source)
         XCTAssertEqual(afterConflict.content, changed)
         try tapFileControl("Read current file", in: app)
-        guard status.waitForLabelContaining("Current host text read", timeout: 15) else { XCTFail("Conflict recovery requires an explicit current OPEN"); return }
+        guard status.waitForLabelContaining("Current host text and version read", timeout: 15) else { XCTFail("Conflict recovery requires an explicit current OPEN"); return }
         try draft.clearAndTypeText(changed, in: app)
         try tapFileControl("Move file", in: app)
         guard status.waitForLabelContaining("MOVE receipt confirmed", timeout: 15) else { XCTFail("Native MOVE must confirm before readback"); return }
@@ -696,7 +696,7 @@ final class RemoteCodeMobileProofUITests: XCTestCase {
         let saved = "native save on shared Linux host"
         try openNativeFile(path, in: app)
         let status = app.staticTexts.matching(identifier: "file-status").firstMatch
-        guard status.waitForLabelContaining("Text and version read from host", timeout: 15) else { XCTFail("Native must OPEN the web-created file before editing"); return }
+        guard status.waitForLabelContaining("Text and version read from the host", timeout: 15) else { XCTFail("Native must OPEN the web-created file before editing"); return }
         let draft = app.textViews["File draft"]
         let opened = try await observer.openFile(at: api, workspaceId: workspace.id, path: path)
         let originalVersion = try await observer.sha256(original)
@@ -708,7 +708,7 @@ final class RemoteCodeMobileProofUITests: XCTestCase {
         guard status.waitForLabelContaining("SAVE receipt confirmed", timeout: 15) else { XCTFail("Native SAVE must confirm before any follow-up; an unknown result must not be retried"); return }
         guard !app.buttons["Check file receipt"].exists && !app.otherElements["pending-file"].exists else { XCTFail("Confirmed SAVE must clear its pending identity"); return }
         try openNativeFile(path, in: app)
-        guard status.waitForLabelContaining("Current host text read", timeout: 15) else { XCTFail("Historical SAVE receipt must be followed by current OPEN"); return }
+        guard status.waitForLabelContaining("Current host text and version read", timeout: 15) else { XCTFail("Historical SAVE receipt must be followed by current OPEN"); return }
         let actual = try await observer.openFile(at: api, workspaceId: workspace.id, path: path)
         let savedVersion = try await observer.sha256(saved)
         guard actual.path == path && actual.content == saved && actual.version == savedVersion && actual.version != opened.version && (draft.value as? String) == actual.content else { XCTFail("Current native OPEN and real API must show exact saved bytes/version"); return }
@@ -731,7 +731,7 @@ final class RemoteCodeMobileProofUITests: XCTestCase {
         let saved = "native save on shared Linux host"
         try openNativeFile(path, in: app)
         let status = app.staticTexts.matching(identifier: "file-status").firstMatch
-        guard status.waitForLabelContaining("Text and version read from host", timeout: 15) else { XCTFail("Relaunched native app must explicitly OPEN current host text/version"); return }
+        guard status.waitForLabelContaining("Text and version read from the host", timeout: 15) else { XCTFail("Relaunched native app must explicitly OPEN current host text/version"); return }
         let actual = try await observer.openFile(at: api, workspaceId: workspace.id, path: path)
         let savedVersion = try await observer.sha256(saved)
         let draft = app.textViews["File draft"]
