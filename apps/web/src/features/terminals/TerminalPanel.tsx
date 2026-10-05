@@ -820,7 +820,8 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
       if (workspaceErrorStatus(live.error) === 503) throw new Error("Terminal login check is unavailable");
       const liveWorkspace = live.error ? null : workspaceFromValue(live.data);
       if (liveWorkspace && liveWorkspace.id !== workspace.id) throw new Error("Host returned unreadable workspace");
-      if (!liveWorkspace) throw new Error("Workspace layout unavailable");
+      if (live.error) throw new Error("Workspace layout unavailable");
+      if (!liveWorkspace) throw new Error("Host returned unreadable workspace");
       if (liveWorkspace.archived) throw new Error("Workspace is archived");
       const result = await client(end).api.workspaces({ workspaceId: workspace.id }).layout.put(next);
       if (!current() || Date.now() >= end) throw new Error("Terminal context expired");

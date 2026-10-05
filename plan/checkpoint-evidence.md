@@ -2084,3 +2084,9 @@ The historical checkpoint evidence below is retained in its original order and s
 
 - **SKIPPED per <1h rule:** profile readback shows latest own post 31m old (@samfajreldines, 463 posts). Standing rule: max one tweet/hour, always via /humanizer. No post composed or submitted.
 - **Cleanup proof:** browser_close closed:true/released:true; browser_status connected:true/hasTab:false.
+
+# RC-033 live-check-error slice — 2026-10-05 (UTC)
+
+- **Scope:** saveLayout() live-check error split. +2/-1, message-only, pre-PUT. No backend change.
+- **Evidence:** Typecheck clean; 64 focused pass/1 skip. Review 01a10aa5 CLEAN.
+- **X:** see X-check record below.

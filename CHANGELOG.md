@@ -1,5 +1,8 @@
 # Changelog
 
+## RC-033 save live-check error split — transport vs malformed named 2026-10-05T06:03:11Z (UTC)
+
+- saveLayout() live-check: unhandled-status errors keep "Workspace layout unavailable" (generic unconfirmed fallback, PUT never sent); validator-reject/wrong-id throws unreadable-workspace message (caught → not-saved wording). Mirrors the preflight workspace split. Review 01a10aa5 CLEAN (reachability, pre-PUT honesty, literal identity, message-only). Verified: typecheck clean, 64 focused pass/1 skip. X: per <1h rule (see checkpoint note).
 ## RC-033 load body-guard — null/garbage body no longer reads as empty 2026-10-05T05:43:57Z (UTC)
 
 - loadLayout() guards null/non-object 200 bodies with unreadable-layout throw (caught → invalid-shape message) instead of misreading garbage as "No saved layout". Review 01a10a95 CLEAN and confirmed the before-trace: null/falsy bodies fell through both guards to setLayout(null) with empty message. Real misread fix + honest message. Verified: typecheck clean, 64 focused pass/1 skip. X: per <1h rule (see checkpoint note).
