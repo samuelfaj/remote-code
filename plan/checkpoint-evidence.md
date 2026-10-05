@@ -2061,3 +2061,9 @@ The historical checkpoint evidence below is retained in its original order and s
 - **Scope:** saveLayout() live-check wrong-id guard + catch mapping. +4/-1, guard + message. No backend change.
 - **Evidence:** Typecheck clean; 64 focused pass/1 skip. Review 01a10a5c CLEAN (defensive reachability, pre-PUT honesty, no cross-catching, literal identity).
 - **X:** see X-check record below.
+
+# RC-033 save-live-check X check — 2026-10-05 (UTC)
+
+- **POSTED via mac-use (1h gate PASS, 2h age):** humanized draft "Layout save now double-checks the workspace is really yours before writing. Wrong answer stops the save with a plain message. Local proof, not deployed. #buildingRemoteCode" live on @samfajreldines (463 posts, 4m old readback, exact text match). Single post, no duplicate.
+- **Cleanup proof:** browser_close closed:true/released:true; browser_status connected:true/hasTab:false at 2026-10-05T05:23:07Z.
+- **Fresh checks this turn:** typecheck clean; 64 focused pass/1 skip (packages/client + apps/web).
