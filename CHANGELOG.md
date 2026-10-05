@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-029 preflight-guidance parity — folder inspection named 2026-10-06T02:30:00Z (UTC)
+
+- Mobile mutate() unsent branch now says "refresh folder inspection manually" like web. Review 01a10dae CLEAN. Verified: typecheck clean, 74 pass/1 skip. X: per <1h rule (see checkpoint note).
+
 ## RC-029 success-guidance link parity — folder-and-files button named 2026-10-06T02:00:00Z (UTC)
 
 - Both receipt-success messages (mutate + checkReceipt, web + mobile) now name the "refresh folder and files" button. First review 01a10da7 DEFECT (direction inverted) → web fixed to match renamed button → 01a10da9 CLEAN. Verified: typecheck clean, 59+15 pass, workspaces E2E 19/19. X: per <1h rule (see checkpoint note).
