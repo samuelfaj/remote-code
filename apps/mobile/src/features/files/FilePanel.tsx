@@ -265,7 +265,7 @@ export function FilePanel({ origin, userId, workspace, blocked, onUnauthorized }
         return;
       }
       if (kind === "move" && (editorRef.current?.host !== value!.host || editorRef.current.needsRead || editorRef.current.draft !== editorRef.current.host.content)) {
-        setMessage("MOVE requires the same current verified OPEN. No MOVE request was sent; draft kept.");
+        setMessage("MOVE requires the current verified open file with a clean draft. No MOVE request was sent; your draft was kept.");
         return;
       }
       if (!current() || Date.now() >= end) throw new Error("File deadline expired");
