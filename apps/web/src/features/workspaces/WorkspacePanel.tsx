@@ -146,7 +146,13 @@ export function WorkspacePanel({ userId, onUnauthorized }: Props) {
         return;
       }
       const confirmed = workspaceFromValue(data);
-      if (!confirmed || confirmed.id !== workspace.id) {
+      if (!confirmed) {
+        setReadError(
+          "Could not open this workspace. Refresh the list and try again.",
+        );
+        return;
+      }
+      if (confirmed.id !== workspace.id) {
         setReadError("Host returned invalid workspace metadata.");
         return;
       }

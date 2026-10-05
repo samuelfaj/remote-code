@@ -2106,3 +2106,9 @@ The historical checkpoint evidence below is retained in its original order and s
 
 - **SKIPPED per <1h rule:** profile readback shows latest own post 1h old (@samfajreldines, 463 posts, boundary conservative). Standing rule: max one tweet/hour, always via /humanizer. No post composed or submitted.
 - **Cleanup proof:** browser_close closed:true/released:true; browser_status connected:true/hasTab:false.
+
+# RC-028 openWorkspace slice — 2026-10-05 (UTC)
+
+- **Scope:** WorkspacePanel openWorkspace() wrong-id split. +7/-1, message-only. No backend change.
+- **Evidence:** Typecheck clean; 64 focused pass/1 skip. Review 01a10ac6 CLEAN.
+- **X:** see X-check record below.

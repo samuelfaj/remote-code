@@ -1,5 +1,8 @@
 # Changelog
 
+## RC-028 openWorkspace split — wrong-id named, malformed stays load-failure 2026-10-05T06:38:12Z (UTC)
+
+- WorkspacePanel openWorkspace(): validator-reject keeps generic "Could not open this workspace" (truthful load-failure, no transport claim); valid-shaped wrong-id → "Host returned invalid workspace metadata." (matches list-validation literal). Review 01a10ac6 CLEAN (reachability, both-sides honesty argued, staleness safe, no E2E dependents). Verified: typecheck clean, 64 focused pass/1 skip. X: per <1h rule (see checkpoint note).
 ## RC-028 workspace-list honesty — malformed list named, not load failure 2026-10-05T06:21:26Z (UTC)
 
 - WorkspacePanel refresh(): validator-reject on the workspace list sets "Host returned invalid workspace metadata." directly instead of throwing into the generic "Could not load workspaces" catch. Same literal as openWorkspace() path. Review 01a10ab7 CLEAN (reachability, consistency, no staleness regression — synchronous continuation, message-only). Verified: typecheck clean, 64 focused pass/1 skip. X: per <1h rule (see checkpoint note).
