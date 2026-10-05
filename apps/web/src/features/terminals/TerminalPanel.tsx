@@ -541,6 +541,7 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
         return;
       }
       const ack = result.error ? null : terminalInputAckFromValue(result.data, saved.terminalId, sequence);
+      if (!ack && !result.error) throw new Error("Host returned unreadable input acknowledgement");
       if (!ack || ack.state === "unknown") throw new Error("Input outcome unknown");
       writeReference(saved, next);
       if (proposal !== undefined && draftRef.current === proposal) setDraft("");
@@ -556,7 +557,9 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
             ? `${error.message}. No input was sent; state reads retry automatically.`
             : error instanceof Error && error.message === "Host is still writing the previous input"
               ? "Host is still writing the previous input. Wait for the next state poll, then try again; nothing was queued."
-              : sent ? "Input delivery is unknown. Further input is blocked, including after reload. State reads never resend input; inspect or stop the terminal." : "Input preflight or storage failed. No input was sent. Inspect the host before trying again.");
+              : error instanceof Error && error.message === "Host returned unreadable input acknowledgement"
+                ? "Host returned an unreadable acknowledgement. Input delivery is unknown. Further input is blocked, including after reload. State reads never resend input; inspect or stop the terminal."
+                : sent ? "Input delivery is unknown. Further input is blocked, including after reload. State reads never resend input; inspect or stop the terminal." : "Input preflight or storage failed. No input was sent. Inspect the host before trying again.");
       }
       if (keyQueue.current.length > 0) {
         const dropped = keyQueue.current.length;

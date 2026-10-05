@@ -1,5 +1,8 @@
 # Changelog
 
+## RC-031 input-ack split — unreadable ack named, transport errors generic 2026-10-05T02:54:34Z (UTC)
+
+- send() post-POST ack validation: validator-reject (error null, ack null) throws unreadable-ack message (caught → unknown-delivery + blocked wording); transport errors and ack-state-unknown keep generic unknown path. Fence stays set on both. Review 01a109f7 DEFECT (transport lumped into ack message) → narrowed in-slice → 01a109fa CLEAN. Verified: typecheck clean, 64 focused pass/1 skip. X: per <1h rule (see checkpoint note).
 ## RC-031 folder-states X POSTED + checkpoint push 2026-10-05T02:45:10Z (UTC)
 
 - Code commit 0dd9477 pushed. X post published via mac-use after 70-min gap (1h rule PASS): humanized draft "Taught our terminal start to read the room: ..." live on @samfajreldines (462 posts, 45s old readback). Single post, no duplicate. Cleanup verified: browser_close closed:true/released:true, hasTab:false. No canonical URL captured.

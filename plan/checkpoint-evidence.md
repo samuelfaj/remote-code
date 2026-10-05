@@ -1985,3 +1985,9 @@ The historical checkpoint evidence below is retained in its original order and s
 - **POSTED via mac-use with humanizer:** 70 min since prior post (rule PASS). Draft humanized per skill (voice-matched plain sentences, no invented facts, all claims from slice). Profile readback: 462 posts, newest 45s old with exact draft text. One post only.
 - **Cleanup verified:** browser_close closed:true/released:true; browser_status hasTab:false. No owned tab remains.
 - **Code checkpoint pushed:** 0dd9477 on checkpoint/rc002-linux-runtime-evidence, remote in sync.
+
+# RC-031 input-ack slice — 2026-10-05 (UTC)
+
+- **Scope:** send() ack-validation split with error-null guard. +4/-1, message-only, fence kept. No backend change.
+- **Evidence:** Typecheck clean; 64 focused pass/1 skip. Review 01a109f7 DEFECT → narrowed in-slice → 01a109fa CLEAN.
+- **X:** see X-check record below.
