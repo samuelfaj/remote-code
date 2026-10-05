@@ -1821,3 +1821,9 @@ The historical checkpoint evidence below is retained in its original order and s
 - **Scope:** stop() 409 poll-fallback removed-message credits the follow-up state read; +1 comment line. Message-only, no fence/state change. 503-fallback and success-path siblings intentionally untouched (different/same provenance noted, no contradiction).
 - **Evidence:** Typecheck clean; 64 focused pass/1 skip. Review 01a10989 CLEAN (honesty, consistency, literal search, scope).
 - **X:** SKIPPED per standing <1h rule — posts landed 2026-10-05T00:28Z (~90s apart, double-submit). Standing rule: max one tweet/hour, always via /humanizer. No post composed or submitted. No browser tab opened.
+
+# RC-031 stop-wording-trio slice — 2026-10-05 (UTC)
+
+- **Scope:** 503-fallback + success-path removed-messages credit follow-up read / host receipt respectively; completes 409 change. +2/-2, message-only, no fence/state change.
+- **Evidence:** Typecheck clean; 64 focused pass/1 skip; source grep confirms no stale "Host confirms the terminal ended" in apps/web/src, packages, or apps/api/src (only stale dist bundle, rebuilt on deploy). Review 01a1098d CLEAN.
+- **X:** SKIPPED per standing <1h rule — posts landed 2026-10-05T00:28Z (~90s apart, double-submit). Standing rule: max one tweet/hour, always via /humanizer. No post composed or submitted. No browser tab opened.

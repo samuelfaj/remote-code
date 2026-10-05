@@ -868,7 +868,7 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
         try {
           const settled = await poll(end, current, saved);
           acceptReceipt(settled, next);
-          setMessage(settled.cleanup === "removed" ? "Host confirms the terminal ended and its process was removed." : "Stop is not complete. Inspect state; no automatic stop resend.");
+          setMessage(settled.cleanup === "removed" ? "Stop confirmed by a follow-up state read; the terminal ended and its process was removed." : "Stop is not complete. Inspect state; no automatic stop resend.");
         } catch {
           setMessage("Stop outcome is unconfirmed after a host failure. The terminal state is unknown for this login; inspect state. No stop request is resent automatically.");
         }
@@ -877,7 +877,7 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
       const confirmed = result.error ? null : terminalReceiptFromValue(result.data, saved.start, saved.terminalId);
       if (!confirmed) throw new Error("Stop outcome unknown");
       acceptReceipt(confirmed, next);
-      setMessage(confirmed.cleanup === "removed" ? "Host confirms the terminal ended and its process was removed." : "Stop is not complete. Inspect state; no automatic stop resend.");
+      setMessage(confirmed.cleanup === "removed" ? "Stop confirmed by the host receipt; the terminal ended and its process was removed." : "Stop is not complete. Inspect state; no automatic stop resend.");
     } catch (error) {
       if (current()) {
         setReceipt(null);

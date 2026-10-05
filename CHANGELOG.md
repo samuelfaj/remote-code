@@ -1,5 +1,8 @@
 # Changelog
 
+## RC-031 stop wording trio — each removal names its evidence source 2026-10-05T00:54:24Z (UTC)
+
+- 503 poll-fallback removed-message → "Stop confirmed by a follow-up state read; ..."; success-path removed-message → "Stop confirmed by the host receipt; ...". Completes the 409 change from last checkpoint: both poll fallbacks share follow-up-read wording (same evidence source), success path names the POST receipt. Review 01a1098d CLEAN (provenance, siblings untouched, no test depends on strings). Verified: typecheck clean, 64 focused pass/1 skip. X: skipped per <1h rule (see checkpoint note).
 ## RC-031 stop-409 poll wording — removal credited to follow-up read, not refusal 2026-10-05T00:50:52Z (UTC)
 
 - stop() 409 poll-fallback removed-message now reads "Stop confirmed by a follow-up state read; ..." instead of "Host confirms ...". The 409 only proves refusal; removal is proven by the readonly poll. Review 01a10989 CLEAN (no overclaim either way; 503-fallback/success siblings intentionally untouched; no test depends on the string). Verified: typecheck clean, 64 focused pass/1 skip. X: skipped per <1h rule (see checkpoint note).
