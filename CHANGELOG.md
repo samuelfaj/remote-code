@@ -1,5 +1,8 @@
 # Changelog
 
+## RC-031 preflight folder-501 — non-Linux host reads honestly on start 2026-10-05T02:29:48Z (UTC)
+
+- preflight() folder-GET 501 throws "Workspace folders need a Linux host" (caught → No-start-sent) instead of false prepare-folder remediation. Review 01a109e2 found no defect and corrected the premise: storage failures throw to 503, so 501 unambiguously means non-Linux. Verified: typecheck clean, 64 focused pass/1 skip, folder backend 3 pass/11 skip. X: per <1h rule (see checkpoint note).
 ## RC-031 inspect routes-unavailable — no-reference path stops implying identity 2026-10-05T02:24:35Z (UTC)
 
 - inspect() outer catch identity-maps "Protected terminal routes unavailable" instead of generic fallback. The generic's "Original identity retained" falsely implied a reference on the no-saved-reference branch. Review 01a109de CLEAN (reachability, honesty fix, available=false coverage, message-only). Verified: typecheck clean, 64 focused pass/1 skip. X: per <1h rule (see checkpoint note).

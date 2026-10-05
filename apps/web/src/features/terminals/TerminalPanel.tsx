@@ -129,6 +129,7 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
       if (workspaceErrorStatus(folder.error) === 401) onUnauthorized();
       if (workspaceErrorStatus(folder.error) === 404) throw new Error("Workspace is gone on this host");
       if (workspaceErrorStatus(folder.error) === 409) throw new Error("Workspace is archived");
+      if (workspaceErrorStatus(folder.error) === 501) throw new Error("Workspace folders need a Linux host");
       if (folder.error || fileFolderStateFromValue(folder.data, workspace.id) !== "provisioned") throw new Error("Prepare the workspace folder first");
     }
     return owned;
@@ -454,6 +455,7 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
         setMessage(error instanceof Error && (error.message === "Workspace is archived" ||
           error.message === "Workspace is gone on this host" ||
           error.message === "Prepare the workspace folder first" ||
+          error.message === "Workspace folders need a Linux host" ||
           error.message === "Terminal login check is unavailable")
           ? `${error.message}. No start was sent.`
           : sent ? "Terminal start outcome is unknown. Original request ID retained; inspect its receipt. No automatic resend." : "Terminal preflight or storage failed. No start was sent; repair or inspect before trying again.");
