@@ -257,6 +257,7 @@ export function FilePanel({ origin, userId, workspace, blocked, onUnauthorized }
     working.current = true; setBusy(true); setMessage(`Checking ${kind.toUpperCase()} authority…`);
     let operation: PendingFile | null = null;
     let sent = false;
+    let persistFailed = false;
     try {
       const state = await inspect(end, current);
       if (!current() || state?.folder !== "provisioned" || state.archived || Date.now() >= end) {
@@ -276,7 +277,11 @@ export function FilePanel({ origin, userId, workspace, blocked, onUnauthorized }
       updatePending(operation); setStorageReady(false);
       const identity = operation;
       const allowed = () => current() && Date.now() < end;
-      const persisted = await beforeFileDeadline(queued(() => persistStoredFile(AsyncStorage, key, identity, allowed)), end);
+      const persisted = await (async () => {
+        try {
+          return await beforeFileDeadline(queued(() => persistStoredFile(AsyncStorage, key, identity, allowed)), end);
+        } catch (error) { persistFailed = true; throw error; }
+      })();
       if (!current()) { cleanupUnsent(identity, storeGeneration); return; }
       if (persisted.expired || Date.now() >= end) {
         const doneMessage = `Deadline expired before ${kind.toUpperCase()} submission. No ${kind.toUpperCase()} request was sent.`;
@@ -285,6 +290,7 @@ export function FilePanel({ origin, userId, workspace, blocked, onUnauthorized }
         return;
       }
       if (persisted.value !== "saved") {
+        persistFailed = true;
         if (persisted.value === "cleaned" || persisted.value === "not_written") { updatePending(null); setStorageReady(true); }
         setMessage(`No ${kind.toUpperCase()} was sent. Pending identity could not be verified; repair storage before writing.`);
         return;
@@ -325,7 +331,7 @@ export function FilePanel({ origin, userId, workspace, blocked, onUnauthorized }
       else if (current()) setMessage("Receipt found, but identity cleanup is unverified. Writes remain blocked.");
     } catch {
       if (!sent && operation) cleanupUnsent(operation, storeGeneration);
-      if (current()) { setInspection(null); setMessage(sent ? `${kind.toUpperCase()} outcome unknown. Request ID, inputs and draft kept; check receipt manually. No write retry.` : `No ${kind.toUpperCase()} was sent. Preflight or storage failed; refresh manually.`); }
+      if (current()) { setInspection(null); setMessage(sent ? `${kind.toUpperCase()} outcome unknown. Request ID, inputs and draft kept; check receipt manually. No write retry.` : persistFailed ? `No ${kind.toUpperCase()} was sent. Storage remains unverified; repair storage before writing.` : `No ${kind.toUpperCase()} was sent. Preflight or storage failed; refresh manually.`); }
     } finally { if (current()) { working.current = false; setBusy(false); } }
   }
   async function checkReceipt() {
