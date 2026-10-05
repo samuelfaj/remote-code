@@ -2460,3 +2460,11 @@ The historical checkpoint evidence below is retained in its original order and s
 - **X:** per <1h rule (see checkpoint note).
 - **mac-use:** browser_status connected:true/hasTab:false — no owned tabs this segment.
 - **Resume state:** branch checkpoint/rc002-linux-runtime-evidence in sync with remote; tree clean. Open: RC-002 blocked (no retry without receipt reconciliation); RC-029 file parity continues on storage-divergent paths; RC-031 terminal + RC-033 layout + RC-030 Git API untouched; remaining To-do per plan/tasks.html deps.
+
+# RC-029 executable proof re-run on current source — 2026-10-06 (UTC)
+
+- **Command:** `RC_FILE_EDITOR_PROOF_DIR={SCRATCH}/rc029-rerun bun scripts/run-file-editor-linux-browser-proof.ts --frozen-inputs`
+- **Result:** passed. evidence.json at run dir; baselineGitHead == executedGitCommit == 9b9320c, sourceUnchanged:true, cleanup errors:[], containerRemoved/browserClosed/viteClosed true.
+- **Environment:** Mac host darwin/arm64; real Linux ARM64 container Bun 1.3.13, image sha256:87416c977a612a204eb54ab9f3927023c2a3c971f4f345a01da08ea6262ae30e.
+- **Contract exercised:** two UI contexts open one version; first SAVE 201, second 409 version_conflict without overwrite; conflict check recorded with durable winner bytes + refused request ID creating no new intent. Full checks map incl. conflict, mobile-conflict, create/move recovery, storage failure, archive fence all present in evidence.json.
+- **Scope note:** web-context proof incl. mobile-viewport context; native client, Distill, deployment remain separate per RC-029 status. Remaining message gaps are storage-divergent by platform (sessionStorage vs AsyncStorage) and honestly keep device wording.
