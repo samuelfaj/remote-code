@@ -2225,3 +2225,14 @@ The historical checkpoint evidence below is retained in its original order and s
 
 - **UNVERIFIED submit (not claimed):** X gate PASSED (profile 463 posts, newest own post 7h; prior ambiguous draft absent from timeline). Fresh draft composed ("Our iOS file panel now names a wrong workspace honestly instead of one lumped error. Small parity fix with web, same plain wording. Local proof, not deployed. #buildingRemoteCode") via /compose/post textbox, text verified in composer, but Post click failed "page did not return snapshot"; composer still full on readback, no URL/timestamp. No blind retry, no double-post. Code commit c35c57b pushed, remote in sync.
 - **Cleanup proof:** browser_close closed:true/released:true; browser_status connected:true/hasTab:false.
+
+# RC-029 mobile pre-fence slice — 2026-10-05 (UTC)
+
+- **Scope:** apps/mobile/src/features/files/FilePanel.tsx session/ownership/folder pre-fence literals aligned char-identical to reviewed web wording. +4/-4, message-only. No backend change.
+- **Evidence:** Typecheck clean; 59 pass/1 skip (mobile file-rules + client). Review 01a10c32 CLEAN (literal identity, honest catches, separate-scope hits confirmed, control flow untouched).
+- **X:** see X-check record below.
+
+# RC-029 mobile pre-fence X check — 2026-10-05 (UTC)
+
+- **SKIPPED (deferred, not lost):** X gate PASSED on readback (profile 463 posts, newest own post 7h). Three consecutive Post-click attempts across checkpoints failed identically ("page did not return snapshot", composer full, no URL). Pivoting per /sam-pivot: no fourth blind submit — same action without new evidence repeats a known failure. Draft retained for next checkpoint: "Our iOS file checks now use the same honest wording as web: session, ownership, folder status each named on failure. Parity, no new claims. Local proof, not deployed. #buildingRemoteCode". Next round retries the submit once; hourly rule still enforced.
+- **Cleanup proof:** browser_close closed:true/released:true; browser_status connected:true/hasTab:false.
