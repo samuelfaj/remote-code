@@ -1,5 +1,8 @@
 # Changelog
 
+## RC-031 resize mismatch split — validated-but-unapplied reads not-complete 2026-10-05T02:10:44Z (UTC)
+
+- resize() post-POST validation split: null receipt keeps "Resize outcome unknown"; validated-but-mismatched receipt throws "Resize is not complete" (caught → not-complete + blocked + Stop message, matching the 409-fallback sibling). Fence stays set. Review 01a109d2 CLEAN with one wording fix in-slice ("did not apply" overstated settling → "not complete" describes both). Verified: typecheck clean, 64 focused pass/1 skip. X: per <1h rule (see checkpoint note).
 ## RC-031 input 409 split — conflict vs unplaceable read honestly 2026-10-05T02:06:51Z (UTC)
 
 - send() definitive-409 branch: sequence_conflict → out-of-order + inspect-to-resync message; input_unknown → cannot-place message; pending unchanged. Both pre-reservation with fence cleared and nothing queued. Review 01a109cf CLEAN (resync path, producer lines, shared fence clear, no stale-string dependents). Verified: typecheck clean, 64 focused pass/1 skip. X: per <1h rule (see checkpoint note).

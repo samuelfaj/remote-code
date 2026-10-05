@@ -670,7 +670,8 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
         return;
       }
       const confirmed = result.error ? null : terminalReceiptFromValue(result.data, saved.start, saved.terminalId);
-      if (!confirmed || confirmed.resizeState !== "applied" || confirmed.cols !== wantCols || confirmed.rows !== wantRows) throw new Error("Resize outcome unknown");
+      if (!confirmed) throw new Error("Resize outcome unknown");
+      if (confirmed.resizeState !== "applied" || confirmed.cols !== wantCols || confirmed.rows !== wantRows) throw new Error("Resize is not complete");
       writeReference(saved, next);
       acceptReceipt(confirmed, saved);
       setMessage(`Host confirms ${confirmed.cols} columns × ${confirmed.rows} rows.`);
@@ -684,7 +685,9 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
             ? `${error.message}. No resize was sent; state reads retry automatically.`
             : error instanceof Error && error.message === "Resize outcome is still unknown"
               ? "A previous resize is still unsettled. Wait for the next state poll, then try again; nothing was sent."
-              : sent ? "Resize outcome is unknown. Further input and resize are blocked, including after reload. Stop the terminal to release it." : "Resize preflight or storage failed. No resize was sent. Inspect the host before trying again.");
+              : error instanceof Error && error.message === "Resize is not complete"
+                ? "Resize is not complete. Input stays blocked; Stop the terminal to release it."
+                : sent ? "Resize outcome is unknown. Further input and resize are blocked, including after reload. Stop the terminal to release it." : "Resize preflight or storage failed. No resize was sent. Inspect the host before trying again.");
       }
     } finally { if (current()) { working.current = false; setBusy(false); } }
   }
