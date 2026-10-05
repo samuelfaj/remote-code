@@ -1,5 +1,8 @@
 # Changelog
 
+## RC-033 load body-guard — null/garbage body no longer reads as empty 2026-10-05T05:43:57Z (UTC)
+
+- loadLayout() guards null/non-object 200 bodies with unreadable-layout throw (caught → invalid-shape message) instead of misreading garbage as "No saved layout". Review 01a10a95 CLEAN and confirmed the before-trace: null/falsy bodies fell through both guards to setLayout(null) with empty message. Real misread fix + honest message. Verified: typecheck clean, 64 focused pass/1 skip. X: per <1h rule (see checkpoint note).
 ## RC-033 save-live-check checkpoint closure — X POSTED + push 2026-10-05T05:29:02Z (UTC)
 
 - Code commit 4713a60 (save live-check split, review 01a10a5c CLEAN). X post published via mac-use after 2h gap (1h rule PASS): humanized draft "Layout save now double-checks the workspace is really yours before writing. Wrong answer stops the save with a plain message. Local proof, not deployed. #buildingRemoteCode" live on @samfajreldines (463 posts, 4m old readback, exact text match). Single post, no duplicate. Cleanup verified: browser_close closed:true/released:true, browser_status connected:true/hasTab:false. Closure commit 0d14546 pushed, remote in sync, tree clean. Backlog counts unchanged: 13 Complete / 7 In Progress / 1 Blocked (RC-002) / 47 To do — RC-031/RC-033 stay In Progress, no criteria weakened.

@@ -300,7 +300,8 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
           ? "Saved layout is unreadable on this host. Tabs start empty; saving overwrites the bad row."
           : error instanceof Error && error.message === "Workspace is gone on this host"
             ? "Workspace is gone on this host. Layout was not loaded; pick another workspace."
-            : error instanceof Error && error.message === "Invalid workspace layout"
+            : error instanceof Error && (error.message === "Invalid workspace layout" ||
+              error.message === "Host returned unreadable layout")
               ? "Saved layout has an invalid shape. Tabs start empty; inspect state before saving."
               : "Layout is unconfirmed. Inspect state; nothing was overwritten blindly.");
       });
@@ -723,6 +724,7 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
     if (workspaceErrorStatus(result.error) === 503) throw new Error("Saved layout is unreadable on this host");
     if (workspaceErrorStatus(result.error) === 404) throw new Error("Workspace is gone on this host");
     if (result.error) throw new Error("Workspace layout unavailable");
+    if (!result.data || typeof result.data !== "object") throw new Error("Host returned unreadable layout");
     const parsed = result.data && (result.data as { layout?: unknown }).layout === null
       ? null : workspaceLayoutResponseFromValue(result.data, workspaceId);
     if (result.data && (result.data as { layout?: unknown }).layout !== null && !parsed) throw new Error("Invalid workspace layout");

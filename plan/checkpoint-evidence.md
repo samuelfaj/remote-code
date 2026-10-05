@@ -2073,3 +2073,9 @@ The historical checkpoint evidence below is retained in its original order and s
 - **CHANGELOG synced:** closure entry added covering code 4713a60 + X post + push (review 01a10a8a CLEAN: code checkpoint, X claims, review/check claims, backlog counts, push all verified).
 - **plan/tasks.html:** RC-031/RC-033 statuses unchanged (both In Progress — bounded slices only, no acceptance claimed). No status edit needed or made.
 - **Fresh checks this turn:** typecheck clean; 64 focused pass/1 skip.
+
+# RC-033 load-body-guard slice — 2026-10-05 (UTC)
+
+- **Scope:** loadLayout() null-body guard + catch mapping. +3/-2, guard + message. No backend change. Fixes a real misread (garbage → false empty), not just wording.
+- **Evidence:** Typecheck clean; 64 focused pass/1 skip. Review 01a10a95 CLEAN (reachability, before-trace confirmed, message honest, literal identity).
+- **X:** see X-check record below (≈2h since last post → PASS expected).
