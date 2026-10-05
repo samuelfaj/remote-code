@@ -1880,3 +1880,7 @@ The historical checkpoint evidence below is retained in its original order and s
 - **Scope:** mount corrupt-data message + JSON.parse normalization in readReference. +9/-2, message-only. No backend change.
 - **Evidence:** Typecheck clean; 64 focused pass/1 skip. Reviews 01a109b8 CLEAN + 01a109ba CLEAN (follow-up closed the malformed-JSON gap in-slice).
 - **X:** see X-check record below.
+
+# RC-031 corrupt-reference X check — 2026-10-05 (UTC)
+
+- **SKIPPED per <1h rule:** last post ~13 min old (humanized backpressure post). Standing rule: max one tweet/hour, always via /humanizer. No post composed or submitted. No browser tab opened.
