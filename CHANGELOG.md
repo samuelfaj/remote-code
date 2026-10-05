@@ -1,5 +1,8 @@
 # Changelog
 
+## RC-033 save live-check split — wrong-row workspace named before PUT 2026-10-05T04:41:15Z (UTC)
+
+- saveLayout() live re-check: valid-shaped workspace with wrong id throws unreadable-workspace message (caught → not-saved wording) instead of generic unavailable. Defensive (backend never misroutes today); throw precedes PUT. Same literal shared with preflight/start/stop catches, each local to its try — no cross-catching. Review 01a10a5c CLEAN. Verified: typecheck clean, 64 focused pass/1 skip. X: per <1h rule (see checkpoint note).
 ## RC-031 inspect-receipts split — unreadable receipt named on manual lookup 2026-10-05T04:33:55Z (UTC)
 
 - inspect() receipts branch: validator-reject (error null) throws unreadable-start-receipt message (caught → unknown-start + manual-inspect wording, reference retained); transport errors keep generic unknown path. Same literal as start path, different catch texts per context, no cross-catching (separate function trys). Review 01a10a56 CLEAN. Verified: typecheck clean, 64 focused pass/1 skip. X: per <1h rule (see checkpoint note).

@@ -2055,3 +2055,9 @@ The historical checkpoint evidence below is retained in its original order and s
 # RC-031 inspect-receipts X check — 2026-10-05 (UTC)
 
 - **SKIPPED per <1h rule:** last post 51 min old at slice time. Standing rule: max one tweet/hour, always via /humanizer. No post composed or submitted. No browser tab opened.
+
+# RC-033 save-live-check slice — 2026-10-05 (UTC)
+
+- **Scope:** saveLayout() live-check wrong-id guard + catch mapping. +4/-1, guard + message. No backend change.
+- **Evidence:** Typecheck clean; 64 focused pass/1 skip. Review 01a10a5c CLEAN (defensive reachability, pre-PUT honesty, no cross-catching, literal identity).
+- **X:** see X-check record below.

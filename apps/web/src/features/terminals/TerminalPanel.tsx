@@ -817,6 +817,7 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
       if (workspaceErrorStatus(live.error) === 404) throw new Error("Workspace is gone on this host");
       if (workspaceErrorStatus(live.error) === 503) throw new Error("Terminal login check is unavailable");
       const liveWorkspace = live.error ? null : workspaceFromValue(live.data);
+      if (liveWorkspace && liveWorkspace.id !== workspace.id) throw new Error("Host returned unreadable workspace");
       if (!liveWorkspace) throw new Error("Workspace layout unavailable");
       if (liveWorkspace.archived) throw new Error("Workspace is archived");
       const result = await client(end).api.workspaces({ workspaceId: workspace.id }).layout.put(next);
@@ -851,7 +852,9 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
     } catch (error) {
       if (current()) setLayoutMessage(error instanceof Error && error.message === "Workspace is archived"
         ? "Workspace is archived. Layout was not saved."
-        : error instanceof Error && error.message === "Saved layout shape is invalid"
+        : error instanceof Error && error.message === "Host returned unreadable workspace"
+          ? "Host returned an unreadable workspace. Layout was not saved; inspect state before trying again."
+          : error instanceof Error && error.message === "Saved layout shape is invalid"
           ? "Saved layout shape is invalid. Stored layout unchanged; reload and save again."
           : error instanceof Error && error.message === "Host returned unreadable layout confirmation"
             ? "Host returned an unreadable layout confirmation. Local layout view unchanged; host save outcome is unknown — inspect state before saving again."
