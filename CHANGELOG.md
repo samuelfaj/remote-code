@@ -1,5 +1,8 @@
 # Changelog
 
+## RC-033 loadLayout GET 404 — deleted workspace reads honestly on switch 2026-10-05T00:58:19Z (UTC)
+
+- loadLayout() GET 404 now throws "Workspace is gone on this host" (caught → not-loaded + pick-another-workspace message) instead of generic unconfirmed. Throw precedes parse/setLayout, so nothing loads or overwrites. Review 01a10990 CLEAN (ordering 401/503/404, literal identity, message-only). Verified: typecheck clean, 64 focused pass/1 skip. X: skipped per <1h rule (see checkpoint note).
 ## RC-031 stop wording trio — each removal names its evidence source 2026-10-05T00:54:24Z (UTC)
 
 - 503 poll-fallback removed-message → "Stop confirmed by a follow-up state read; ..."; success-path removed-message → "Stop confirmed by the host receipt; ...". Completes the 409 change from last checkpoint: both poll fallbacks share follow-up-read wording (same evidence source), success path names the POST receipt. Review 01a1098d CLEAN (provenance, siblings untouched, no test depends on strings). Verified: typecheck clean, 64 focused pass/1 skip. X: skipped per <1h rule (see checkpoint note).

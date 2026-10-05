@@ -274,7 +274,9 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
       void loadLayout(end, current, workspace.id, startedAt).catch((error) => {
         if (current()) setLayoutMessage(error instanceof Error && error.message === "Saved layout is unreadable on this host"
           ? "Saved layout is unreadable on this host. Tabs start empty; saving overwrites the bad row."
-          : "Layout is unconfirmed. Inspect state; nothing was overwritten blindly.");
+          : error instanceof Error && error.message === "Workspace is gone on this host"
+            ? "Workspace is gone on this host. Layout was not loaded; pick another workspace."
+            : "Layout is unconfirmed. Inspect state; nothing was overwritten blindly.");
       });
     }
   }, [userId, workspace?.id, workspace?.archived, blocked]);
@@ -666,6 +668,7 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
     if (!current() || Date.now() >= end) throw new Error("Terminal context expired");
     if (workspaceErrorStatus(result.error) === 401) onUnauthorized();
     if (workspaceErrorStatus(result.error) === 503) throw new Error("Saved layout is unreadable on this host");
+    if (workspaceErrorStatus(result.error) === 404) throw new Error("Workspace is gone on this host");
     if (result.error) throw new Error("Workspace layout unavailable");
     const parsed = result.data && (result.data as { layout?: unknown }).layout === null
       ? null : workspaceLayoutResponseFromValue(result.data, workspaceId);

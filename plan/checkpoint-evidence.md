@@ -1827,3 +1827,9 @@ The historical checkpoint evidence below is retained in its original order and s
 - **Scope:** 503-fallback + success-path removed-messages credit follow-up read / host receipt respectively; completes 409 change. +2/-2, message-only, no fence/state change.
 - **Evidence:** Typecheck clean; 64 focused pass/1 skip; source grep confirms no stale "Host confirms the terminal ended" in apps/web/src, packages, or apps/api/src (only stale dist bundle, rebuilt on deploy). Review 01a1098d CLEAN.
 - **X:** SKIPPED per standing <1h rule — posts landed 2026-10-05T00:28Z (~90s apart, double-submit). Standing rule: max one tweet/hour, always via /humanizer. No post composed or submitted. No browser tab opened.
+
+# RC-033 loadLayout-404 slice — 2026-10-05 (UTC)
+
+- **Scope:** loadLayout() GET 404 → gone + not-loaded message on workspace switch. +3/-1, message-only. Mirrors saveLayout merge-GET 404. No backend change.
+- **Evidence:** Typecheck clean; 64 focused pass/1 skip. Review 01a10990 CLEAN (ordering, nothing-loaded, catch message-only, literal identity).
+- **X:** SKIPPED per standing <1h rule — posts landed 2026-10-05T00:28Z (~90s apart, double-submit). Standing rule: max one tweet/hour, always via /humanizer. No post composed or submitted. No browser tab opened.
