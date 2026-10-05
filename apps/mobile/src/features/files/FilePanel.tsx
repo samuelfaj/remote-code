@@ -115,7 +115,7 @@ export function FilePanel({ origin, userId, workspace, blocked, onUnauthorized }
     }
     const result = { workspaceId: workspace.id, supported: true, folder: state, archived: confirmed.archived };
     setInspection(result);
-    if (state !== "provisioned") setMessage(state === "not_provisioned" ? "Folder not provisioned. Inspection created no folder." : "Folder status unknown. Writes disabled.");
+    if (state !== "provisioned") setMessage(state === "not_provisioned" ? "This workspace has no provisioned folder. Folder inspection is read-only; no folder was created." : "Folder status is unknown. File writes stay disabled; refresh inspection manually.");
     return result;
   }
   async function read(path: string, content = false) {
