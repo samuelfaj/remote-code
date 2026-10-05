@@ -600,7 +600,8 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
       const owned = await preflight(end, current);
       if (owned.archived) throw new Error("Workspace is archived");
       const fresh = await poll(end, current, saved);
-      if (!current() || fresh.state !== "running" || fresh.resizeState === "unknown") throw new Error("Resize is not ready");
+      if (!current() || fresh.state !== "running") throw new Error("Resize is not ready");
+      if (fresh.resizeState === "unknown") throw new Error("Resize outcome is still unknown");
       const next = { ...saved, resizeUncertain: true };
       writeReference(next, saved);
       if (!current() || Date.now() >= end) { writeReference(saved, next); return; }
@@ -679,7 +680,9 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
           : error instanceof Error && (error.message === "Terminal login check is unavailable" ||
             error.message === "Workspace is gone on this host")
             ? `${error.message}. No resize was sent; state reads retry automatically.`
-            : sent ? "Resize outcome is unknown. Further input and resize are blocked, including after reload. Stop the terminal to release it." : "Resize preflight or storage failed. No resize was sent. Inspect the host before trying again.");
+            : error instanceof Error && error.message === "Resize outcome is still unknown"
+              ? "A previous resize is still unsettled. Wait for the next state poll, then try again; nothing was sent."
+              : sent ? "Resize outcome is unknown. Further input and resize are blocked, including after reload. Stop the terminal to release it." : "Resize preflight or storage failed. No resize was sent. Inspect the host before trying again.");
       }
     } finally { if (current()) { working.current = false; setBusy(false); } }
   }
