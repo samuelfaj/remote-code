@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-029 mobile MOVE-guard wording parity — clean draft named 2026-10-05T22:30:00Z (UTC)
+
+- Mobile mutate() MOVE pre-PUT guard now char-identical to web ("current verified open file with a clean draft ... your draft was kept"). Review 01a10d88 CLEAN. Verified: typecheck clean, 59 pass/1 skip. X: per <1h rule (see checkpoint note).
+
 ## RC-029 mobile checkReceipt wording parity — busy, success, clearance named 2026-10-05T22:00:00Z (UTC)
 
 - Mobile checkReceipt() busy ("No write will be resent"), success (historical receipt + refresh guidance), and clearance-failure messages now char-identical to web; mutate() clearance matches too. First review 01a10d82 DEFECT (clearance prefix drift) → fixed in-slice → 01a10d84 CLEAN. Verified: typecheck clean, 59 pass/1 skip. X: per <1h rule (see checkpoint note).
