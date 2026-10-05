@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-029 mobile stale-editor fix — confirmed write forces re-OPEN 2026-10-05T18:30:00Z (UTC)
+
+- Mobile mutate() success now marks the open editor needsRead:true, forcing explicit re-OPEN before the next SAVE/MOVE instead of reusing the pre-write version. Mirrors checkReceipt() path. Review 01a10cea CLEAN. Verified: typecheck clean, 59 pass/1 skip. X: per <1h rule (see checkpoint note).
+
 ## RC-029 mobile receipt parity — mismatch and catch mirror web 2026-10-05T18:00:00Z (UTC)
 
 - Mobile checkReceipt() mismatch and outer-catch messages now match web char-identical; catch no longer disables storage (pending identity still blocks writes). Review 01a10cae CLEAN. Verified: typecheck clean, 59 pass/1 skip. X: per <1h rule (see checkpoint note).

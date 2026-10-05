@@ -2319,3 +2319,10 @@ The historical checkpoint evidence below is retained in its original order and s
 - **Evidence:** Typecheck clean; 59 pass/1 skip. Review 01a10cae CLEAN. Commit 4f26f2c pushed.
 - **X:** per <1h rule (see checkpoint note).
 - **Next resumption point:** continue RC-029 file-op parity or RC-031/RC-033 slices; RC-002 remains blocked (no retry without receipt reconciliation).
+
+# RC-029 mobile stale-editor slice — 2026-10-05 (UTC)
+
+- **Scope:** apps/mobile/src/features/files/FilePanel.tsx mutate() success marks open editor needsRead:true (same-workspace scoped), forcing explicit re-OPEN before next SAVE/MOVE. One line. No backend change.
+- **Evidence:** Typecheck clean; 59 pass/1 skip. Review 01a10cea CLEAN (SAVE/MOVE guards block needsRead, workspace scoping safe, web already invalidates pre-submit, CREATE unaffected). Commit 0e8a1cf pushed.
+- **X:** per <1h rule (see checkpoint note).
+- **Next resumption point:** continue RC-029 file-op parity or RC-031/RC-033 slices; RC-002 remains blocked (no retry without receipt reconciliation).
