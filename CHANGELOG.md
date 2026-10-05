@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-029 mobile refusal/unknown wording parity — directory named, resend denied 2026-10-05T21:30:00Z (UTC)
+
+- Mobile mutate() refusal now says "source or parent directory is unavailable" and unconfirmed says no write will be resent automatically, char-identical to web; catch unknown-outcome keeps "is unknown" phrasing. Review 01a10d7e CLEAN. Verified: typecheck clean, 59 pass/1 skip. X: per <1h rule (see checkpoint note).
+
 ## RC-029 mobile refresh progress — busy names checking 2026-10-05T21:00:00Z (UTC)
 
 - Mobile Refresh button shows "Checking files…" while busy, matching web busy text; idle label and accessibilityLabel unchanged. Review 01a10d23 CLEAN. Verified: typecheck clean, 59 pass/1 skip. X: per <1h rule (see checkpoint note).
