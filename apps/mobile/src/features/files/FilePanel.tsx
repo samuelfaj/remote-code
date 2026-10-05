@@ -322,8 +322,8 @@ export function FilePanel({ origin, userId, workspace, blocked, onUnauthorized }
             ? `Version conflict: ${label} was refused. Another client saved first; current host version starts ${currentVersion.slice(0, 8)}. Draft kept. ${retry}`
             : `Version conflict: ${label} was refused. The host did not return the conflicting version. Draft kept. ${retry}`);
         } else if (identity.kind !== "save" && (isTargetExists(response.error) || isMissingFilePath(response.error, identity.kind))) {
-          if (await clearConfirmed(identity, end, current)) setMessage(`${label} was refused: ${isTargetExists(response.error) ? "target already exists" : "source or parent path is unavailable"}. No file change occurred. Inputs and draft kept; choose an existing parent and current source explicitly.`);
-        } else if (current()) setMessage(`${label} was not confirmed. Keep pending identity and inputs; check its receipt manually. No retry.`);
+          if (await clearConfirmed(identity, end, current)) setMessage(`${label} was refused: ${isTargetExists(response.error) ? "target already exists" : "source or parent directory is unavailable"}. No file change occurred. Inputs and draft kept; choose an existing parent and current source explicitly.`);
+        } else if (current()) setMessage(`${label} was not confirmed. Keep the draft and inputs and check its receipt manually; no write will be resent automatically.`);
         return;
       }
       if (!fileReceiptFromValue(response.data, identity, workspace.id)) { setMessage(`${kind.toUpperCase()} response did not match the pending identity. Outcome is unknown; check its receipt manually. Draft and inputs kept.`); return; }
@@ -331,7 +331,7 @@ export function FilePanel({ origin, userId, workspace, blocked, onUnauthorized }
       else if (current()) setMessage("Receipt found, but pending identity could not be safely cleared. Writes are disabled; keep the request ID and repair storage before reloading.");
     } catch {
       if (!sent && operation) cleanupUnsent(operation, storeGeneration);
-      if (current()) { setInspection(null); setMessage(sent ? `${kind.toUpperCase()} outcome unknown. Request ID, inputs and draft kept; check receipt manually. No write retry.` : persistFailed ? `No ${kind.toUpperCase()} was sent. Storage remains unverified; repair storage before writing.` : `No ${kind.toUpperCase()} was sent. Preflight or storage failed; refresh manually.`); }
+      if (current()) { setInspection(null); setMessage(sent ? `${kind.toUpperCase()} outcome is unknown. Draft, inputs and pending identity are kept; check its receipt manually. No automatic write retry.` : persistFailed ? `No ${kind.toUpperCase()} was sent. Storage remains unverified; repair storage before writing.` : `No ${kind.toUpperCase()} was sent. Preflight or storage failed; refresh manually.`); }
     } finally { if (current()) { working.current = false; setBusy(false); } }
   }
   async function checkReceipt() {
