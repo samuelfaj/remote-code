@@ -1,5 +1,8 @@
 # Changelog
 
+## RC-031 stop-receipt split — unreadable receipt named, transport generic 2026-10-05T02:59:54Z (UTC)
+
+- stop() success path: validator-reject (error null, receipt null) throws unreadable-stop-receipt message (caught → unconfirmed + disabled wording); transport errors keep generic unknown path. Fence stays set on both. Same defect class as input-ack slice; guard applied correctly first time. Review 01a109ff CLEAN. Verified: typecheck clean, 64 focused pass/1 skip. X: per <1h rule (see checkpoint note).
 ## RC-031 input-ack split — unreadable ack named, transport errors generic 2026-10-05T02:54:34Z (UTC)
 
 - send() post-POST ack validation: validator-reject (error null, ack null) throws unreadable-ack message (caught → unknown-delivery + blocked wording); transport errors and ack-state-unknown keep generic unknown path. Fence stays set on both. Review 01a109f7 DEFECT (transport lumped into ack message) → narrowed in-slice → 01a109fa CLEAN. Verified: typecheck clean, 64 focused pass/1 skip. X: per <1h rule (see checkpoint note).

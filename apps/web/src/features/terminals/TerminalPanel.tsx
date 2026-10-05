@@ -919,6 +919,7 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
         return;
       }
       const confirmed = result.error ? null : terminalReceiptFromValue(result.data, saved.start, saved.terminalId);
+      if (!confirmed && !result.error) throw new Error("Host returned unreadable stop receipt");
       if (!confirmed) throw new Error("Stop outcome unknown");
       acceptReceipt(confirmed, next);
       setMessage(confirmed.cleanup === "removed" ? "Stop confirmed by the host receipt; the terminal ended and its process was removed." : "Stop is not complete. Inspect state; no automatic stop resend.");
@@ -928,7 +929,9 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
         setMessage(error instanceof Error && (error.message === "Terminal login check is unavailable" ||
           error.message === "Workspace is gone on this host")
           ? `${error.message}. No stop was sent; state reads retry automatically.`
-          : "Stop outcome is unconfirmed. Input stays disabled. Inspect state; no stop request is resent automatically.");
+          : error instanceof Error && error.message === "Host returned unreadable stop receipt"
+            ? "Host returned an unreadable stop receipt. Stop outcome is unconfirmed. Input stays disabled. Inspect state; no stop request is resent automatically."
+            : "Stop outcome is unconfirmed. Input stays disabled. Inspect state; no stop request is resent automatically.");
       }
     }
     finally { if (current()) { working.current = false; setBusy(false); } }
