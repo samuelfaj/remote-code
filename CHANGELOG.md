@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-029 mobile pre-submit deadline split — expiry named, no request sent 2026-10-05T15:30:00Z (UTC)
+
+- Mobile mutate() pre-submit deadline expiry now sets "Deadline expired before X submission. No X request was sent." instead of silent stale state; cleanupUnsent takes optional doneMessage so async cleanup confirms with the same message. !current() path keeps generic cleanup. Review 01a10c8e CLEAN. Verified: typecheck clean, 59 pass/1 skip. X: per <1h rule (see checkpoint note).
+
 ## RC-029 mobile receipt-lookup split — absent vs failed 2026-10-05T14:15:00Z (UTC)
 
 - Mobile checkReceipt() errors split into 404-absent vs lookup-failed, mirroring web. Review 01a10c51 CLEAN. Verified: typecheck clean, 59 pass/1 skip. X: gate passed (8h gap) but Post click unverified again — see checkpoint note, no retry.
