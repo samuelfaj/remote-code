@@ -2199,3 +2199,7 @@ The historical checkpoint evidence below is retained in its original order and s
 
 - **UNVERIFIED submit (not claimed):** X gate PASSED (profile 463 posts, newest 3h). Humanized draft composed ("Folder listing failed? Ours got the same honest split as file open: refused, mismatch, or just unconfirmed. #buildingRemoteCode") but intent Post click failed "page did not return a snapshot"; composer still full, no URL/timestamp. No retry. Code commit 31d364f pushed, remote in sync.
 - **Cleanup proof:** browser_close closed:true/released:true; browser_status connected:true/hasTab:false.
+
+# RC-029 folder-listing reasoning review — 2026-10-05 (UTC)
+
+- **REVIEW-VERDICT: CLEAN** (general-purpose subagent 01a10b4c, diff 294caae..31d364f): 1 file, +10/-3, directory branch only; synthetic-transport check identical to file-content branch (FilePanel.tsx:137 vs :160); early returns run finally (busy reset intact); success path untouched. Supersedes the shell-limited 01a10b3f note.
