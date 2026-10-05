@@ -2155,3 +2155,14 @@ The historical checkpoint evidence below is retained in its original order and s
 
 - **REVIEW-VERDICT: CLEAN** (plan-subagent 01a10b18, HEAD dc46fe4 files): helper reachable on real SAVE PUT error path; exact-shape 409 accept only; message says "starts" + 8-char prefix with explicit re-read; test drives shipped helper via index.ts. RC-029 stays In Progress (full two-client conflict journey + native surfaces open); counts unchanged 13 Complete / 7 In Progress / 47 To do / 1 Blocked (RC-002).
 - **X re-attempt this round:** gate PASSED (newest 2h, 463 posts); fresh humanized draft filled but Post click failed "page did not return a snapshot", composer still full, no URL. UNVERIFIED, no retry. Cleanup: closed:true/hasTab:false.
+
+# RC-029 MOVE-conflict slice — 2026-10-05 (UTC)
+
+- **Scope:** FilePanel version-conflict retry wording split by kind. MOVE gets re-open-source text; SAVE keeps compare-draft text. +5/-2, message-only. No backend change.
+- **Evidence:** Typecheck clean; 19 pass/1 skip focused, 62 pass/1 skip wider files+client. Review 01a10b22 CLEAN (MOVE expectedVersion binding, needsRead gates, save baseline unchanged).
+- **X:** see X-check record below.
+
+# RC-029 MOVE-conflict X check — 2026-10-05 (UTC)
+
+- **UNVERIFIED submit (not claimed):** X gate PASSED (profile 463 posts, newest 3h). Humanized draft composed ("Move hit a newer file version? Ours now says re-open the source instead of compare-the-draft. Right retry for the right action. #buildingRemoteCode") but intent Post click failed "page did not return a snapshot"; composer still full, no URL/timestamp. No retry. Code commit 47d5a23 pushed, remote in sync.
+- **Cleanup proof:** browser_close closed:true/released:true; browser_status connected:true/hasTab:false.

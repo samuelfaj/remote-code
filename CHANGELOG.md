@@ -814,3 +814,9 @@
 - packages/client fileConflictVersion(): returns only exact 409 version_conflict currentVersion sha (rejects enriched/malformed shapes). FilePanel save 409 message now names "another client saved first" + 8-char host version prefix; draft kept, explicit re-read required. Test caught enriched-shape gap before commit (helper returned version on extra-key body; fixed to exact-shape check).
 - Verified: tsc clean, 19 pass/1 skip/0 fail. Review: subagent provider 404 (not code); self-review CLEAN (reachability, exact-shape honesty, message claims version not content). Commit dc46fe4 pushed, remote in sync.
 - X: gate PASSED (newest 2h, 463 posts) but intent Post click failed "page did not return snapshot"; composer still full, no URL/timestamp. Recorded UNVERIFIED, no retry. Cleanup: closed:true/hasTab:false.
+
+## RC-029 MOVE-conflict slice — own retry wording 2026-10-05T09:10Z (UTC)
+
+- FilePanel version-conflict branch: MOVE now says "Re-open the source path to read its current version before another explicit MOVE" (was save-oriented compare-draft text, wrong action for MOVE since MOVE binds expectedVersion from the open source). SAVE wording unchanged. Message-only, +5/-2.
+- Verified: tsc clean, 19 pass/1 skip file+client focused, 62 pass/1 skip wider files+client. Review 01a10b22 CLEAN (MOVE binds host.version, needsRead gates, re-open refreshes). Commit 47d5a23 pushed, remote in sync.
+- X: gate PASSED (newest 3h, 463 posts) but intent Post click failed "page did not return snapshot"; composer still full, no URL. UNVERIFIED, no retry. Cleanup: closed:true/hasTab:false.
