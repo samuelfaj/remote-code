@@ -130,7 +130,10 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
       if (workspaceErrorStatus(folder.error) === 404) throw new Error("Workspace is gone on this host");
       if (workspaceErrorStatus(folder.error) === 409) throw new Error("Workspace is archived");
       if (workspaceErrorStatus(folder.error) === 501) throw new Error("Workspace folders need a Linux host");
-      if (folder.error || fileFolderStateFromValue(folder.data, workspace.id) !== "provisioned") throw new Error("Prepare the workspace folder first");
+      if (folder.error) throw new Error("Workspace folder state is unknown");
+      const folderState = fileFolderStateFromValue(folder.data, workspace.id);
+      if (folderState === null || folderState === "unknown") throw new Error("Workspace folder state is unknown");
+      if (folderState !== "provisioned") throw new Error("Prepare the workspace folder first");
     }
     return owned;
   }
@@ -455,6 +458,7 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
         setMessage(error instanceof Error && (error.message === "Workspace is archived" ||
           error.message === "Workspace is gone on this host" ||
           error.message === "Prepare the workspace folder first" ||
+          error.message === "Workspace folder state is unknown" ||
           error.message === "Workspace folders need a Linux host" ||
           error.message === "Terminal login check is unavailable")
           ? `${error.message}. No start was sent.`

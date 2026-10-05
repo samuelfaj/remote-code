@@ -1,5 +1,8 @@
 # Changelog
 
+## RC-031 preflight folder states — only validated unprepared prescribes prep 2026-10-05T02:39:06Z (UTC)
+
+- preflight() folder classification: transport/unknown errors, validator-null, and valid "unknown" (in-flight) → "Workspace folder state is unknown"; only validated "not_provisioned" → "Prepare the workspace folder first". Both No-start-sent, pre-POST. Review 01a109ea DEFECT (validator-null + valid-unknown falsely prescribed prep) → fixed in-slice → 01a109ec CLEAN (exhaustive parser, pre-POST, literal identity). Verified: typecheck clean, 64 focused pass/1 skip. X: per <1h rule (see checkpoint note).
 ## RC-031 preflight folder-501 — non-Linux host reads honestly on start 2026-10-05T02:29:48Z (UTC)
 
 - preflight() folder-GET 501 throws "Workspace folders need a Linux host" (caught → No-start-sent) instead of false prepare-folder remediation. Review 01a109e2 found no defect and corrected the premise: storage failures throw to 503, so 501 unambiguously means non-Linux. Verified: typecheck clean, 64 focused pass/1 skip, folder backend 3 pass/11 skip. X: per <1h rule (see checkpoint note).

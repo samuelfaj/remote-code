@@ -1968,3 +1968,9 @@ The historical checkpoint evidence below is retained in its original order and s
 # X 1h boundary check — 2026-10-05T2026-10-05T02:31:34Z (UTC)
 
 - **SKIPPED (boundary, conservative):** profile readback shows latest own post 57m old (humanized backpressure post). Wall-clock since publish ~60min but displayed age <1h; rule says skip when a post went out less than one hour before. No post composed or submitted. Tab opened for read-only age check only; cleanup verified (browser_close closed:true/released:true, hasTab:false).
+
+# RC-031 folder-states slice — 2026-10-05 (UTC)
+
+- **Scope:** preflight() folder-state classification split. +5/-1, message-only, pre-POST. No backend change.
+- **Evidence:** Typecheck clean; 64 focused pass/1 skip. Review 01a109ea DEFECT → fixed in-slice → 01a109ec CLEAN.
+- **X:** see X-check record below.
