@@ -328,7 +328,7 @@ export function FilePanel({ origin, userId, workspace, blocked, onUnauthorized }
       }
       if (!fileReceiptFromValue(response.data, identity, workspace.id)) { setMessage(`${kind.toUpperCase()} response did not match the pending identity. Outcome is unknown; check its receipt manually. Draft and inputs kept.`); return; }
       if (await clearConfirmed(identity, end, current)) { setEditor(item => item?.host.workspaceId === workspace.id ? { ...item, needsRead: true } : item); setMessage(`${kind.toUpperCase()} receipt confirmed for ${identity.kind === "move" ? identity.destinationPath : identity.path}. Draft and inputs kept. This historical receipt is not current file content or path; refresh files and open the desired path to read its current text and version before writing again.`); }
-      else if (current()) setMessage("Receipt found, but pending identity could not be safely cleared. Writes are disabled; keep the request ID and repair storage before reloading.");
+      else if (current()) setMessage("Pending file identity could not be safely cleared. Writes are disabled; keep the request ID and repair storage before reloading.");
     } catch {
       if (!sent && operation) cleanupUnsent(operation, storeGeneration);
       if (current()) { setInspection(null); setMessage(sent ? `${kind.toUpperCase()} outcome is unknown. Draft, inputs and pending identity are kept; check its receipt manually. No automatic write retry.` : persistFailed ? `No ${kind.toUpperCase()} was sent. Storage remains unverified; repair storage before writing.` : `No ${kind.toUpperCase()} was sent. Preflight or storage failed; refresh manually.`); }
@@ -339,7 +339,7 @@ export function FilePanel({ origin, userId, workspace, blocked, onUnauthorized }
     if (!workspace || !operation || operation.workspaceId !== workspace.id || working.current) return;
     const current = begin();
     const end = Date.now() + deadlineMs;
-    working.current = true; setBusy(true); setMessage("Checking file receipt. No file mutation will be resent.");
+    working.current = true; setBusy(true); setMessage("Checking file receipt. No write will be resent.");
     try {
       if (!await session(end, current)) return;
       const stored = await beforeFileDeadline(queued(() => AsyncStorage.getItem(key)), end);
@@ -355,8 +355,8 @@ export function FilePanel({ origin, userId, workspace, blocked, onUnauthorized }
         return;
       }
       if (!fileReceiptFromValue(response.data, operation, workspace.id)) { setMessage("Receipt did not match the persisted pending identity. Outcome remains unknown; draft kept."); return; }
-      if (await clearConfirmed(operation, end, current)) { setEditor(item => item?.host.workspaceId === workspace.id ? { ...item, needsRead: true } : item); setMessage("Historical file receipt confirmed. Read current host text before writing again."); }
-      else if (current()) setMessage("Receipt found, but storage cleanup is unverified. Writes remain blocked.");
+      if (await clearConfirmed(operation, end, current)) { setEditor(item => item?.host.workspaceId === workspace.id ? { ...item, needsRead: true } : item); setMessage("Historical file receipt confirmed. Draft and inputs kept; refresh files and open the desired path to read its current text and version before writing again."); }
+      else if (current()) setMessage("Pending file identity could not be safely cleared. Writes are disabled; keep the request ID and repair storage before reloading.");
     } catch { if (current()) setMessage("Receipt or pending identity could not be checked. Outcome remains unknown; no write was resent."); }
     finally { if (current()) { working.current = false; setBusy(false); } }
   }
