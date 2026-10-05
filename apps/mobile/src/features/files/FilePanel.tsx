@@ -191,11 +191,11 @@ export function FilePanel({ origin, userId, workspace, blocked, onUnauthorized }
     updatePending(null); setStorageReady(true);
     return true;
   }
-  function cleanupUnsent(operation: PendingFile, storeGeneration: number) {
+  function cleanupUnsent(operation: PendingFile, storeGeneration: number, doneMessage?: string) {
     const task = queued(() => clearStoredFile(AsyncStorage, key, operation, () => true, true));
     void task.then(cleared => {
       if (!active.current || storageEpoch.current !== storeGeneration || live.current.origin !== origin || live.current.userId !== userId || !pendingFileValueMatches(JSON.stringify(pendingRef.current), operation)) return;
-      if (cleared) { updatePending(null); setStorageReady(true); setMessage("No file mutation was sent. Unsent identity cleanup confirmed."); }
+      if (cleared) { updatePending(null); setStorageReady(true); setMessage(doneMessage ?? "No file mutation was sent. Unsent identity cleanup confirmed."); }
       else { setStorageReady(false); setMessage("No file mutation was sent. Identity cleanup is unverified; writes disabled."); }
     }).catch(() => {
       if (active.current && storageEpoch.current === storeGeneration) setStorageReady(false);
@@ -277,7 +277,13 @@ export function FilePanel({ origin, userId, workspace, blocked, onUnauthorized }
       const identity = operation;
       const allowed = () => current() && Date.now() < end;
       const persisted = await beforeFileDeadline(queued(() => persistStoredFile(AsyncStorage, key, identity, allowed)), end);
-      if (persisted.expired || !current() || Date.now() >= end) { cleanupUnsent(identity, storeGeneration); return; }
+      if (!current()) { cleanupUnsent(identity, storeGeneration); return; }
+      if (persisted.expired || Date.now() >= end) {
+        const doneMessage = `Deadline expired before ${kind.toUpperCase()} submission. No ${kind.toUpperCase()} request was sent.`;
+        if (current()) setMessage(doneMessage);
+        cleanupUnsent(identity, storeGeneration, doneMessage);
+        return;
+      }
       if (persisted.value !== "saved") {
         if (persisted.value === "cleaned" || persisted.value === "not_written") { updatePending(null); setStorageReady(true); }
         setMessage(`No ${kind.toUpperCase()} was sent. Pending identity could not be verified; repair storage before writing.`);
