@@ -2203,3 +2203,14 @@ The historical checkpoint evidence below is retained in its original order and s
 # RC-029 folder-listing reasoning review — 2026-10-05 (UTC)
 
 - **REVIEW-VERDICT: CLEAN** (general-purpose subagent 01a10b4c, diff 294caae..31d364f): 1 file, +10/-3, directory branch only; synthetic-transport check identical to file-content branch (FilePanel.tsx:137 vs :160); early returns run finally (busy reset intact); success path untouched. Supersedes the shell-limited 01a10b3f note.
+
+# RC-029 mobile read-split slice — 2026-10-05 (UTC)
+
+- **Scope:** apps/mobile/src/features/files/FilePanel.tsx open-read three-way split, ported verbatim from reviewed web branch. +20/-5, message-only. No backend change.
+- **Evidence:** Typecheck clean; 10 mobile file-rules pass, 49 pass/1 skip client. Review 01a10c25 CLEAN.
+- **X:** see X-check record below.
+
+# RC-029 mobile read-split X check — 2026-10-05 (UTC)
+
+- **UNVERIFIED submit (not claimed):** X gate PASSED (profile 463 posts, newest own post 7h). Draft composed ("Our iOS file reader caught up with web: failed opens now say if the host refused, the reply didn't match, or the read just didn't confirm. Same honest split, both clients. Local proof, not deployed. #buildingRemoteCode") via /compose/post textbox, text verified in composer, but Post click failed "page did not return snapshot"; composer still full on readback, no URL/timestamp. No blind retry, no double-post. Code commit 0a0a8e9 pushed, remote in sync.
+- **Cleanup proof:** browser_close closed:true/released:true; browser_status connected:true/hasTab:false.
