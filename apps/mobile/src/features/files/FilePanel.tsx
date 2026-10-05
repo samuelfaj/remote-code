@@ -398,12 +398,12 @@ export function FilePanel({ origin, userId, workspace, blocked, onUnauthorized }
       </> : null}
       <View style={styles.editor}>
         <Text accessibilityRole="header">Create text file</Text>
-        <Text>Relative path in workspace; parent directory must exist. Existing files are never overwritten.</Text>
+        <Text>Paths are relative to the workspace root. The parent directory must already exist.</Text>
         <TextInput accessibilityLabel="New file path" value={createPath} editable={!workspace.archived && !inspected?.archived}
           autoCapitalize="none" autoCorrect={false} onChangeText={path => { if (active.current && inputScopeRef.current === inputScope) setCreatePath(path); }} style={styles.input}/>
         <TextInput accessibilityLabel="New file text" multiline value={createText} editable={!workspace.archived && !inspected?.archived}
           autoCapitalize="none" autoCorrect={false} onChangeText={text => { if (active.current && inputScopeRef.current === inputScope) setCreateText(text); }} style={styles.textarea}/>
-        {(!validPath(createPath) || !validText(createText)) ? <Text>Use a valid relative path and UTF-8 text without NUL, up to 1 MiB.</Text> : null}
+        {(!validPath(createPath) || !validText(createText)) ? <Text>Use a non-empty relative file path without reserved or traversal segments, and valid UTF-8 text without NUL, at most 1 MiB.</Text> : null}
         <Pressable accessibilityRole="button" accessibilityLabel="Create file" disabled={disabled || !validPath(createPath) || !validText(createText)}
           onPress={() => void mutate("create")} style={[styles.button, (disabled || !validPath(createPath) || !validText(createText)) && styles.disabled]}>
           <Text style={styles.buttonText}>Create file</Text>
