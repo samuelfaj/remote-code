@@ -91,7 +91,8 @@ export function FilePanel({ origin, userId, workspace, blocked, onUnauthorized }
     if (Date.now() >= end) throw new Error("File deadline expired");
     if (owner.error) { unauthorized(owner.error); throw new Error("Workspace unavailable"); }
     const confirmed = workspaceFromValue(owner.data);
-    if (!confirmed || confirmed.id !== workspace.id) throw new Error("Invalid workspace");
+    if (!confirmed) throw new Error("Host returned invalid workspace metadata");
+    if (confirmed.id !== workspace.id) throw new Error("Host returned metadata for a different workspace");
     const folder = await request(end).api.workspaces({ workspaceId: workspace.id }).folder.get();
     if (!current()) return null;
     if (Date.now() >= end) throw new Error("File deadline expired");
