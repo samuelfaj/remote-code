@@ -832,3 +832,9 @@
 - openFile() content branch: host error (non-synthetic) → "Host refused the file read..." + binary/encoding/size guidance; synthetic 503 request_outcome_unknown → "File read was not confirmed..."; valid-transport invalid body → "Host response did not match the requested file..."; catch keeps unconfirmed wording. Message-only, +10/-3.
 - Verified: tsc clean, 62 pass/1 skip wider files+client. Review 01a10b34 DEFECT (transport-as-refused) → synthetic-split fix in-slice → re-review 01a10b36 CLEAN. Commit 09871ec pushed, remote in sync.
 - X: gate PASSED (newest 3h, 463 posts) but intent Post click failed "page did not return snapshot"; composer still full, no URL. UNVERIFIED, no retry. Cleanup: closed:true/hasTab:false.
+
+## RC-029 folder-listing slice — refused vs unconfirmed vs mismatch 2026-10-05T10:30Z (UTC)
+
+- openFile() directory branch mirrors the accepted file-content split: synthetic 503 request_outcome_unknown → unconfirmed; other host errors → refused; invalid body → mismatch. Catch keeps unconfirmed wording. Message-only, +10/-3.
+- Verified: tsc clean, 62 pass/1 skip wider files+client. Review 01a10b3f confirmed transport checks + catch truthfulness (diff-unverified caveat only); self-verified diff: success path, listing state, writesDisabled untouched; returns run finally so no stuck busy. Commit 31d364f pushed, remote in sync.
+- X: gate PASSED (newest 3h, 463 posts) but intent Post click failed "page did not return snapshot"; composer still full, no URL. UNVERIFIED, no retry. Cleanup: closed:true/hasTab:false.

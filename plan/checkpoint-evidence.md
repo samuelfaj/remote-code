@@ -2188,3 +2188,14 @@ The historical checkpoint evidence below is retained in its original order and s
 
 - **UNVERIFIED submit (not claimed):** X gate PASSED (profile 463 posts, newest 3h). Humanized draft composed ("File open failed? Ours now says whether the host refused, the reply didn't match, or the read just didn't confirm. No more one lump message. #buildingRemoteCode") but intent Post click failed "page did not return a snapshot"; composer still full, no URL/timestamp. No retry. Code commit 09871ec pushed, remote in sync.
 - **Cleanup proof:** browser_close closed:true/released:true; browser_status connected:true/hasTab:false.
+
+# RC-029 folder-listing slice — 2026-10-05 (UTC)
+
+- **Scope:** Directory-listing error three-way split mirroring the file-content branch. +10/-3, message-only. No backend change.
+- **Evidence:** Typecheck clean; 62 pass/1 skip wider files+client. Review 01a10b3f confirmed logic (transport checks identical, catch truthful; shell-diff caveat) + self-verified diff (success path/listing/writesDisabled untouched, finally covers early returns). Review 01a10b42 on redundant done() idea correctly noted returns run finally; redundant calls reverted before commit.
+- **X:** see X-check record below.
+
+# RC-029 folder-listing X check — 2026-10-05 (UTC)
+
+- **UNVERIFIED submit (not claimed):** X gate PASSED (profile 463 posts, newest 3h). Humanized draft composed ("Folder listing failed? Ours got the same honest split as file open: refused, mismatch, or just unconfirmed. #buildingRemoteCode") but intent Post click failed "page did not return a snapshot"; composer still full, no URL/timestamp. No retry. Code commit 31d364f pushed, remote in sync.
+- **Cleanup proof:** browser_close closed:true/released:true; browser_status connected:true/hasTab:false.
