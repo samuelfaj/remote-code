@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-029 mobile mutate persist split — storage vs preflight named 2026-10-05T16:00:00Z (UTC)
+
+- Mobile mutate() catch now names persist/write-identity failure ("Storage remains unverified; repair storage before writing") vs generic preflight failure. Review 01a10c9c CLEAN. Verified: typecheck clean, 59 pass/1 skip. X: per <1h rule (see checkpoint note).
+
 ## RC-029 mobile pre-submit deadline split — expiry named, no request sent 2026-10-05T15:30:00Z (UTC)
 
 - Mobile mutate() pre-submit deadline expiry now sets "Deadline expired before X submission. No X request was sent." instead of silent stale state; cleanupUnsent takes optional doneMessage so async cleanup confirms with the same message. !current() path keeps generic cleanup. Review 01a10c8e CLEAN. Verified: typecheck clean, 59 pass/1 skip. X: per <1h rule (see checkpoint note).
