@@ -1868,3 +1868,9 @@ The historical checkpoint evidence below is retained in its original order and s
 - **Scope:** send() busy-host guard split with honest pre-fence message. +5/-2, message-only. No backend change.
 - **Evidence:** Typecheck clean; 64 focused pass/1 skip. Review 01a109ae CLEAN.
 - **X:** see X-check record below.
+
+# RC-031 send-backpressure X outcome — 2026-10-05 (UTC)
+
+- **POSTED via mac-use with humanizer:** 63 min since prior post (rule PASS). Draft humanized per skill (voice-matched, no invented facts, all claims from slice). Profile readback: 461 posts, newest 1m old with exact draft text. One post only — second-click snapshot error did NOT double-post this time (composer state unverified but profile shows single newest post).
+- **Cleanup verified:** browser_close closed:true/released:true; browser_status hasTab:false. No owned tab remains.
+- **Code checkpoint pushed:** 7e7b9a1 on checkpoint/rc002-linux-runtime-evidence, remote in sync.

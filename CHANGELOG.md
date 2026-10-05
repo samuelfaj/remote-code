@@ -1,5 +1,8 @@
 # Changelog
 
+## RC-031 send-backpressure X POSTED + checkpoint push 2026-10-05T01:35:59Z (UTC)
+
+- Code commit 7e7b9a1 pushed. X post published via mac-use after 63-min gap (1h rule PASS): humanized draft "Spent today making our terminal tell the truth: ..." live on @samfajreldines (461 posts, 1m old readback). Single post, no duplicate this time. Cleanup verified: browser_close closed:true/released:true, hasTab:false. No canonical URL captured.
 ## RC-031 send backpressure split — busy host reads honestly pre-fence 2026-10-05T01:30:44Z (UTC)
 
 - send() pre-send guard split: non-running still throws "Input is not ready"; queued/unknown inputState throws "Host is still writing the previous input" (caught → wait-for-next-poll + nothing-queued message, identical to the 409 pending refusal). Throw precedes fence + POST so nothing sent. Review 01a109ae CLEAN (reachability, honesty, consistency, old-producer coverage, fence safety, literal identity). Verified: typecheck clean, 64 focused pass/1 skip. X: per <1h rule + humanizer (see checkpoint note).
