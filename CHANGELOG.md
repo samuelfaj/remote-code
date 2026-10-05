@@ -1,5 +1,8 @@
 # Changelog
 
+## Goal close-out — honest pivot, backlog NOT 100% (2026-10-05T01:25:37Z UTC)
+
+- PIVOT.md records why full completion is unclaimable: 13 Complete / 7 In progress / 1 Blocked (RC-002) / 47 To do. This run's delivered slices all pushed, reviewed, and verified (see entries below). Commit 8de8950 pushed; tree clean; remote in sync. Resume order documented in PIVOT.md. X: skipped per <1h rule (57 min; see checkpoint note).
 ## RC-031/RC-033 full verification — no new slice, suite + E2E green 2026-10-05T01:22:33Z (UTC)
 
 - Slice hunt found no honest unmapped backend status: layout GET/PUT (401/404/422/503/409) all mapped; terminal routes (start/send/resize/stop/poll/inspect/receipts/list/preflight/session) mapped. Two cosmetic wordings and one unreachable 501 branch proposed and reverted in-slice per minimal-change rules. Review: no code change, nothing to review.

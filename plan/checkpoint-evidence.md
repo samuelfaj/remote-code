@@ -1857,3 +1857,8 @@ The historical checkpoint evidence below is retained in its original order and s
 
 - **Slice hunt (no change):** audited all TerminalPanel status branches against backend producers. All reachable statuses mapped. Reverted in-slice: (1) accidental comment deletion (restored), (2) cosmetic "still waiting in order" wording, (3) unreachable layout-GET 501 branch (layout route never returns 501 — verified against workspace-layout.ts). No commit for reverts; tree verified clean.
 - **Evidence:** typecheck clean; full `bun run test` 176 pass/64 skip/0 fail/2160 assertions across 22 files; Playwright terminal-screen-component 10 pass (real Chromium, local API+Vite servers, desktop+mobile). No reasoning review — zero code change. X skipped per <1h rule (no tab opened).
+
+# Goal close-out checkpoint — 2026-10-05 (UTC)
+
+- **Pivot recorded:** PIVOT.md close-out entry (commit 8de8950, pushed). No criteria weakened, no invented evidence. Resume order: RC-031 flow control → RC-033 acceptance → RC-018 closure, per dependency fields.
+- **X:** SKIPPED per standing <1h rule (57 min since 00:28Z posts). Standing rule: max one tweet/hour, always via /humanizer. No post composed or submitted. No browser tab opened.
