@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-029 mobile pending render parity — operation detail, guidance kept 2026-10-05T20:30:00Z (UTC)
+
+- Mobile pending-file render now shows operation detail (MOVE path or KIND: path), device-scoped no-replay wording, and keeps the original-workspace guidance line char-identical to web. First review 01a10d1c DEFECT (guidance dropped) → fixed in-slice → 01a10d1e CLEAN. Verified: typecheck clean, 59 pass/1 skip. X: per <1h rule (see checkpoint note).
+
 ## RC-029 mobile mutate receipt-message parity — path named, repair guided 2026-10-05T20:00:00Z (UTC)
 
 - Mobile mutate() post-response mismatch/success/clearance messages now mirror web: mismatch names manual receipt check, success names confirmed path and warns historical receipt is stale, clearance guides storage repair. needsRead invalidation preserved. Review 01a10d18 CLEAN. Verified: typecheck clean, 59 pass/1 skip. X: per <1h rule (see checkpoint note).
