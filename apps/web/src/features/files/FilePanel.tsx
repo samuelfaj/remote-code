@@ -154,9 +154,16 @@ export function FilePanel({ userId, workspace, blocked, onUnauthorized }: Props)
         const result = await files.get({ query: path ? { path } : {} });
         if (!current()) return;
         if (Date.now() >= end) throw new Error("File operation deadline expired");
-        if (result.error) { unauthorized(result.error); throw new Error("Directory unavailable"); }
+        if (result.error) {
+          unauthorized(result.error);
+          setInspection(null); setListing(null);
+          setMessage(workspaceErrorStatus(result.error) === 503 && (result.error as { value?: { error?: unknown } }).value?.error === "request_outcome_unknown"
+            ? "Folder listing was not confirmed. Refresh manually; writes stay disabled."
+            : "Host refused the folder listing. Refresh manually; writes stay disabled.");
+          return;
+        }
         const entries = directoryFromValue(result.data, path);
-        if (!entries) throw new Error("Invalid directory listing");
+        if (!entries) { setInspection(null); setListing(null); setMessage("Host response did not match the requested folder. Refresh manually; writes stay disabled."); return; }
         setListing({ workspaceId: workspace.id, path, entries });
         setMessage(state.archived ? "Archived workspace. Files are read-only." : "Folder and files confirmed by the host.");
       }
@@ -165,7 +172,7 @@ export function FilePanel({ userId, workspace, blocked, onUnauthorized }: Props)
         setInspection(null);
         if (!content) setListing(null);
         setMessage(content ? "File read was not confirmed. Draft kept; retry the read manually."
-          : "Folder or directory could not be confirmed. Refresh manually; writes are disabled.");
+          : "Folder listing was not confirmed. Refresh manually; writes stay disabled.");
       }
     } finally {
       if (current()) { working.current = false; setBusy(false); }
