@@ -320,7 +320,7 @@ export function FilePanel({ userId, workspace, blocked, onUnauthorized }: Props)
             : `Read current host text and compare before another explicit ${label}.`;
           if (clearMatching(operation)) setMessage(currentVersion
             ? `Version conflict: ${label} was refused. Another client saved first; current host version starts ${currentVersion.slice(0, 8)}. Draft kept. ${retry}`
-            : `Version conflict: ${label} was refused. Draft kept. ${retry}`);
+            : `Version conflict: ${label} was refused. The host did not return the conflicting version. Draft kept. ${retry}`);
         } else if (operation.kind !== "save" && (isTargetExists(response.error) || isMissingFilePath(response.error, operation.kind))) {
           if (clearMatching(operation)) setMessage(`${label} was refused: ${isTargetExists(response.error) ? "target already exists" : "source or parent directory is unavailable"}. No file change occurred. Inputs and draft kept; choose an existing parent and current source explicitly.`);
         } else setMessage(`${label} was not confirmed. Keep the draft and inputs and check its receipt manually; no write will be resent automatically.`);
