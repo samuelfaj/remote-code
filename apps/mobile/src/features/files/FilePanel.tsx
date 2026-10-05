@@ -69,7 +69,7 @@ export function FilePanel({ origin, userId, workspace, blocked, onUnauthorized }
     const result = await request(end).api.auth.session.get();
     if (!current()) return false;
     if (Date.now() >= end) throw new Error("File deadline expired");
-    if (result.error) { unauthorized(result.error); throw new Error("Session unavailable"); }
+    if (result.error) { unauthorized(result.error); throw new Error("Session could not be confirmed"); }
     if (!result.data || !("userId" in result.data) || result.data.userId !== userId) { onUnauthorized(); return false; }
     return true;
   }
@@ -89,17 +89,17 @@ export function FilePanel({ origin, userId, workspace, blocked, onUnauthorized }
     const owner = await request(end).api.workspaces({ workspaceId: workspace.id }).get();
     if (!current()) return null;
     if (Date.now() >= end) throw new Error("File deadline expired");
-    if (owner.error) { unauthorized(owner.error); throw new Error("Workspace unavailable"); }
+    if (owner.error) { unauthorized(owner.error); throw new Error("Workspace ownership unavailable"); }
     const confirmed = workspaceFromValue(owner.data);
     if (!confirmed) throw new Error("Host returned invalid workspace metadata");
     if (confirmed.id !== workspace.id) throw new Error("Host returned metadata for a different workspace");
     const folder = await request(end).api.workspaces({ workspaceId: workspace.id }).folder.get();
     if (!current()) return null;
     if (Date.now() >= end) throw new Error("File deadline expired");
-    if (folder.error) { unauthorized(folder.error); throw new Error("Folder unavailable"); }
+    if (folder.error) { unauthorized(folder.error); throw new Error("Folder status unavailable"); }
     const original = folderOperation?.workspaceId === workspace.id ? folderOperation : null;
     const state = folderStateFromValue(folder.data, workspace.id, original?.requestId);
-    if (!state) throw new Error("Folder status did not match original request");
+    if (!state) throw new Error("Folder status did not match the original pending request");
     if (original) {
       const stored = await beforeFileDeadline(queued(() => readPendingFolder(AsyncStorage, folderKey)), end);
       if (!current() || stored.expired || stored.value?.requestId !== original.requestId || stored.value.workspaceId !== original.workspaceId) throw new Error("Pending folder storage identity unavailable");
