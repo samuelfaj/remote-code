@@ -385,7 +385,7 @@ export function FilePanel({ origin, userId, workspace, blocked, onUnauthorized }
   const disabled = busy || blocked || !workspace || workspace.archived || !storageReady || Boolean(pending) || Boolean(pendingFolder) || !inspected?.supported || inspected.folder !== "provisioned" || inspected.archived;
   return <View style={styles.card} testID="file-panel">
     <Text accessibilityRole="header" style={styles.heading}>Files and editor</Text>
-    {!workspace ? <Text>Select a workspace to inspect files.</Text> : <>
+    {!workspace ? <Text>Select a workspace to inspect its folder.</Text> : <>
       <Text>Files in {workspace.name}{workspace.archived ? " (archived, read-only)" : ""}</Text>
       <Pressable accessibilityRole="button" accessibilityLabel="Refresh folder and files" disabled={busy || blocked} onPress={() => void read(currentListing?.path ?? "")} style={styles.secondary}><Text>{busy ? "Checking files…" : "Refresh folder and files"}</Text></Pressable>
       <Text testID="folder-status">{inspected?.supported === false ? "Files unavailable on this host." : inspected?.folder === "provisioned" ? "Folder provisioned on Linux." : inspected?.folder === "not_provisioned" ? "Folder not provisioned." : "Folder status unknown. Writes disabled."}</Text>
