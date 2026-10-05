@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-029 mobile checkReceipt wording parity — busy, success, clearance named 2026-10-05T22:00:00Z (UTC)
+
+- Mobile checkReceipt() busy ("No write will be resent"), success (historical receipt + refresh guidance), and clearance-failure messages now char-identical to web; mutate() clearance matches too. First review 01a10d82 DEFECT (clearance prefix drift) → fixed in-slice → 01a10d84 CLEAN. Verified: typecheck clean, 59 pass/1 skip. X: per <1h rule (see checkpoint note).
+
 ## RC-029 mobile refusal/unknown wording parity — directory named, resend denied 2026-10-05T21:30:00Z (UTC)
 
 - Mobile mutate() refusal now says "source or parent directory is unavailable" and unconfirmed says no write will be resent automatically, char-identical to web; catch unknown-outcome keeps "is unknown" phrasing. Review 01a10d7e CLEAN. Verified: typecheck clean, 59 pass/1 skip. X: per <1h rule (see checkpoint note).
