@@ -2123,3 +2123,8 @@ The historical checkpoint evidence below is retained in its original order and s
 - **Scope:** FilePanel inspect() workspace-guard split. +2/-1, message-only. No backend change.
 - **Evidence:** Typecheck clean; 64 focused pass/1 skip. Review 01a10ad5 DEFECT → dead guard removed in-slice → 01a10ad8 CLEAN.
 - **X:** see X-check record below.
+
+# RC-029 file-inspect X check — 2026-10-05 (UTC)
+
+- **SKIPPED per <1h rule:** profile readback shows latest own post 1h old (@samfajreldines, 463 posts, boundary conservative). Standing rule: max one tweet/hour, always via /humanizer. No post composed or submitted.
+- **Cleanup proof:** browser_close closed:true/released:true; browser_status connected:true/hasTab:false.
