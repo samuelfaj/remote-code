@@ -1,5 +1,8 @@
 # Changelog
 
+## RC-031 resize-receipt split — unreadable receipt named, transport generic 2026-10-05T03:11:26Z (UTC)
+
+- resize() success path: validator-reject (error null, receipt null) throws unreadable-resize-receipt message (caught → unknown + blocked wording); transport errors keep generic unknown path. Fence stays set on both. Fourth instance of the ack/stop/start defect class; guard correct first time. Review 01a10a0a CLEAN. Verified: typecheck clean, 64 focused pass/1 skip. X: per <1h rule (see checkpoint note).
 ## RC-031 start-receipt split — unreadable receipt named, transport generic 2026-10-05T03:05:53Z (UTC)
 
 - start() success path: validator-reject (error null, receipt null) throws unreadable-start-receipt message (caught → unknown + ID-retained wording); transport errors keep generic unknown path. Reference kept with ID retained on both. Third instance of the ack/stop defect class; guard correct first time. Review 01a10a05 CLEAN. Verified: typecheck clean, 64 focused pass/1 skip. X: per <1h rule (see checkpoint note).
