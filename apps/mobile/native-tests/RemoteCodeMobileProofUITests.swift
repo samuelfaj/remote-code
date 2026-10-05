@@ -803,7 +803,7 @@ final class RemoteCodeMobileProofUITests: XCTestCase {
             XCTAssertTrue(app.staticTexts["Directory: Workspace root"].waitForExistence(timeout: 10))
         } else {
             try await observer.provisionFolder(at: api, workspaceId: workspace.id)
-            try tapFileControl("Refresh files", in: app)
+            try tapFileControl("Refresh folder and files", in: app)
         }
         return (api, workspace)
     }
@@ -835,7 +835,7 @@ final class RemoteCodeMobileProofUITests: XCTestCase {
 
     @MainActor
     private func openNativeFile(_ path: String, in app: XCUIApplication) throws {
-        try tapFileControl("Refresh files", in: app)
+        try tapFileControl("Refresh folder and files", in: app)
         try tapFileControl("Open file \(path)", in: app)
         XCTAssertTrue(app.textViews["File draft"].waitForExistence(timeout: 10))
     }
@@ -873,7 +873,7 @@ final class RemoteCodeMobileProofUITests: XCTestCase {
         XCTAssertEqual(create.version, originalVersion)
         for _ in 0..<5 where !app.staticTexts["Files and editor"].exists { app.scrollViews.firstMatch.swipeUp() }
         XCTAssertTrue(app.staticTexts["Files and editor"].waitForExistence(timeout: 15))
-        app.buttons["Refresh files"].tap()
+        app.buttons["Refresh folder and files"].tap()
         XCTAssertTrue(app.buttons["Open file \(filePath)"].waitForExistence(timeout: 15))
         app.buttons["Open file \(filePath)"].tap()
         let content = app.textViews["File draft"]
@@ -929,7 +929,7 @@ final class RemoteCodeMobileProofUITests: XCTestCase {
         let path = "native-loss.txt"; let original = "before committed loss"; let saved = "committed save after response loss"
         _ = try await observer.createFile(at: api, workspaceId: workspace.id, path: path, content: original)
         for _ in 0..<5 where !app.staticTexts["Files and editor"].exists { app.scrollViews.firstMatch.swipeUp() }
-        app.buttons["Refresh files"].tap(); XCTAssertTrue(app.buttons["Open file \(path)"].waitForExistence(timeout: 15)); app.buttons["Open file \(path)"].tap()
+        app.buttons["Refresh folder and files"].tap(); XCTAssertTrue(app.buttons["Open file \(path)"].waitForExistence(timeout: 15)); app.buttons["Open file \(path)"].tap()
         let content = app.textViews["File draft"]; XCTAssertTrue(content.waitForExistence(timeout: 10)); try content.clearAndTypeText(saved, in: app)
         XCTAssertEqual(content.value as? String, saved, "The response-loss SAVE must send exactly the edited draft")
         app.staticTexts["Files and editor"].firstMatch.tap()
