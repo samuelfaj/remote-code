@@ -1,5 +1,8 @@
 # Changelog
 
+## RC-033 load invalid-shape — corrupt stored layout reads honestly 2026-10-05T02:19:18Z (UTC)
+
+- Workspace-switch load catch maps "Invalid workspace layout" to invalid-shape + tabs-empty + inspect-before-saving message instead of generic unconfirmed. First version promised save-repair (false — review 01a109d9 DEFECT: save merge-GET rejects before PUT); fixed in-slice, follow-up 01a109da CLEAN (no promise, empty-tabs true, save fallback truthful). Seeding-empty rejected as data-loss risk to other clients' tabs. Verified: typecheck clean, 64 focused pass/1 skip. X: per <1h rule (see checkpoint note).
 ## RC-031 resize mismatch split — validated-but-unapplied reads not-complete 2026-10-05T02:10:44Z (UTC)
 
 - resize() post-POST validation split: null receipt keeps "Resize outcome unknown"; validated-but-mismatched receipt throws "Resize is not complete" (caught → not-complete + blocked + Stop message, matching the 409-fallback sibling). Fence stays set. Review 01a109d2 CLEAN with one wording fix in-slice ("did not apply" overstated settling → "not complete" describes both). Verified: typecheck clean, 64 focused pass/1 skip. X: per <1h rule (see checkpoint note).

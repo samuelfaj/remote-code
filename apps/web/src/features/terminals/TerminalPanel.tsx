@@ -291,7 +291,9 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
           ? "Saved layout is unreadable on this host. Tabs start empty; saving overwrites the bad row."
           : error instanceof Error && error.message === "Workspace is gone on this host"
             ? "Workspace is gone on this host. Layout was not loaded; pick another workspace."
-            : "Layout is unconfirmed. Inspect state; nothing was overwritten blindly.");
+            : error instanceof Error && error.message === "Invalid workspace layout"
+              ? "Saved layout has an invalid shape. Tabs start empty; inspect state before saving."
+              : "Layout is unconfirmed. Inspect state; nothing was overwritten blindly.");
       });
     }
   }, [userId, workspace?.id, workspace?.archived, blocked]);
