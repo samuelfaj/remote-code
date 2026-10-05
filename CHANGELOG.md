@@ -802,3 +802,9 @@
 - **Planning-page search fix and browser proof:** The owned Chrome background-tab check found that searching `RC-002` returned zero tasks. Updated the existing search to include each task element's ID; repeated the same interaction and confirmed exactly one result, `RC-002 — Prove main Distill on Linux`. The rendered summary still showed `1 completed (inventory only); 2 blocked`, phase 00 showed four tasks, and the parity-inventory link returned HTTP 200. The browser integration accepts HTTP(S) URLs only, so direct `file://` navigation was not tested.
 - **Backlog dependency gate — original graph (superseded by the 2026-09-25 pivot):** RC-004 then required accepted RC-002 evidence. The later pivot allows RC-004's design-only contract, while live Distill work remains gated on RC-002. Do not retry the uncertain provider prompt.
 - **Publication:** Prior planning checkpoint `7aaeae3` and runtime evidence checkpoint `0c1623c` were pushed to `checkpoint/rc002-linux-runtime-evidence`. Pull request [#2](https://github.com/samuelfaj/remote-code/pull/2) tracks the branch. Keep it current after each later commit.
+
+## RC-028 open-404 checkpoint closure — honest X state 2026-10-05T08:20Z (UTC)
+
+- Code commit ea62d0e (open 404 split + selection clear, review CLEAN). Verified fresh: tsc clean, terminal suite 12 pass/0 fail.
+- X: gate PASSED (newest 2h) but browser_act Post clicks failed "page did not return snapshot" twice; composer still full each readback, profile still 463 posts, no URL/timestamp. No blind retry, no double-post. Recorded as UNVERIFIED submit, not claimed.
+- Cleanup verified: browser_close closed:true/released:true, browser_status connected:true/hasTab:false.
