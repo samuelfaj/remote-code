@@ -2051,3 +2051,7 @@ The historical checkpoint evidence below is retained in its original order and s
 - **Scope:** inspect() receipts-branch split with error-null guard. +5/-2, message-only, reference retained. No backend change.
 - **Evidence:** Typecheck clean; 64 focused pass/1 skip. Review 01a10a56 CLEAN (transport-generic, validator-named, reference retained, sibling wording consistent, no cross-catching).
 - **X:** see X-check record below (51min → SKIP expected).
+
+# RC-031 inspect-receipts X check — 2026-10-05 (UTC)
+
+- **SKIPPED per <1h rule:** last post 51 min old at slice time. Standing rule: max one tweet/hour, always via /humanizer. No post composed or submitted. No browser tab opened.
