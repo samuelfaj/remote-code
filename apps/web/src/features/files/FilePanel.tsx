@@ -342,7 +342,7 @@ export function FilePanel({ userId, workspace, blocked, onUnauthorized }: Props)
       }
       const receipt = fileReceiptFromValue(response.data, operation, workspace.id);
       if (!receipt) { setMessage(`${label} response did not match the pending identity. Outcome is unknown; check its receipt manually. Draft and inputs kept.`); return; }
-      if (clearMatching(operation)) setMessage(`${label} receipt confirmed for ${receipt.path}. Draft and inputs kept. This historical receipt is not current file content or path; refresh files and open the desired path to read its current text and version before writing again.`);
+      if (clearMatching(operation)) setMessage(`${label} receipt confirmed for ${receipt.path}. Draft and inputs kept. This historical receipt is not current file content or path; refresh folder and files and open the desired path to read its current text and version before writing again.`);
     } catch {
       if (current()) {
         setInspection(null);
@@ -387,7 +387,7 @@ export function FilePanel({ userId, workspace, blocked, onUnauthorized }: Props)
       }
       if (clearMatching(operation)) {
         setEditor((item) => item?.host.workspaceId === operation.workspaceId ? { ...item, needsRead: true } : item);
-        setMessage("Historical file receipt confirmed. Draft and inputs kept; refresh files and open the desired path to read its current text and version before writing again.");
+        setMessage("Historical file receipt confirmed. Draft and inputs kept; refresh folder and files and open the desired path to read its current text and version before writing again.");
       }
     } catch {
       if (current()) setMessage("Receipt or pending identity could not be checked. Outcome remains unknown; no write was resent.");
