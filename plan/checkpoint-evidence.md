@@ -2333,3 +2333,11 @@ The historical checkpoint evidence below is retained in its original order and s
 - **Evidence:** Typecheck clean; 59 pass/1 skip (mobile file-rules + client suites, same as prior slices). Commit bdac3e9 pushed with CHANGELOG entry.
 - **X:** per <1h rule (see checkpoint note).
 - **Next resumption point:** continue RC-029 file-op parity or RC-031/RC-033 slices; RC-002 remains blocked (no retry without receipt reconciliation).
+
+# Full verification sweep — 2026-10-05 (UTC)
+
+- **Unit:** 177 pass / 64 skip (Linux-only + PTY-gated) / 0 fail, 2166 expects, 22 files (bun test apps/api/src packages/client/src).
+- **Focused:** typecheck clean; 59 pass/1 skip (mobile file-rules + client).
+- **E2E:** 105 pass / 3 skip / 0 fail, 3.6m (full playwright suite: actions, auth-recovery, terminal-screen-component, workspaces).
+- **mac-use:** browser_status connected:true/hasTab:false — no owned tabs.
+- **Conclusion:** no defect found to fix; parity slices stand. Next: RC-031/RC-033 runtime slices or RC-002 reconciliation (blocked, no retry).
