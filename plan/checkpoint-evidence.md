@@ -1808,3 +1808,10 @@ The historical checkpoint evidence below is retained in its original order and s
 - **Evidence:** Typecheck clean; 64 focused pass/1 skip; backend layout 6 pass incl 422 cases. Review 01a1097f CLEAN (defensive branch, ordering, literal identity, honesty).
 - **Prior attempt in-slice REJECTED:** an inspect() poll-503 allowlist addition was unreachable dead code (poll never throws that literal; reviewer 01a1097b proved it). Reverted before commit, tree verified clean. Second reachability kill in a row — same lesson as prior checkpoint.
 - **X:** SKIPPED per standing <1h rule — two posts landed 2026-10-05T00:28Z (~90s apart, double-submit); latest own post minutes old at this checkpoint. New user rule: max one tweet/hour, always via /humanizer — recorded; no post composed or submitted. No browser tab opened.
+
+# RC-031 drainKeys-notice slice — 2026-10-05 (UTC)
+
+- **Scope:** drainKeys() !canInput branch announces queued-keystroke drop count instead of silent clear. +8/-1, message-only. No backend change.
+- **Evidence:** Typecheck clean; 64 focused pass/1 skip. Review 01a10985 CLEAN (reachability via stale poll closure, honesty, no double-count, updater form; toggle clearKeys silent sibling noted out of scope).
+- **Rejected in-slice:** a leading-space cosmetic guard on the send-catch drop notice — reverted, no file proves it; cosmetic-only fix with no user-visible defect is out of scope per minimal-change rules.
+- **X:** SKIPPED per standing <1h rule — two posts landed 2026-10-05T00:28Z (~90s apart, double-submit). Standing rule: max one tweet/hour, always via /humanizer. No post composed or submitted. No browser tab opened.

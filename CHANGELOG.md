@@ -1,5 +1,8 @@
 # Changelog
 
+## RC-031 drainKeys !canInput drop notice — silent keystroke loss now announced 2026-10-05T00:46:32Z (UTC)
+
+- drainKeys() !canInput branch now posts "N queued keystroke(s) discarded unsent." (appended when a prior message exists) instead of clearing silently. Keys never sent on this path, so the claim holds. Review 01a10985 CLEAN (reachable via stale poll closure; no double-count with send-catch announcement; toggle clearKeys silent sibling unchanged/out of scope). Verified: typecheck clean, 64 focused pass/1 skip. X: skipped per <1h rule (see checkpoint note).
 ## RC-033 saveLayout PUT 422 — invalid shape reads honestly, not unconfirmed 2026-10-05T00:40:16Z (UTC)
 
 - saveLayout() PUT 422 now throws "Saved layout shape is invalid" (caught → stored-unchanged + reload-and-save message) instead of generic unconfirmed. Pre-write server validation, so unchanged claim holds. Review 01a1097f CLEAN (defensive branch for version skew; ordering 401/409/422/503/404; literal identity). Verified: typecheck clean, 64 focused pass/1 skip, backend layout 6 pass incl 422 cases. X: skipped per <1h rule (see checkpoint note).

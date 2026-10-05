@@ -550,7 +550,15 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
   function drainKeys() {
     const saved = referenceRef.current;
     if (!saved?.terminalId || working.current || keyQueue.current.length === 0) { setQueuedKeys(keyQueue.current.length); return; }
-    if (!canInput) { keyQueue.current = []; setQueuedKeys(0); return; }
+    if (!canInput) {
+      // Input can never flow again on this reference (uncertain fence,
+      // stopped terminal, or unobservable login): surface the drop count
+      // instead of clearing silently, so no keystroke vanishes quietly.
+      const dropped = keyQueue.current.length;
+      keyQueue.current = []; setQueuedKeys(0);
+      setMessage((prior) => prior.length > 0 ? `${prior} ${dropped} queued keystroke(s) discarded unsent.` : `${dropped} queued keystroke(s) discarded unsent.`);
+      return;
+    }
     const next = keyQueue.current.shift()!;
     setQueuedKeys(keyQueue.current.length);
     void send(next);
