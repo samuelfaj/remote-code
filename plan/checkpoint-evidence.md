@@ -2305,3 +2305,10 @@ The historical checkpoint evidence below is retained in its original order and s
 - **Evidence:** Typecheck clean; 59 pass/1 skip. Review 01a10ca6 CLEAN. Commit 66f0703 pushed.
 - **X:** per <1h rule (see checkpoint note).
 - **Next resumption point:** continue RC-029 file-op parity or RC-031/RC-033 slices; RC-002 remains blocked (no retry without receipt reconciliation).
+
+# RC-029 mobile late-response slice — 2026-10-05 (UTC)
+
+- **Scope:** apps/mobile/src/features/files/FilePanel.tsx mutate() post-response deadline sets late-arrival message and returns with pending identity retained, instead of throwing into generic sent-catch. Mirrors web. Message-only. No backend change.
+- **Evidence:** Typecheck clean; 59 pass/1 skip. Review 01a10caa CLEAN. Commit b8c7972 pushed.
+- **X:** per <1h rule (see checkpoint note).
+- **Next resumption point:** continue RC-029 file-op parity or RC-031/RC-033 slices; RC-002 remains blocked (no retry without receipt reconciliation).

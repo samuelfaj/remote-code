@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-029 mobile late-response split — deadline named, identity kept 2026-10-05T17:30:00Z (UTC)
+
+- Mobile mutate() post-response deadline now sets late-arrival message and retains pending identity for manual receipt check, instead of generic sent-catch; mirrors web. Review 01a10caa CLEAN. Verified: typecheck clean, 59 pass/1 skip. X: per <1h rule (see checkpoint note).
+
 ## RC-028 mobile open 404 split — deleted named, selection cleared 2026-10-05T17:00:00Z (UTC)
 
 - Mobile openWorkspace() 404 clears the selection and says the workspace may have been deleted, mirroring web char-identical; other errors keep the generic path. Review 01a10ca6 CLEAN. Verified: typecheck clean, 59 pass/1 skip. X: per <1h rule (see checkpoint note).
