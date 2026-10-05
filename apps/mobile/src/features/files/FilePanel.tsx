@@ -431,8 +431,8 @@ export function FilePanel({ origin, userId, workspace, blocked, onUnauthorized }
         </Pressable>
       </View> : null}
     </>}
-    {pending ? <View style={styles.pending} testID="pending-file"><Text>File operation awaits confirmation. No automatic write retry.</Text><Text selectable>Request ID: {pending.requestId}</Text><Pressable accessibilityRole="button" accessibilityLabel="Check file receipt" disabled={busy || pending.workspaceId !== workspace?.id} onPress={() => void checkReceipt()} style={styles.secondary}><Text>{pending.workspaceId === workspace?.id ? "Check file receipt" : "Select original workspace to check receipt"}</Text></Pressable></View> : null}
-    {!storageReady ? <Text accessibilityRole="alert">File recovery storage unavailable. Writes disabled.</Text> : null}
+    {pending ? <View style={styles.pending} testID="pending-file"><Text>File operation awaits confirmation. Pending identity stays on this device; no write will be replayed.</Text><Text>{pending.kind === "move" ? `MOVE: ${pending.sourcePath} to ${pending.destinationPath}` : `${pending.kind.toUpperCase()}: ${pending.path}`}</Text><Text selectable>Request ID: {pending.requestId}</Text><Text>{pending.workspaceId === workspace?.id ? "Check its receipt manually." : "Select the original workspace to check this file receipt."}</Text><Pressable accessibilityRole="button" accessibilityLabel="Check file receipt" disabled={busy || pending.workspaceId !== workspace?.id} onPress={() => void checkReceipt()} style={styles.secondary}><Text>Check file receipt</Text></Pressable></View> : null}
+    {!storageReady ? <Text accessibilityRole="alert">Device recovery storage unavailable. File writes disabled; repair storage and reload.</Text> : null}
     {message ? <Text testID="file-status" accessibilityLiveRegion="polite">{message}</Text> : null}
   </View>;
 }
