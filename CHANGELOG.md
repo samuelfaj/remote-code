@@ -1,5 +1,8 @@
 # Changelog
 
+## RC-033 save-confirm split — unreadable confirmation names local-only truth 2026-10-05T03:19:26Z (UTC)
+
+- saveLayout() PUT-confirm: validator-reject (error null) throws unreadable-confirmation message (caught → local-view-unchanged + host-unknown wording); transport errors keep generic path. Fifth instance of the ternary-null class. Review 01a10a0f DEFECT (first version claimed host unchanged — PUT commits before responding) → fixed in-slice → 01a10a12 CLEAN. Verified: typecheck clean, 64 focused pass/1 skip. X: per <1h rule (see checkpoint note).
 ## RC-031 resize-receipt split — unreadable receipt named, transport generic 2026-10-05T03:11:26Z (UTC)
 
 - resize() success path: validator-reject (error null, receipt null) throws unreadable-resize-receipt message (caught → unknown + blocked wording); transport errors keep generic unknown path. Fence stays set on both. Fourth instance of the ack/stop/start defect class; guard correct first time. Review 01a10a0a CLEAN. Verified: typecheck clean, 64 focused pass/1 skip. X: per <1h rule (see checkpoint note).

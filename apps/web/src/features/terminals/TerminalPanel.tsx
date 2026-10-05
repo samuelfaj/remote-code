@@ -821,6 +821,7 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
       if (workspaceErrorStatus(result.error) === 503) throw new Error("Layout write failed on this host");
       if (workspaceErrorStatus(result.error) === 404) throw new Error("Workspace is gone on this host");
       const confirmed = result.error ? null : workspaceLayoutResponseFromValue(result.data, workspace.id);
+      if (!confirmed && !result.error) throw new Error("Host returned unreadable layout confirmation");
       if (!confirmed) throw new Error("Workspace layout not confirmed");
       layoutSavedAt.current = Date.now();
       if (current()) {
@@ -846,7 +847,9 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
         ? "Workspace is archived. Layout was not saved."
         : error instanceof Error && error.message === "Saved layout shape is invalid"
           ? "Saved layout shape is invalid. Stored layout unchanged; reload and save again."
-          : error instanceof Error && error.message === "Layout write failed on this host"
+          : error instanceof Error && error.message === "Host returned unreadable layout confirmation"
+            ? "Host returned an unreadable layout confirmation. Local layout view unchanged; host save outcome is unknown — inspect state before saving again."
+            : error instanceof Error && error.message === "Layout write failed on this host"
           ? "Layout write failed on this host. Stored layout unchanged; try saving again."
           : error instanceof Error && error.message === "Workspace is gone on this host"
             ? "Workspace is gone on this host. Layout was not saved; pick another workspace."
