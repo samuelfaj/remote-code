@@ -2,7 +2,7 @@ import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { randomUUID } from "expo-crypto";
-import { createApiClient, fileReceiptFromValue, pendingFileValueMatches, workspaceErrorStatus, workspaceFromValue, type PendingFile, type PendingFolder, type Workspace } from "@remotecode/client";
+import { createApiClient, fileConflictVersion, fileReceiptFromValue, pendingFileValueMatches, workspaceErrorStatus, workspaceFromValue, type PendingFile, type PendingFolder, type Workspace } from "@remotecode/client";
 import { beforeFileDeadline, clearPendingFolder, clearStoredFile, directoryFromValue, fileStorageKey, folderStorageKey, folderStateFromValue, isMissingFilePath, isTargetExists, isVersionConflict, nextFileInputScope, openFileFromValue, persistPendingFolder, persistStoredFile, readPendingFile, readPendingFolder, textSha256, validPath, validText, type FileEntry, type FileInputScope, type OpenFile } from "./file-editor";
 
 const deadlineMs = 10_000;
@@ -299,12 +299,18 @@ export function FilePanel({ origin, userId, workspace, blocked, onUnauthorized }
       if (Date.now() >= end) throw new Error("File deadline expired");
       if (response.error) {
         unauthorized(response.error);
-        const refused = identity.kind !== "create" && isVersionConflict(response.error) ||
-          identity.kind !== "save" && (isTargetExists(response.error) || isMissingFilePath(response.error, identity.kind));
-        if (refused && await clearConfirmed(identity, end, current)) {
-          const reason = isVersionConflict(response.error) ? "version conflict" : isTargetExists(response.error) ? "target already exists" : "source or parent path is unavailable";
-          setMessage(`${kind.toUpperCase()} refused (${reason}). No file change occurred. Inputs and draft kept; explicitly OPEN current content before writing again.`);
-        } else if (current()) setMessage(`${kind.toUpperCase()} was not confirmed. Keep pending identity and inputs; check its receipt manually. No retry.`);
+        const label = kind.toUpperCase();
+        if (identity.kind !== "create" && isVersionConflict(response.error)) {
+          const currentVersion = fileConflictVersion(response.error);
+          const retry = identity.kind === "move"
+            ? "Re-open the source path to read its current version before another explicit MOVE."
+            : `Read current host text and compare before another explicit ${label}.`;
+          if (await clearConfirmed(identity, end, current)) setMessage(currentVersion
+            ? `Version conflict: ${label} was refused. Another client saved first; current host version starts ${currentVersion.slice(0, 8)}. Draft kept. ${retry}`
+            : `Version conflict: ${label} was refused. The host did not return the conflicting version. Draft kept. ${retry}`);
+        } else if (identity.kind !== "save" && (isTargetExists(response.error) || isMissingFilePath(response.error, identity.kind))) {
+          if (await clearConfirmed(identity, end, current)) setMessage(`${label} was refused: ${isTargetExists(response.error) ? "target already exists" : "source or parent path is unavailable"}. No file change occurred. Inputs and draft kept; choose an existing parent and current source explicitly.`);
+        } else if (current()) setMessage(`${label} was not confirmed. Keep pending identity and inputs; check its receipt manually. No retry.`);
         return;
       }
       if (!fileReceiptFromValue(response.data, identity, workspace.id)) { setMessage(`${kind.toUpperCase()} receipt did not match pending identity. Outcome unknown; request ID kept.`); return; }
