@@ -1,5 +1,8 @@
 # Changelog
 
+## RC-031 inspect checkpoint — X POSTED 2026-10-05T00:28:09Z (UTC)
+
+- Posted via mac-use after bridge recovery; profile readback shows newest post 30s old with the checkpoint text. An earlier eligible draft also posted ~90s before (double-submit), so the next checkpoint must SKIP per the <1h rule. Cleanup verified: browser_close closed:true/released:true, hasTab:false. No canonical post URL captured (timestamp-link click lost snapshot).
 ## RC-031 inspect list-GET 404/503 — availability probe reads honestly
 
 - inspect() terminals-list GET now throws gone on 404 and login-unavailable on 503 before generic decode; outer catch identity-maps both. Pure read, literals byte-identical to existing sites. Verified: typecheck clean, 50 pass/1 skip, review clean. X: see checkpoint note.

@@ -1794,3 +1794,10 @@ The historical checkpoint evidence below is retained in its original order and s
 - **Scope:** inspect() list GET 404 → gone, 503 → login-unavailable, before generic decode; catch identity-maps both. Pure read (workspace→available→SELECT, no mutation). Literals byte-identical to existing sites. No backend change.
 - **Evidence:** Typecheck clean; 50 pass/1 skip. Review 01a10955 clean (route/client order, honesty, no drift — 13 identical uses each, zero fence writes, falsifier tried).
 - **X:** Bridge check with WHY gates + timestamp follows.
+
+# RC-031 inspect checkpoint — X outcome 2026-10-05T00:28:09Z (UTC)
+
+- **POSTED via mac-use (bridge recovered):** browser_status connected=true/hasTab=true; fill composer + Post click returned fresh snapshot (no "page did not return a snapshot" error on submit). Profile readback @samfajreldines 460 posts shows newest post 30s old: "RemoteCode terminal honesty pass: every refused start/input/resize/stop/layout now says exactly what happened". Prior eligible draft from earlier attempt ("...now says what happened and the right retry. No more fake unknowns. Local proof, not deployed. #buildingRemoteCode", 2m old) also visible directly below — two posts landed ~90s apart (double-submit: first click's snapshot error masked a real submit, second click posted again).
+- **Dedup/1h rule:** second (30s) post violates the spirit of the <1h rule — it duplicates the 2m post. No delete attempted (no authorized delete path; editing/deleting someone's live post via automation risks wrong-target mutation). Next checkpoint must SKIP posting (latest own post seconds old, <1h rule BLOCKS).
+- **No URL/timestamp captured:** post-timestamp link click returned "page did not return a snapshot"; evidence is profile-order readback (460 posts, 30s/2m ages, exact texts above) from saved MCP snapshots, not a canonical status URL.
+- **Cleanup verified:** browser_close closed:true/released:true; browser_status connected:true/hasTab:false. No owned tab remains.
