@@ -2312,3 +2312,10 @@ The historical checkpoint evidence below is retained in its original order and s
 - **Evidence:** Typecheck clean; 59 pass/1 skip. Review 01a10caa CLEAN. Commit b8c7972 pushed.
 - **X:** per <1h rule (see checkpoint note).
 - **Next resumption point:** continue RC-029 file-op parity or RC-031/RC-033 slices; RC-002 remains blocked (no retry without receipt reconciliation).
+
+# RC-029 mobile receipt-parity slice — 2026-10-05 (UTC)
+
+- **Scope:** apps/mobile/src/features/files/FilePanel.tsx checkReceipt() mismatch + outer-catch messages mirror web char-identical; catch drops storageReady(false) (pending identity still gates writes). Message-only. No backend change.
+- **Evidence:** Typecheck clean; 59 pass/1 skip. Review 01a10cae CLEAN. Commit 4f26f2c pushed.
+- **X:** per <1h rule (see checkpoint note).
+- **Next resumption point:** continue RC-029 file-op parity or RC-031/RC-033 slices; RC-002 remains blocked (no retry without receipt reconciliation).
