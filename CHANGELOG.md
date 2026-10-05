@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-029 mobile editor-copy parity — draft, MOVE, SAVE help named 2026-10-06T00:00:00Z (UTC)
+
+- Mobile editor help strings (dirty-draft note, MOVE help, dirty-MOVE note, SAVE validation) now char-identical to web. Review 01a10d97 CLEAN. Verified: typecheck clean, 59 pass/1 skip. X: per <1h rule (see checkpoint note).
+
 ## RC-029 mobile refresh-label parity — folder and files named 2026-10-05T23:30:00Z (UTC)
 
 - Mobile Refresh button label + accessibilityLabel now "Refresh folder and files", char-identical to web; busy text unchanged; 4 native expectations synced. Review 01a10d93 CLEAN. Verified: typecheck clean, 59 pass/1 skip. X: per <1h rule (see checkpoint note).
