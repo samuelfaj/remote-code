@@ -1,5 +1,9 @@
 # Changelog
 
+## RC-029 mobile receipt-lookup split — absent vs failed 2026-10-05T14:15:00Z (UTC)
+
+- Mobile checkReceipt() errors split into 404-absent vs lookup-failed, mirroring web. Review 01a10c51 CLEAN. Verified: typecheck clean, 59 pass/1 skip. X: gate passed (8h gap) but Post click unverified again — see checkpoint note, no retry.
+
 ## RC-029 mobile folder-prepare split — deadline vs refusal 2026-10-05T14:05:00Z (UTC)
 
 - Mobile prepareFolder() POST handling split into deadline-unknown vs host-refused, mirroring web. Review 01a10c49 CLEAN. Verified: typecheck clean, 59 pass/1 skip. X: gate passed (8h gap) but Post click unverified again — see checkpoint note, no retry.
