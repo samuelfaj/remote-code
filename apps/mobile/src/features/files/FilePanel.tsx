@@ -309,7 +309,7 @@ export function FilePanel({ origin, userId, workspace, blocked, onUnauthorized }
           ? await files.post({ requestId: identity.requestId, path: identity.path, content })
           : await files.content.put({ requestId: identity.requestId, path: identity.path, content, expectedVersion: value!.host.version });
       if (!current()) return;
-      if (Date.now() >= end) throw new Error("File deadline expired");
+      if (Date.now() >= end) { setMessage(`${kind.toUpperCase()} response arrived after the deadline. Outcome is unknown; check its receipt manually. Draft and inputs kept.`); return; }
       if (response.error) {
         unauthorized(response.error);
         const label = kind.toUpperCase();
