@@ -132,11 +132,18 @@ export function FilePanel({ userId, workspace, blocked, onUnauthorized }: Props)
         const result = await files.content.get({ query: { path } });
         if (!current()) return;
         if (Date.now() >= end) throw new Error("File operation deadline expired");
-        if (result.error) { unauthorized(result.error); throw new Error("File unavailable"); }
+        if (result.error) {
+          unauthorized(result.error);
+          setInspection(null);
+          setMessage(workspaceErrorStatus(result.error) === 503 && (result.error as { value?: { error?: unknown } }).value?.error === "request_outcome_unknown"
+            ? "File read was not confirmed. Draft kept; retry the read manually."
+            : "Host refused the file read. Binary, invalid UTF-8 and files over 1 MiB cannot be edited. Draft kept; retry the read manually.");
+          return;
+        }
         const host = await openFileFromValue(result.data, workspace.id, path);
         if (!current()) return;
         if (Date.now() >= end) throw new Error("File operation deadline expired");
-        if (!host) throw new Error("Invalid file content");
+        if (!host) { setInspection(null); setMessage("Host response did not match the requested file. Draft kept; retry the read manually."); return; }
         if (!sameFile && editorRef.current?.draft !== existing?.draft) {
           setMessage("The draft changed while another file was loading. Draft kept; open the other file again to confirm discarding it.");
           return;
@@ -157,7 +164,7 @@ export function FilePanel({ userId, workspace, blocked, onUnauthorized }: Props)
       if (current()) {
         setInspection(null);
         if (!content) setListing(null);
-        setMessage(content ? "Could not read this text file or its version. Binary, invalid UTF-8 and files over 1 MiB cannot be edited. Draft kept; retry the read manually."
+        setMessage(content ? "File read was not confirmed. Draft kept; retry the read manually."
           : "Folder or directory could not be confirmed. Refresh manually; writes are disabled.");
       }
     } finally {
