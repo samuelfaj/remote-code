@@ -2150,3 +2150,8 @@ The historical checkpoint evidence below is retained in its original order and s
 
 - **UNVERIFIED submit (not claimed):** X gate PASSED (profile 463 posts, newest 2h). Humanized draft composed ("Save hit a newer version from another client? Ours now names it and shows the host version. Draft stays, no silent overwrite. #buildingRemoteCode") but intent Post click failed "page did not return snapshot"; composer still full, no URL/timestamp. No retry. Code commit dc46fe4 pushed. Closure commit 3968870 pushed, remote in sync.
 - **Cleanup proof:** browser_close closed:true/released:true; browser_status connected:true/hasTab:false.
+
+# RC-029 save-conflict reasoning review — 2026-10-05 (UTC)
+
+- **REVIEW-VERDICT: CLEAN** (plan-subagent 01a10b18, HEAD dc46fe4 files): helper reachable on real SAVE PUT error path; exact-shape 409 accept only; message says "starts" + 8-char prefix with explicit re-read; test drives shipped helper via index.ts. RC-029 stays In Progress (full two-client conflict journey + native surfaces open); counts unchanged 13 Complete / 7 In Progress / 47 To do / 1 Blocked (RC-002).
+- **X re-attempt this round:** gate PASSED (newest 2h, 463 posts); fresh humanized draft filled but Post click failed "page did not return a snapshot", composer still full, no URL. UNVERIFIED, no retry. Cleanup: closed:true/hasTab:false.
