@@ -123,7 +123,7 @@ export function FilePanel({ origin, userId, workspace, blocked, onUnauthorized }
     const old = editorRef.current;
     const same = old?.host.workspaceId === workspace.id && old.host.path === path;
     if (content && old && !same && old.draft !== old.host.content) {
-      if (pendingRef.current) { setMessage("Resolve the pending receipt before replacing this draft."); return; }
+      if (pendingRef.current) { setMessage("Resolve the pending file receipt before opening another file. The draft is kept."); return; }
       Alert.alert("Discard unsaved draft?", "Opening another file replaces this in-memory draft.", [
         { text: "Cancel", style: "cancel" },
         { text: "Discard and open", style: "destructive", onPress: () => {
@@ -137,7 +137,7 @@ export function FilePanel({ origin, userId, workspace, blocked, onUnauthorized }
     }
     const current = begin();
     const end = Date.now() + deadlineMs;
-    working.current = true; setBusy(true); setMessage("Reading current host files…");
+    working.current = true; setBusy(true); setMessage(content ? "Reading current host text…" : "Inspecting folder and loading files…");
     if (same) setEditor(value => value ? { ...value, needsRead: true } : value);
     try {
       const state = await inspect(end, current);
