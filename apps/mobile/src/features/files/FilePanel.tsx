@@ -335,7 +335,7 @@ export function FilePanel({ origin, userId, workspace, blocked, onUnauthorized }
       if (stored.expired || !pendingFileValueMatches(stored.value, operation)) throw new Error("Pending identity unavailable");
       const response = await request(end).api.workspaces({ workspaceId: operation.workspaceId }).files.receipts({ requestId: operation.requestId }).get();
       if (!current()) return;
-      if (Date.now() >= end) throw new Error("File deadline expired");
+      if (Date.now() >= end) { setMessage("Receipt arrived after the deadline. Outcome remains unknown; check again manually."); return; }
       if (response.error) {
         unauthorized(response.error);
         setMessage(workspaceErrorStatus(response.error) === 404 ? "No matching receipt is available. Outcome remains unknown; pending identity and draft are kept."
