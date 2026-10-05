@@ -390,6 +390,13 @@ export function WorkspacePanel({ origin, userId, onUnauthorized }: Props) {
       if (!mounted.current || generation !== readGeneration.current) return;
       if (error) {
         if (workspaceErrorStatus(error) === 401) onUnauthorized();
+        if (workspaceErrorStatus(error) === 404) {
+          setSelectedId(null);
+          setReadError(
+            "This workspace is gone. It may have been deleted; refresh the list.",
+          );
+          return;
+        }
         setReadError(
           "Could not open this workspace. Refresh the list and try again.",
         );
