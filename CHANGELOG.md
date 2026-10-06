@@ -1,4 +1,7 @@
 # Changelog
+## Session handoff — 12 checkpoints pushed, goal open 2026-10-06T10:00:00Z (UTC)
+
+- This session: 12 docs checkpoints pushed (3f9106a..4360476), tree clean, remote in sync. Real Linux proofs re-run: RC-029 file-editor, RC-033 layout, RC-031 shutdown, RC-012 files, RC-028 workspace, RC-021 folder-prep. Unit proofs: RC-014 (22 pass), RC-017/018 (57 pass/1 skip). Pivots recorded: RC-002 chain gated, RC-030/032 scoped, RC-030 via-terminal. tasks.html statuses refreshed for RC-014/017/018. Goal NOT complete: majority of 68 tasks remain To Do/In Progress/Blocked per tasks.html; next agent resumes from tasks.html + CHANGELOG.md + PIVOT.md.
 ## RC-030 Git pivot — terminal path covers user need 2026-10-06T09:30:00Z (UTC)
 
 - PIVOT.md records RC-030 decision: no separate Git API (fd-guard bypass needs new design); shipped terminal PTY already runs git CLI in workspace leaf. Criteria unchanged, task stays To Do for explicit Git API proof.
