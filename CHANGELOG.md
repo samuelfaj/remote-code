@@ -1,4 +1,7 @@
 # Changelog
+## RC-012 file-routes proof re-run — passed 2026-10-06T05:30:00Z (UTC)
+
+- `run-files-proof.ts` passed `file_routes_session_bound_passed` on f0c2f71: real Linux ARM64 API, cleanup api+volume true. RC-012 stays In Progress (remaining routes open).
 ## RC-031 graceful live-actor shutdown — passed 2026-10-06T05:00:00Z (UTC)
 
 - `run-terminal-shutdown-proof.ts` passed `terminal_graceful_live_actor_shutdown_passed` on 5ea587e: real Linux API, cleanup api+volume true. Action suites 42 pass/0 fail. Closes one RC-031 open slice; flow control, direct keyboard, native surfaces remain.
