@@ -1,4 +1,7 @@
 # Changelog
+## RC-030 Git pivot — terminal path covers user need 2026-10-06T09:30:00Z (UTC)
+
+- PIVOT.md records RC-030 decision: no separate Git API (fd-guard bypass needs new design); shipped terminal PTY already runs git CLI in workspace leaf. Criteria unchanged, task stays To Do for explicit Git API proof.
 ## RC-030/RC-032 scoping pivot — recorded 2026-10-06T09:00:00Z (UTC)
 
 - PIVOT.md records RC-030/RC-032 deferred as new-API builds (no git/ssh routes in backend, no deps); criteria unchanged, no partial claim. Verification plan step 3 ran: push-check.log saved, 10 progressive checkpoints on remote, tree clean.

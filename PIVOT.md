@@ -1,5 +1,9 @@
 # Pivot policy
 
+## RC-030 Git via terminal — no separate API, recorded 2026-10-06 (UTC)
+
+- **Decision:** RC-030 stays To Do with original criteria unchanged. Investigation: backend file/folder guards are fd-based (O_NOFOLLOW, owner/inode checks); spawning git as child would bypass those guards and needs new design, not a slice. The shipped terminal PTY already gives the user a real shell in the workspace leaf where git CLI works — the user-visible need (operate git on Linux host) is reachable through the terminal path, not a separate Git API. No Git routes added, no partial claim. Supersedes the earlier 09:00 scoping note with this concrete rationale.
+
 ## RC-030/RC-032 scoping — deferred new-API builds, recorded 2026-10-06 (UTC)
 
 - **Decision:** RC-030 (Git: status/diff/stage/commit/branch/fetch/pull/push API) and RC-032 (SSH + transfer) stay To Do with original criteria unchanged. No Git/SSH routes exist in backend (features/ has actions/auth/files/health/storage/terminals/workspaces only; no git/ssh modules, no simple-git/execa dep). Building either is a new API surface requiring design + implementation + tests + Linux proof — a multi-slice build, not a single-round slice. No mock or partial claim substitutes. Next agent starts from this note.
