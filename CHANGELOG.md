@@ -1,4 +1,7 @@
 # Changelog
+## RC-030 404 path fixed — strict not_a_repository proven 2026-10-06T16:00:00Z (UTC)
+
+- Proof run13 asserts `404 + not_a_repository` body strictly and passes. Unit test accepts 404 (authoritative) or 503 (no volume-backed guard in env). TSC clean.
 ## RC-030 Linux 404 path — CI green, local-only env gap 2026-10-06T15:30:00Z (UTC)
 
 - GitHub sam-harness CI `success` on checkpoint branch (push 37548541342 + PR 37548546961): folder fd guards pass on ubuntu-latest. Standalone local `docker run` 404-vs-503 is a local env gap (no volume-backed guard), not shipped-code defect. Authoritative proof-runner path passes through run12.

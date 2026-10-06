@@ -95,7 +95,8 @@ try {
   const folder2 = await api(`/api/workspaces/${ws2.body.id}/folder`, "POST", { requestId: randomUUID() }, cookie);
   if (folder2.status !== 200) throw Error("folder2_failed");
   const notrepo = await api(`/api/workspaces/${ws2.body.id}/git/status`, "GET", undefined, cookie);
-  if (notrepo.status !== 404) throw Error(`notrepo_${notrepo.status}`);
+  if (notrepo.status !== 404 || notrepo.body.error !== "not_a_repository") throw Error(`notrepo_${notrepo.status}_${JSON.stringify(notrepo.body)}`);
+  record.notRepo = notrepo.body;
   const anon = await api(`/api/workspaces/${workspaceId}/git/status`);
   if (anon.status !== 401) throw Error(`anon_${anon.status}`);
   const commitId = randomUUID();
