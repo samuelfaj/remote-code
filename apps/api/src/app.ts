@@ -6,6 +6,7 @@ import { compatibilityFeature } from "./features/compatibility";
 import { storageFeature } from "./features/storage";
 import { fileRequestSchemaReady } from "./features/file-requests";
 import { workspaceFilesFeature } from "./features/workspace-files";
+import { gitStatusFeature } from "./features/workspace-git";
 import { workspaceLayoutFeature } from "./features/workspace-layout";
 import { terminalsFeature } from "./features/terminals";
 import { workspaceFolderSchemaReady, workspaceFoldersFeature } from "./features/workspace-folders";
@@ -100,6 +101,7 @@ export function createApi(
     .use(storage)
     .use(workspaceFolders.routes)
     .use(workspaceFilesFeature(configuredDatabasePath))
+    .use(gitStatusFeature(configuredDatabasePath))
     .use(workspaceLayoutFeature(configuredDatabasePath).routes)
     .use(terminals.routes)
     .onStop(() => terminals.stopAll());

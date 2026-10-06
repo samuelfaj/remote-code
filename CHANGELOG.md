@@ -1,4 +1,7 @@
 # Changelog
+## RC-030 git-status route — implemented, Linux proof blocked 2026-10-06T11:00:00Z (UTC)
+
+- New `GET /api/workspaces/:workspaceId/git/status` (workspace-git.ts + wired in app.ts): session-bound, Linux-only, fd-resolved folder path, `git rev-parse --abbrev-ref` + `status --porcelain`, 404 non-repo, 401 anon, 1000-entry cap. Typecheck clean. Unit test file added (3 cases, skip on macOS). Linux proof runner built but unverified: API image `87416c977a61` has no git binary; read-only container blocks apt install. Next: bake git into image or exercise via terminal PTY path. No partial claim; RC-030 stays To Do.
 ## Session handoff — 12 checkpoints pushed, goal open 2026-10-06T10:00:00Z (UTC)
 
 - This session: 12 docs checkpoints pushed (3f9106a..4360476), tree clean, remote in sync. Real Linux proofs re-run: RC-029 file-editor, RC-033 layout, RC-031 shutdown, RC-012 files, RC-028 workspace, RC-021 folder-prep. Unit proofs: RC-014 (22 pass), RC-017/018 (57 pass/1 skip). Pivots recorded: RC-002 chain gated, RC-030/032 scoped, RC-030 via-terminal. tasks.html statuses refreshed for RC-014/017/018. Goal NOT complete: majority of 68 tasks remain To Do/In Progress/Blocked per tasks.html; next agent resumes from tasks.html + CHANGELOG.md + PIVOT.md.
