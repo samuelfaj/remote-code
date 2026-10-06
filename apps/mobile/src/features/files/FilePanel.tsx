@@ -292,7 +292,7 @@ export function FilePanel({ origin, userId, workspace, blocked, onUnauthorized }
       if (persisted.value !== "saved") {
         persistFailed = true;
         if (persisted.value === "cleaned" || persisted.value === "not_written") { updatePending(null); setStorageReady(true); }
-        setMessage(`No ${kind.toUpperCase()} was sent. Pending identity could not be verified; repair storage before writing.`);
+        setMessage(`Could not persist and read back the pending ${kind.toUpperCase()} identity. No ${kind.toUpperCase()} request was sent; repair storage and reload.`);
         return;
       }
       if (kind === "move" && (editorRef.current?.host !== value!.host || editorRef.current.needsRead || editorRef.current.draft !== editorRef.current.host.content)) {
