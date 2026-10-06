@@ -1,4 +1,7 @@
 # Changelog
+## Handoff refresh — tasks.html statuses current 2026-10-06T07:30:00Z (UTC)
+
+- plan/tasks.html RC-014/017/018 status blurbs now cite 2026-10-06 unit proofs (22 pass, 57 pass/1 skip). Doc-links check clean. Another agent resumes from tasks.html + CHANGELOG.md + PIVOT.md alone.
 ## RC-017/RC-018 receipt idempotency — unit proof verified 2026-10-06T07:00:00Z (UTC)
 
 - File-request + shared-client suites: 57 pass/1 skip/0 fail. Same-ID repeat returns canonical receipt without second effect (covered by existing tests + RC-012 Linux proof). Full connection-cut journeys (before-accept/after-commit/before-response) remain open. Both tasks stay In Progress.
