@@ -1,4 +1,7 @@
 # Changelog
+## RC-029 file-editor proof re-run — passed 2026-10-06T04:00:00Z (UTC)
+
+- `run-file-editor-linux-browser-proof.ts --frozen-inputs` passed on 2ff77e3: Linux ARM64 image 87416c977a61, web LIST/OPEN/CREATE/SAVE/MOVE slices, source unchanged, cleanup clean (container/browser/vite closed). Baseline tsc clean + 49 pass/1 skip. RC-029 stays In Progress (native editor, Distill approval open).
 
 ## RC-029 proof re-run — passed on current source 2026-10-06T03:00:00Z (UTC)
 
