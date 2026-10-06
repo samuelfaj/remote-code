@@ -1,4 +1,7 @@
 # Changelog
+## RC-017/RC-018 receipt idempotency — unit proof verified 2026-10-06T07:00:00Z (UTC)
+
+- File-request + shared-client suites: 57 pass/1 skip/0 fail. Same-ID repeat returns canonical receipt without second effect (covered by existing tests + RC-012 Linux proof). Full connection-cut journeys (before-accept/after-commit/before-response) remain open. Both tasks stay In Progress.
 ## RC-014 action-event recovery — unit proof verified 2026-10-06T06:30:00Z (UTC)
 
 - Shipped `applyActionEvent` dedups by cursor (duplicate returns same state, gap requests one snapshot, snapshot replaces authoritatively); existing tests cover duplicate/gap/malformed. 22 pass/0 fail across recovery+events+API suites. Real-run acceptance (disconnect during run, UI convergence) remains open. RC-014 stays In Progress.
