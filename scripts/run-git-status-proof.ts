@@ -91,6 +91,15 @@ try {
   if (notrepo.status !== 404) throw Error(`notrepo_${notrepo.status}`);
   const anon = await api(`/api/workspaces/${workspaceId}/git/status`);
   if (anon.status !== 401) throw Error(`anon_${anon.status}`);
+  const commitId = randomUUID();
+  const commit = await api(`/api/workspaces/${workspaceId}/git/commit`, "POST", { requestId: commitId, message: "proof commit" }, cookie);
+  if (commit.status !== 200 || !/^[0-9a-f]{40}$/.test(commit.body.commit)) throw Error(`commit_${commit.status}_${JSON.stringify(commit.body)}`);
+  record.commit = commit.body;
+  const replay = await api(`/api/workspaces/${workspaceId}/git/commit`, "POST", { requestId: commitId, message: "proof commit" }, cookie);
+  if (replay.status !== 200 || replay.body.commit !== commit.body.commit) throw Error(`replay_${replay.status}_${JSON.stringify(replay.body)}`);
+  const afterCommit = await api(`/api/workspaces/${workspaceId}/git/status`, "GET", undefined, cookie);
+  if (afterCommit.status !== 200 || afterCommit.body.clean !== true) throw Error(`after_${afterCommit.status}_${JSON.stringify(afterCommit.body)}`);
+  record.scope = "RC-030 git status+commit slice: branch/clean/dirty/404/401/commit/same-ID-replay; not stage/branch/fetch/pull/push";
   const state = JSON.parse(command("docker", "exec", id, "bun", "-e", stateCode));
   record.state = state;
   record.result = "git_status_slice_passed";

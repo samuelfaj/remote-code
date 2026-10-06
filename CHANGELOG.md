@@ -1,4 +1,7 @@
 # Changelog
+## RC-030 git commit slice — passed on Linux 2026-10-06T12:30:00Z (UTC)
+
+- New `POST /api/workspaces/:workspaceId/git/commit` with stable requestId receipt (`git_commit_outcomes`, same-ID replay returns canonical SHA, 409 nothing-to-commit, message validated). Proof run8 `git_status_slice_passed` incl commit 0e803caf + replay match + clean-after-commit. tasks.html RC-030 status updated. TSC clean.
 ## RC-030 git-status slice — passed on Linux 2026-10-06T12:00:00Z (UTC)
 
 - `run-git-status-proof.ts` passed `git_status_slice_passed`: proof image `rc030-gitproof:local` (oven/bun 1.3.13 + git 2.47.3 baked in; base approved ARM64 image lacks git), clean branch main + empty lists, dirty changed tracked.txt + untracked new.txt, non-repo 404, anon 401, cleanup true. Fix in-slice: marker `.remotecode-workspace` excluded from porcelain. TSC clean.
