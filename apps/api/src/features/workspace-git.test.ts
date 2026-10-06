@@ -68,6 +68,34 @@ it.skipIf(process.platform !== "linux")("reports branch and clean state, then ch
   expect(dirtyBody.untracked).toContain("new.txt");
 });
 
+it.skipIf(process.platform !== "linux")("commits through the route and replays the same request id without a second commit", async () => {
+  const { app, workspaceId, folderPath } = setup();
+  await provision(app, workspaceId);
+  git(folderPath, ["init", "-b", "main"]);
+  writeFileSync(join(folderPath, "a.txt"), "one");
+  const requestId = crypto.randomUUID();
+  const post = (body: unknown, token = ownerToken) => app.handle(new Request(`http://localhost/api/workspaces/${workspaceId}/git/commit`, {
+    method: "POST",
+    headers: { cookie: `remotecode_session=${token}`, "content-type": "application/json" },
+    body: JSON.stringify(body),
+  }));
+  const first = await post({ requestId, message: "first" });
+  expect(first.status).toBe(200);
+  const firstBody = await first.json() as { commit: string; branch: string | null };
+  expect(firstBody.commit).toMatch(/^[0-9a-f]{40}$/);
+  const replay = await post({ requestId, message: "first" });
+  expect(replay.status).toBe(200);
+  expect(((await replay.json()) as typeof firstBody).commit).toBe(firstBody.commit);
+  const log = Bun.spawnSync(["git", "rev-list", "--count", "HEAD"], { cwd: folderPath, stdout: "pipe" });
+  expect(log.stdout.toString().trim()).toBe("1");
+  const empty = await post({ requestId: crypto.randomUUID(), message: "nothing new" });
+  expect(empty.status).toBe(409);
+  const bad = await post({ requestId: "not-a-uuid", message: "x" });
+  expect(bad.status).toBe(400);
+  const anon = await post({ requestId: crypto.randomUUID(), message: "x" }, "");
+  expect(anon.status).toBe(401);
+});
+
 it.skipIf(process.platform !== "linux")("returns 404 when the folder is not a repository and 401 without session", async () => {
   const { app, workspaceId } = setup();
   await provision(app, workspaceId);

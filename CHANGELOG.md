@@ -1,4 +1,7 @@
 # Changelog
+## RC-030 test sync — commit cases added, regression green 2026-10-06T13:00:00Z (UTC)
+
+- workspace-git.test.ts now covers commit + same-ID replay (single git rev-list count), 409 nothing-to-commit, 400 bad id, 401 anon. TSC clean, 76 pass/1 skip. Committed with tasks.html handoff current.
 ## RC-030 git commit slice — passed on Linux 2026-10-06T12:30:00Z (UTC)
 
 - New `POST /api/workspaces/:workspaceId/git/commit` with stable requestId receipt (`git_commit_outcomes`, same-ID replay returns canonical SHA, 409 nothing-to-commit, message validated). Proof run8 `git_status_slice_passed` incl commit 0e803caf + replay match + clean-after-commit. tasks.html RC-030 status updated. TSC clean.
