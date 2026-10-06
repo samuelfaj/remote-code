@@ -12,7 +12,8 @@ if (!output?.startsWith("/")) throw Error("Fresh absolute proof output required"
 mkdirSync(output, { recursive: false, mode: 0o700 });
 const run = `rc030-git-${randomUUID()}`;
 const volume = `${run}-data`;
-const image = "sha256:87416c977a612a204eb54ab9f3927023c2a3c971f4f345a01da08ea6262ae30e";
+const baseImage = "sha256:87416c977a612a204eb54ab9f3927023c2a3c971f4f345a01da08ea6262ae30e";
+const image = process.env.RC030_GIT_IMAGE ?? baseImage;
 const label = "remotecode.rc030.gitproof";
 const password = randomBytes(32).toString("base64url");
 const databasePath = "/var/lib/remotecode/git-proof.sqlite";
@@ -28,7 +29,9 @@ function command(...args: string[]) {
 const stateCode = `import{Database}from'bun:sqlite';const d=new Database(${JSON.stringify(databasePath)},{readonly:true,create:false});console.log(JSON.stringify({quickCheck:d.query('pragma quick_check').all()}));d.close();`;
 try {
   const metadata = JSON.parse(command("docker", "image", "inspect", image))[0];
-  if (metadata.Id !== image || metadata.Os !== "linux" || metadata.Architecture !== "arm64") throw Error("Approved Linux ARM64 image required");
+  if (metadata.Os !== "linux" || metadata.Architecture !== "arm64") throw Error("Linux ARM64 image required");
+  record.proofImage = image;
+  record.baseImage = baseImage;
   const cert = resolve(output, "proof-ca.pem"), key = resolve(output, "proof-key.pem");
   command("openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-subj", "/CN=localhost", "-addext", "subjectAltName=IP:127.0.0.1", "-keyout", key, "-out", cert);
   chmodSync(cert, 0o600); chmodSync(key, 0o600);
@@ -44,8 +47,7 @@ try {
     "-e", `REMOTECODE_TLS_CERT=/proof/proof-ca.pem`, "-e", `REMOTECODE_TLS_KEY=/proof/proof-key.pem`,
     "--entrypoint", "bun", image, "/proof/server.ts");
   command("docker", "start", id);
-  command("docker", "exec", id, "apt-get", "update");
-  command("docker", "exec", id, "apt-get", "install", "-y", "--no-install-recommends", "git");
+  record.gitVersion = command("docker", "exec", id, "git", "--version");
   const base = `https://127.0.0.1:${apiPort}`;
   const tls = { ca: readFileSync(cert) };
   const end = Date.now() + 30_000;

@@ -15,6 +15,7 @@ function parsePorcelain(output: string): { changed: string[]; untracked: string[
     const code = line.slice(0, 2);
     const path = line.slice(3).trim();
     if (!path || path.includes("\n") || path.includes("..")) continue;
+    if (path === ".remotecode-workspace" || path.startsWith(".remotecode-stage-")) continue;
     if (code === "??") untracked.push(path);
     else changed.push(path);
   }

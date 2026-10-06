@@ -1,4 +1,7 @@
 # Changelog
+## RC-030 git-status slice — passed on Linux 2026-10-06T12:00:00Z (UTC)
+
+- `run-git-status-proof.ts` passed `git_status_slice_passed`: proof image `rc030-gitproof:local` (oven/bun 1.3.13 + git 2.47.3 baked in; base approved ARM64 image lacks git), clean branch main + empty lists, dirty changed tracked.txt + untracked new.txt, non-repo 404, anon 401, cleanup true. Fix in-slice: marker `.remotecode-workspace` excluded from porcelain. TSC clean.
 ## RC-030 git-status route — implemented, Linux proof blocked 2026-10-06T11:00:00Z (UTC)
 
 - New `GET /api/workspaces/:workspaceId/git/status` (workspace-git.ts + wired in app.ts): session-bound, Linux-only, fd-resolved folder path, `git rev-parse --abbrev-ref` + `status --porcelain`, 404 non-repo, 401 anon, 1000-entry cap. Typecheck clean. Unit test file added (3 cases, skip on macOS). Linux proof runner built but unverified: API image `87416c977a61` has no git binary; read-only container blocks apt install. Next: bake git into image or exercise via terminal PTY path. No partial claim; RC-030 stays To Do.
