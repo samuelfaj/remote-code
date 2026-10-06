@@ -1,4 +1,7 @@
 # Changelog
+## RC-028 workspace proof re-run — passed 2026-10-06T08:00:00Z (UTC)
+
+- `run-workspace-linux-browser-proof.ts` passed on 8da2616: two workspaces created, one renamed, one archived, stable IDs, SQLite 2 workspaces/4 snapshots, quick_check ok, cleanup container+volume true.
 ## Handoff refresh — tasks.html statuses current 2026-10-06T07:30:00Z (UTC)
 
 - plan/tasks.html RC-014/017/018 status blurbs now cite 2026-10-06 unit proofs (22 pass, 57 pass/1 skip). Doc-links check clean. Another agent resumes from tasks.html + CHANGELOG.md + PIVOT.md alone.
