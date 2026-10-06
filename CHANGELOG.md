@@ -1,4 +1,7 @@
 # Changelog
+## RC-031 graceful live-actor shutdown — passed 2026-10-06T05:00:00Z (UTC)
+
+- `run-terminal-shutdown-proof.ts` passed `terminal_graceful_live_actor_shutdown_passed` on 5ea587e: real Linux API, cleanup api+volume true. Action suites 42 pass/0 fail. Closes one RC-031 open slice; flow control, direct keyboard, native surfaces remain.
 ## RC-033 layout proof re-run — passed 2026-10-06T04:30:00Z (UTC)
 
 - `run-layout-proof.ts` passed `workspace_layout_slice_passed` on 3f9106a: real Linux API, cleanup api+volume true. RC-033 stays In Progress (multi-device focus isolation open).
