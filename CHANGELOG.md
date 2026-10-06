@@ -1,4 +1,7 @@
 # Changelog
+## RC-030 Linux 404-diagnosis + run9 re-proof passed 2026-10-06T13:30:00Z (UTC)
+
+- Standalone `docker run` 404-vs-503 failures explained: no volume-backed folder guard there; authoritative proof-runner path (volume + provisioned folder) passes. Run9 on 488c0e9: `git_status_slice_passed` with commit ee0bb0ee + replay match + clean-after-commit. No code change; tree clean.
 ## RC-030 test sync — commit cases added, regression green 2026-10-06T13:00:00Z (UTC)
 
 - workspace-git.test.ts now covers commit + same-ID replay (single git rev-list count), 409 nothing-to-commit, 400 bad id, 401 anon. TSC clean, 76 pass/1 skip. Committed with tasks.html handoff current.
