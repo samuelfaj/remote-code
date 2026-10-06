@@ -8,6 +8,7 @@ import { fsyncSync } from "node:fs";
 type GitStatus = { branch: string | null; clean: boolean; changed: string[]; untracked: string[] };
 type GitCommit = { commit: string; branch: string | null };
 type GitBranches = { current: string | null; branches: string[] };
+type GitDiff = { path: string; diff: string; truncated: boolean };
 
 const canonicalUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const shaPattern = /^[0-9a-f]{40}$/;
@@ -193,5 +194,38 @@ export function gitStatusFeature(databasePath: string, syncDirectory: (fd: numbe
   }, {
     params: t.Object({ workspaceId: t.String({ format: "uuid", minLength: 36, maxLength: 36 }) }),
     body: t.Object({ name: t.String({ minLength: 1, maxLength: 250 }), create: t.Optional(t.Boolean()) }),
+  }).get("/api/workspaces/:workspaceId/git/diff", ({ params, query, request, set }) => {
+    const userId = liveUserId(request);
+    if (!userId) { set.status = 401; return { error: "unauthorized" as const }; }
+    const raw = query.path ?? "";
+    if (raw.length === 0 || raw.length > 4096 || raw.startsWith("/") || raw.includes("..") || raw.includes("\n") ||
+      raw === ".remotecode-workspace" || raw.startsWith(".remotecode-stage-") ||
+      /(^|\/)\.git(\/|$)/.test(raw)) { set.status = 400; return { error: "invalid_path" as const }; }
+    if (process.platform !== "linux") { set.status = 501; return { error: "workspace_git_require_linux" as const }; }
+    const result = withProvisionedWorkspaceFolder(databasePath, userId, params.workspaceId, (folderFd) => {
+      const folderPath = readlinkSync(`/proc/self/fd/${folderFd}`);
+      const run = (args: string[]) => {
+        const proc = Bun.spawnSync(["git", ...args], { cwd: folderPath, stdout: "pipe", stderr: "pipe", timeout: 10_000,
+          env: { ...process.env, GIT_CONFIG_NOSYSTEM: "1" } });
+        return { exitCode: proc.exitCode, stdout: proc.stdout.toString() };
+      };
+      if (run(["rev-parse", "--git-dir"]).exitCode !== 0) return { status: 404 as const, body: { error: "not_a_repository" as const } };
+      const diff = run(["diff", "--no-color", "--no-ext-diff", "--", raw]);
+      if (diff.exitCode !== 0) return { status: 503 as const, body: { error: "git_diff_unavailable" as const } };
+      const maxDiffBytes = 64 * 1024;
+      const bytes = Buffer.from(diff.stdout, "utf8");
+      const truncated = bytes.length > maxDiffBytes;
+      const body: GitDiff = { path: raw, diff: bytes.subarray(0, maxDiffBytes).toString("utf8"), truncated };
+      return { status: 200 as const, body };
+    });
+    if (result.kind !== "opened") {
+      set.status = result.kind === "not_found" ? 404 : process.platform === "linux" ? 503 : 501;
+      return { error: result.kind === "not_found" ? "not_found" : process.platform === "linux" ? "workspace_folder_unavailable" : "workspace_git_require_linux" };
+    }
+    set.status = result.value.status;
+    return result.value.body;
+  }, {
+    params: t.Object({ workspaceId: t.String({ format: "uuid", minLength: 36, maxLength: 36 }) }),
+    query: t.Object({ path: t.String({ minLength: 1, maxLength: 4096 }) }),
   });
 }

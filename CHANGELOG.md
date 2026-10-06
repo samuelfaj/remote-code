@@ -1,4 +1,7 @@
 # Changelog
+## RC-030 git diff slice — passed on Linux 2026-10-06T14:30:00Z (UTC)
+
+- New `GET git/diff?path=` (validated path, 64 KiB cap with truncated flag, .git/marker rejected). Proof run12 `git_status_slice_passed` with diff 183 bytes containing changed line. TSC clean.
 ## RC-030 git branch slice — passed on Linux 2026-10-06T14:00:00Z (UTC)
 
 - New `GET git/branches` (current + list, capped) and `POST git/branch` (switch/create, dirty-tree 409, name validated, 404 unknown). Proof run10 `git_status_slice_passed` incl branches [main], create feature, switch back, 400 on ../evil. TSC clean.

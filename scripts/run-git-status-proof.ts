@@ -84,6 +84,13 @@ try {
     throw Error(`dirty_${dirty.status}_${JSON.stringify(dirty.body)}`);
   }
   record.dirty = dirty.body;
+  const earlyDiff = await api(`/api/workspaces/${workspaceId}/git/diff?path=${encodeURIComponent("tracked.txt")}`, "GET", undefined, cookie);
+  if (earlyDiff.status !== 200 || typeof earlyDiff.body.diff !== "string" || !earlyDiff.body.diff.includes("two")) {
+    throw Error(`earlydiff_${earlyDiff.status}_${JSON.stringify(earlyDiff.body).slice(0, 200)}`);
+  }
+  record.diff = { path: earlyDiff.body.path, bytes: earlyDiff.body.diff.length, truncated: earlyDiff.body.truncated };
+  const badDiff = await api(`/api/workspaces/${workspaceId}/git/diff?path=${encodeURIComponent("../evil")}`, "GET", undefined, cookie);
+  if (badDiff.status !== 400) throw Error(`baddiff_${badDiff.status}`);
   const ws2 = await api("/api/workspaces", "POST", { requestId: randomUUID(), name: "empty" }, cookie);
   const folder2 = await api(`/api/workspaces/${ws2.body.id}/folder`, "POST", { requestId: randomUUID() }, cookie);
   if (folder2.status !== 200) throw Error("folder2_failed");
@@ -111,7 +118,7 @@ try {
   const badBranch = await api(`/api/workspaces/${workspaceId}/git/branch`, "POST", { name: "../evil" }, cookie);
   if (badBranch.status !== 400) throw Error(`badbranch_${badBranch.status}`);
   record.branchSwitch = { created: createBranch.body, back: switchBack.body };
-  record.scope = "RC-030 git status+commit+branch slice: branch/clean/dirty/404/401/commit/replay/branches/switch; not stage/diff/fetch/pull/push";
+  record.scope = "RC-030 git status+commit+branch+diff slice: branch/clean/dirty/404/401/commit/replay/branches/switch/diff; not fetch/pull/push";
   const state = JSON.parse(command("docker", "exec", id, "bun", "-e", stateCode));
   record.state = state;
   record.result = "git_status_slice_passed";
