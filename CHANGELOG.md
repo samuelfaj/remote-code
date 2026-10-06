@@ -1,4 +1,7 @@
 # Changelog
+## Tree health at 6b7aee9 — green 2026-10-06T17:00:00Z (UTC)
+
+- Full regression: TSC clean, 177 pass / 68 skip / 0 fail (245 files across api+client). Skips are platform-gated Linux-only tests covered by proof runners. Tree clean, remote in sync.
 ## Handoff sync + RC-032 pivot — 2026-10-06T16:30:00Z (UTC)
 
 - tasks.html RC-030 status now cites strict 404 run13 + CI green. PIVOT.md records RC-032 deferred (needs test SSH target + credential design; terminal PTY covers manual ssh). Doc-links clean.
