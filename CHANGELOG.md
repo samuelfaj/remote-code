@@ -1,4 +1,7 @@
 # Changelog
+## RC-021 folder-prep proof re-run — passed 2026-10-06T08:30:00Z (UTC)
+
+- `run-folder-preparation-linux-browser-proof.ts` passed `folder_ui_and_same_id_recovery_passed` on c84dfa5: source unchanged, cleanup browser+vite+container true.
 ## RC-028 workspace proof re-run — passed 2026-10-06T08:00:00Z (UTC)
 
 - `run-workspace-linux-browser-proof.ts` passed on 8da2616: two workspaces created, one renamed, one archived, stable IDs, SQLite 2 workspaces/4 snapshots, quick_check ok, cleanup container+volume true.
