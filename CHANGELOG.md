@@ -1,4 +1,7 @@
 # Changelog
+## RC-030 git branch slice — passed on Linux 2026-10-06T14:00:00Z (UTC)
+
+- New `GET git/branches` (current + list, capped) and `POST git/branch` (switch/create, dirty-tree 409, name validated, 404 unknown). Proof run10 `git_status_slice_passed` incl branches [main], create feature, switch back, 400 on ../evil. TSC clean.
 ## RC-030 Linux 404-diagnosis + run9 re-proof passed 2026-10-06T13:30:00Z (UTC)
 
 - Standalone `docker run` 404-vs-503 failures explained: no volume-backed folder guard there; authoritative proof-runner path (volume + provisioned folder) passes. Run9 on 488c0e9: `git_status_slice_passed` with commit ee0bb0ee + replay match + clean-after-commit. No code change; tree clean.

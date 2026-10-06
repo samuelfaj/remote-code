@@ -99,7 +99,19 @@ try {
   if (replay.status !== 200 || replay.body.commit !== commit.body.commit) throw Error(`replay_${replay.status}_${JSON.stringify(replay.body)}`);
   const afterCommit = await api(`/api/workspaces/${workspaceId}/git/status`, "GET", undefined, cookie);
   if (afterCommit.status !== 200 || afterCommit.body.clean !== true) throw Error(`after_${afterCommit.status}_${JSON.stringify(afterCommit.body)}`);
-  record.scope = "RC-030 git status+commit slice: branch/clean/dirty/404/401/commit/same-ID-replay; not stage/branch/fetch/pull/push";
+  const branches = await api(`/api/workspaces/${workspaceId}/git/branches`, "GET", undefined, cookie);
+  if (branches.status !== 200 || branches.body.current !== "main" || !branches.body.branches.includes("main")) {
+    throw Error(`branches_${branches.status}_${JSON.stringify(branches.body)}`);
+  }
+  record.branches = branches.body;
+  const createBranch = await api(`/api/workspaces/${workspaceId}/git/branch`, "POST", { name: "feature", create: true }, cookie);
+  if (createBranch.status !== 200 || createBranch.body.branch !== "feature") throw Error(`mkbranch_${createBranch.status}_${JSON.stringify(createBranch.body)}`);
+  const switchBack = await api(`/api/workspaces/${workspaceId}/git/branch`, "POST", { name: "main" }, cookie);
+  if (switchBack.status !== 200 || switchBack.body.branch !== "main") throw Error(`switchback_${switchBack.status}_${JSON.stringify(switchBack.body)}`);
+  const badBranch = await api(`/api/workspaces/${workspaceId}/git/branch`, "POST", { name: "../evil" }, cookie);
+  if (badBranch.status !== 400) throw Error(`badbranch_${badBranch.status}`);
+  record.branchSwitch = { created: createBranch.body, back: switchBack.body };
+  record.scope = "RC-030 git status+commit+branch slice: branch/clean/dirty/404/401/commit/replay/branches/switch; not stage/diff/fetch/pull/push";
   const state = JSON.parse(command("docker", "exec", id, "bun", "-e", stateCode));
   record.state = state;
   record.result = "git_status_slice_passed";

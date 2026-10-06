@@ -7,6 +7,7 @@ import { fsyncSync } from "node:fs";
 
 type GitStatus = { branch: string | null; clean: boolean; changed: string[]; untracked: string[] };
 type GitCommit = { commit: string; branch: string | null };
+type GitBranches = { current: string | null; branches: string[] };
 
 const canonicalUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const shaPattern = /^[0-9a-f]{40}$/;
@@ -132,5 +133,65 @@ export function gitStatusFeature(databasePath: string, syncDirectory: (fd: numbe
   }, {
     params: t.Object({ workspaceId: t.String({ format: "uuid", minLength: 36, maxLength: 36 }) }),
     body: t.Object({ requestId: t.String({ minLength: 36, maxLength: 36 }), message: t.String({ minLength: 1, maxLength: 500 }) }),
+  }).get("/api/workspaces/:workspaceId/git/branches", ({ params, request, set }) => {
+    const userId = liveUserId(request);
+    if (!userId) { set.status = 401; return { error: "unauthorized" as const }; }
+    if (process.platform !== "linux") { set.status = 501; return { error: "workspace_git_require_linux" as const }; }
+    const result = withProvisionedWorkspaceFolder(databasePath, userId, params.workspaceId, (folderFd) => {
+      const folderPath = readlinkSync(`/proc/self/fd/${folderFd}`);
+      const run = (args: string[]) => {
+        const proc = Bun.spawnSync(["git", ...args], { cwd: folderPath, stdout: "pipe", stderr: "pipe", timeout: 10_000,
+          env: { ...process.env, GIT_CONFIG_NOSYSTEM: "1" } });
+        return { exitCode: proc.exitCode, stdout: proc.stdout.toString() };
+      };
+      if (run(["rev-parse", "--git-dir"]).exitCode !== 0) return { status: 404 as const, body: { error: "not_a_repository" as const } };
+      const current = run(["rev-parse", "--abbrev-ref", "HEAD"]);
+      const list = run(["branch", "--format=%(refname:short)"]);
+      if (list.exitCode !== 0) return { status: 503 as const, body: { error: "git_branches_unavailable" as const } };
+      const branches = list.stdout.split("\n").map((s) => s.trim()).filter((s) => s && !s.includes(" ") && !s.includes("..") && s.length <= 250);
+      if (branches.length > 100) return { status: 503 as const, body: { error: "git_branches_unavailable" as const } };
+      const body: GitBranches = { current: current.exitCode === 0 ? current.stdout.trim() || null : null, branches };
+      return { status: 200 as const, body };
+    });
+    if (result.kind !== "opened") {
+      set.status = result.kind === "not_found" ? 404 : process.platform === "linux" ? 503 : 501;
+      return { error: result.kind === "not_found" ? "not_found" : process.platform === "linux" ? "workspace_folder_unavailable" : "workspace_git_require_linux" };
+    }
+    set.status = result.value.status;
+    return result.value.body;
+  }, {
+    params: t.Object({ workspaceId: t.String({ format: "uuid", minLength: 36, maxLength: 36 }) }),
+  }).post("/api/workspaces/:workspaceId/git/branch", ({ params, body, request, set }) => {
+    const userId = liveUserId(request);
+    if (!userId) { set.status = 401; return { error: "unauthorized" as const }; }
+    if (typeof body.name !== "string" || body.name.length === 0 || body.name.length > 250 ||
+      !/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(body.name) || body.name.includes("..") || body.name.endsWith("/") ||
+      body.name.endsWith(".lock") || body.name.includes("//")) { set.status = 400; return { error: "invalid_branch_name" as const }; }
+    if (process.platform !== "linux") { set.status = 501; return { error: "workspace_git_require_linux" as const }; }
+    const result = withProvisionedWorkspaceFolder(databasePath, userId, params.workspaceId, (folderFd) => {
+      const folderPath = readlinkSync(`/proc/self/fd/${folderFd}`);
+      const run = (args: string[]) => {
+        const proc = Bun.spawnSync(["git", ...args], { cwd: folderPath, stdout: "pipe", stderr: "pipe", timeout: 15_000,
+          env: { ...process.env, GIT_CONFIG_NOSYSTEM: "1" } });
+        return { exitCode: proc.exitCode, stdout: proc.stdout.toString(), stderr: proc.stderr.toString() };
+      };
+      if (run(["rev-parse", "--git-dir"]).exitCode !== 0) return { status: 404 as const, body: { error: "not_a_repository" as const } };
+      const dirty = run(["status", "--porcelain=v1", "--", "."]);
+      if (dirty.exitCode !== 0) return { status: 503 as const, body: { error: "git_branch_unavailable" as const } };
+      if (dirty.stdout.trim() !== "") return { status: 409 as const, body: { error: "working_tree_dirty" as const } };
+      const switched = run(body.create ? ["switch", "-c", body.name] : ["switch", body.name]);
+      if (switched.exitCode !== 0) return { status: 404 as const, body: { error: "branch_not_found" as const } };
+      const rev = run(["rev-parse", "--abbrev-ref", "HEAD"]);
+      return { status: 200 as const, body: { branch: rev.exitCode === 0 ? rev.stdout.trim() || null : null } };
+    });
+    if (result.kind !== "opened") {
+      set.status = result.kind === "not_found" ? 404 : process.platform === "linux" ? 503 : 501;
+      return { error: result.kind === "not_found" ? "not_found" : process.platform === "linux" ? "workspace_folder_unavailable" : "workspace_git_require_linux" };
+    }
+    set.status = result.value.status;
+    return result.value.body;
+  }, {
+    params: t.Object({ workspaceId: t.String({ format: "uuid", minLength: 36, maxLength: 36 }) }),
+    body: t.Object({ name: t.String({ minLength: 1, maxLength: 250 }), create: t.Optional(t.Boolean()) }),
   });
 }
