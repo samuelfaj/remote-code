@@ -1,4 +1,7 @@
 # Changelog
+## Autonomous pivot note — RC-002 chain gated, independent proofs advance 2026-10-06T06:00:00Z (UTC)
+
+- PIVOT.md records RC-002 Blocked with unknown effect, no retry; gated chain stays To Do unchanged. Verified this round: tsc clean, client/web 64 pass/1 skip, lifecycle tests 4 skip (Linux-only, covered by real proofs).
 ## RC-012 file-routes proof re-run — passed 2026-10-06T05:30:00Z (UTC)
 
 - `run-files-proof.ts` passed `file_routes_session_bound_passed` on f0c2f71: real Linux ARM64 API, cleanup api+volume true. RC-012 stays In Progress (remaining routes open).

@@ -1,5 +1,9 @@
 # Pivot policy
 
+## Autonomous execution pivot — RC-002 chain stays blocked, independent slices advance — 2026-10-06 (UTC)
+
+- **Decision:** RC-002 stays Blocked with unknown provider effect; no retry per policy. All RC-002-gated tasks (RC-007, RC-009, RC-015, RC-019, RC-022+ Distill chain) stay To Do with original criteria unchanged. Independent slices advance with real Linux proof: RC-029 file-editor, RC-033 layout, RC-031 graceful shutdown, RC-012 file-routes re-run passed. Typecheck clean, client/web 64 pass/1 skip. Goal stays open until every backlog task has outcome or recorded pivot.
+
 ## RC-033 acceptance pivot — blocked slice documented, no criteria weakened — 2026-10-04 (UTC)
 
 - **Decision:** Keep RC-033 In Progress with original Delivery/proof/Failure fields unchanged. No acceptance is claimed: (1) RC-033 Depends on RC-031, which is itself In Progress (flow-control journey proof open; only bounded slices verified); advancing RC-033 acceptance past its dependency violates the plan's own gating rule. (2) The mobile-tab-switch proof clause is vacuous against the current product — the mobile client renders no tabs and touches no layout route (static non-interference proof only); manufacturing a mobile tab UI to satisfy the clause would invent scope. (3) RC-002 remains Blocked with unknown provider effect; all Distill-gated work stays gated with no retry.
