@@ -1,4 +1,7 @@
 # Changelog
+## RC-014 action-event recovery — unit proof verified 2026-10-06T06:30:00Z (UTC)
+
+- Shipped `applyActionEvent` dedups by cursor (duplicate returns same state, gap requests one snapshot, snapshot replaces authoritatively); existing tests cover duplicate/gap/malformed. 22 pass/0 fail across recovery+events+API suites. Real-run acceptance (disconnect during run, UI convergence) remains open. RC-014 stays In Progress.
 ## Autonomous pivot note — RC-002 chain gated, independent proofs advance 2026-10-06T06:00:00Z (UTC)
 
 - PIVOT.md records RC-002 Blocked with unknown effect, no retry; gated chain stays To Do unchanged. Verified this round: tsc clean, client/web 64 pass/1 skip, lifecycle tests 4 skip (Linux-only, covered by real proofs).
