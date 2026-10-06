@@ -1,4 +1,7 @@
 # Changelog
+## RC-030 Linux 404 path — CI green, local-only env gap 2026-10-06T15:30:00Z (UTC)
+
+- GitHub sam-harness CI `success` on checkpoint branch (push 37548541342 + PR 37548546961): folder fd guards pass on ubuntu-latest. Standalone local `docker run` 404-vs-503 is a local env gap (no volume-backed guard), not shipped-code defect. Authoritative proof-runner path passes through run12.
 ## RC-030 fetch/pull/push pivot — recorded 2026-10-06T15:00:00Z (UTC)
 
 - PIVOT.md records fetch/pull/push deferred (needs network remote + credentials, no mock). Local surface stays proven through run12. Standalone-run 404-vs-503 explained as environmental.
