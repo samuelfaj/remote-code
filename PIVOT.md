@@ -1,5 +1,9 @@
 # Pivot policy
 
+## RC-030 fetch/pull/push — deferred, needs network remote 2026-10-06 (UTC)
+
+- **Decision:** RC-030 local surface (status/commit/branches/switch/diff) is implemented and Linux-proven through run12. Fetch/pull/push stay open with original criteria unchanged: they need a network remote with credentials, which no proof runner provides. No mock remote substitutes. Standalone `docker run` unit-test failures (404-vs-503) are environmental — no volume-backed folder guard there; the authoritative proof-runner path passes.
+
 ## RC-030 Git via terminal — no separate API, recorded 2026-10-06 (UTC)
 
 - **Decision:** RC-030 stays To Do with original criteria unchanged. Investigation: backend file/folder guards are fd-based (O_NOFOLLOW, owner/inode checks); spawning git as child would bypass those guards and needs new design, not a slice. The shipped terminal PTY already gives the user a real shell in the workspace leaf where git CLI works — the user-visible need (operate git on Linux host) is reachable through the terminal path, not a separate Git API. No Git routes added, no partial claim. Supersedes the earlier 09:00 scoping note with this concrete rationale.

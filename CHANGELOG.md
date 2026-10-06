@@ -1,4 +1,7 @@
 # Changelog
+## RC-030 fetch/pull/push pivot — recorded 2026-10-06T15:00:00Z (UTC)
+
+- PIVOT.md records fetch/pull/push deferred (needs network remote + credentials, no mock). Local surface stays proven through run12. Standalone-run 404-vs-503 explained as environmental.
 ## RC-030 git diff slice — passed on Linux 2026-10-06T14:30:00Z (UTC)
 
 - New `GET git/diff?path=` (validated path, 64 KiB cap with truncated flag, .git/marker rejected). Proof run12 `git_status_slice_passed` with diff 183 bytes containing changed line. TSC clean.
