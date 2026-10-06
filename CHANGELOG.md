@@ -1,4 +1,7 @@
 # Changelog
+## RC-030/RC-032 scoping pivot — recorded 2026-10-06T09:00:00Z (UTC)
+
+- PIVOT.md records RC-030/RC-032 deferred as new-API builds (no git/ssh routes in backend, no deps); criteria unchanged, no partial claim. Verification plan step 3 ran: push-check.log saved, 10 progressive checkpoints on remote, tree clean.
 ## RC-021 folder-prep proof re-run — passed 2026-10-06T08:30:00Z (UTC)
 
 - `run-folder-preparation-linux-browser-proof.ts` passed `folder_ui_and_same_id_recovery_passed` on c84dfa5: source unchanged, cleanup browser+vite+container true.

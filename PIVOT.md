@@ -1,5 +1,9 @@
 # Pivot policy
 
+## RC-030/RC-032 scoping — deferred new-API builds, recorded 2026-10-06 (UTC)
+
+- **Decision:** RC-030 (Git: status/diff/stage/commit/branch/fetch/pull/push API) and RC-032 (SSH + transfer) stay To Do with original criteria unchanged. No Git/SSH routes exist in backend (features/ has actions/auth/files/health/storage/terminals/workspaces only; no git/ssh modules, no simple-git/execa dep). Building either is a new API surface requiring design + implementation + tests + Linux proof — a multi-slice build, not a single-round slice. No mock or partial claim substitutes. Next agent starts from this note.
+
 ## Autonomous execution pivot — RC-002 chain stays blocked, independent slices advance — 2026-10-06 (UTC)
 
 - **Decision:** RC-002 stays Blocked with unknown provider effect; no retry per policy. All RC-002-gated tasks (RC-007, RC-009, RC-015, RC-019, RC-022+ Distill chain) stay To Do with original criteria unchanged. Independent slices advance with real Linux proof: RC-029 file-editor, RC-033 layout, RC-031 graceful shutdown, RC-012 file-routes re-run passed. Typecheck clean, client/web 64 pass/1 skip. Goal stays open until every backlog task has outcome or recorded pivot.
