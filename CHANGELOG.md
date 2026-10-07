@@ -1,4 +1,11 @@
 # Changelog
+## RC-017 accepted — the six-operation failure-state table is complete 2026-10-08T04:10:00Z (UTC)
+
+- RC-017 (define failure states and budget) is now **Complete**: every operation class has a real boundary and a three-point proof. Read, local write, login and command were proven by `scripts/rc017/run-command-failure-proof.ts`; routine by `scripts/rc045/run-schedule-proof.ts` (a durable per-occurrence key, and `unknown`/`requires_verification` after a restart, never re-run); billing by `scripts/rc061/run-billing-proof.ts` (an unsigned webhook refused before acceptance, an aborted response reconciled through `GET /api/billing/receipt/:eventId` instead of re-charging, and a duplicate or older event applying no second transition).
+- `plan/failure-state-contract.md` records the acceptance and keeps the honest remaining gaps: the client-visible consumer path for command/routine/billing and the end-to-end server deadlines are still unproven, and a legacy ID-less login can still leave an orphan session.
+- No product code changed in this checkpoint; RC-017 is the aggregate gate over the evidence the six implementing tasks produced.
+- `plan/tasks.html`: RC-017 Complete; summary now 43 complete / 1 in progress / 0 blocked / 24 to do.
+
 ## RC-024 accepted — take over and return the session via web 2026-10-08T03:30:00Z (UTC)
 
 - New `apps/api/src/features/screen.ts` (registered in `app.ts`): exclusive screen possession per workspace. `POST /api/workspaces/:id/screen/possession` issues a one-time token and advances an `epoch`; `heartbeat` keeps it, `release` returns control; `GET .../screen/frame` streams the real X11 screen (`import -window root`) and `POST .../screen/input` delivers mouse/keyboard (`xdotool`) to the live holder only. The Bot path is `POST .../screen/agent/observation` (mints a state token carrying the current epoch) and `POST .../screen/agent/input`, refused `409 possession_held_by_user` while a human holds the screen and `409 stale_observation` for any observation taken before a takeover.

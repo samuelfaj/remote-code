@@ -1,3 +1,10 @@
+# RC-017 define failure states and budget — acceptance — 2026-10-08 (UTC)
+
+- **Status:** Complete. All six operation classes (read, local write, login, command, routine, billing) have a real boundary and a three-point failure proof: before acceptance, durable effect with the response lost, and recovery/re-read after the response.
+- **Evidence:** `scripts/rc017/run-command-failure-proof.ts` (read, local write, command, login), `scripts/rc045/run-schedule-proof.ts` (routine: durable per-occurrence key, `unknown`/`requires_verification` after a restart, never re-run) and `scripts/rc061/run-billing-proof.ts` (billing: 401 before acceptance, receipt reconciliation instead of a second charge, duplicate and out-of-order events applying no transition). Recorded in `plan/failure-state-contract.md`.
+- **Failure-if check:** no boundary is accepted without a deadline or a receipt rule; every row states how an uncertain effect is resolved, and no missing route is recorded as passing.
+- **Honest remaining gaps (kept in the contract):** the client-visible consumer path for command/routine/billing and the end-to-end server deadlines remain unproven, and a legacy ID-less login can still leave an orphan session without a retained handle.
+
 # RC-024 take over and return the session via web — acceptance — 2026-10-08 (UTC)
 
 - **Status:** Complete. A workspace owner takes exclusive possession of the session's screen, reads it and drives it; the Bot is refused while the human holds it and cannot reuse an observation taken before the takeover.
