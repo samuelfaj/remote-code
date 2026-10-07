@@ -14,6 +14,7 @@ OUTDIR="${1:-$ROOT/scratch/rc023-session}"
 IMAGE="${RC023_IMAGE:-remotecode/computer:rc023}"
 NAME="rc023-proof"
 AUTH="${RC023_AUTH:-$HOME/.distill/auth.json}"
+PASSWORD="rc023-local-password-longenough"
 
 mkdir -p "$OUTDIR"
 TRANSCRIPT="$OUTDIR/rc023-session.txt"
@@ -84,5 +85,62 @@ printf '%s' "$AGENT_FILE" | grep -q "RC023" || { say "FAIL Distill did not obser
 say "Distill via linux-use saw: $(printf '%s' "$AGENT_FILE" | head -c 200)"
 
 say ""
-say "PASS rc023: linux-use captured the correct window, clicked and typed with token validation, rejected a stale target, Distill used the local tools, and the login page stayed open"
+say "-- the run is recorded as waiting for the user, with the session id --"
+run bash -lc "cd /workspace && API_PORT=3223 DATABASE_PATH=/workspace/rc023.sqlite \
+  REMOTECODE_AUTH_PASSWORD='$PASSWORD' REMOTECODE_DISTILL_BIN=/usr/local/bin/distill \
+  REMOTECODE_RUNS_CWD=/workspace REMOTECODE_WEB_ORIGIN=http://localhost:5173 \
+  bun apps/api/src/index.ts > /workspace/rc023-api.log 2>&1 &"
+for _ in $(seq 1 60); do
+  if run curl -fsS "http://127.0.0.1:3223/api/health/ready" >/dev/null 2>&1; then break; fi
+  sleep 1
+done
+say "api ready=$(run curl -fsS http://127.0.0.1:3223/api/health/ready)"
+run bash -lc "curl -fsS -c /workspace/rc023-cookies.txt -X POST http://127.0.0.1:3223/api/auth/login \
+  -H 'content-type: application/json' -d '{\"password\":\"$PASSWORD\"}' >/dev/null"
+WS=$(run bash -lc "curl -fsS -b /workspace/rc023-cookies.txt -X POST http://127.0.0.1:3223/api/workspaces \
+  -H 'content-type: application/json' -d '{\"name\":\"rc023\"}' | python3 -c 'import sys,json;print(json.load(sys.stdin)[\"id\"])'")
+say "workspace=$WS"
+RUN=$(run bash -lc "curl -fsS -b /workspace/rc023-cookies.txt -X POST http://127.0.0.1:3223/api/runs \
+  -H 'content-type: application/json' -d '{\"workspaceId\":\"$WS\",\"prompt\":\"List the X11 windows with the linux-use MCP tool list_windows and then stop.\"}' | python3 -c 'import sys,json;print(json.load(sys.stdin)[\"id\"])'")
+say "run=$RUN"
+
+SESSION_ID=""
+for _ in $(seq 1 90); do
+  BODY=$(run bash -lc "curl -fsS -b /workspace/rc023-cookies.txt http://127.0.0.1:3223/api/runs/$RUN")
+  SESSION_ID=$(printf '%s' "$BODY" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("sessionId") or "")')
+  [ -n "$SESSION_ID" ] && break
+  sleep 2
+done
+[ -n "$SESSION_ID" ] || { say "FAIL the run never recorded an ACP session id: $BODY"; exit 1; }
+say "run persisted session id ($(printf '%s' "$SESSION_ID" | cut -c1-8)…)"
+
+HANDOFF=$(run bash -lc "curl -fsS -b /workspace/rc023-cookies.txt -X POST http://127.0.0.1:3223/api/runs/$RUN/handoff \
+  -H 'content-type: application/json' -d '{\"reason\":\"The portal requested authentication; the login page is open in the session.\"}'")
+say "handoff=$HANDOFF"
+printf '%s' "$HANDOFF" | python3 -c '
+import sys, json
+view = json.load(sys.stdin)
+assert view["state"] == "needs_user", view
+assert view["sessionId"], view
+assert view["handoffReason"], view
+' || { say "FAIL handoff did not record needs_user with the session id"; exit 1; }
+
+say "-- the login page is still open while the run waits for the user --"
+OPEN_AFTER=$(run bash -lc 'DISPLAY=:99 wmctrl -l')
+say "$OPEN_AFTER"
+printf '%s' "$OPEN_AFTER" | grep -q "RC023" || { say "FAIL login page closed during handoff"; exit 1; }
+
+say "-- the recorded state survives the agent finishing its turn --"
+sleep 8
+STILL=$(run bash -lc "curl -fsS -b /workspace/rc023-cookies.txt http://127.0.0.1:3223/api/runs/$RUN")
+printf '%s' "$STILL" | python3 -c '
+import sys, json
+view = json.load(sys.stdin)
+assert view["state"] == "needs_user", view
+assert view["sessionId"], view
+' || { say "FAIL the handoff was overwritten: $STILL"; exit 1; }
+say "run still needs_user after the agent finished"
+
+say ""
+say "PASS rc023: linux-use captured the correct window, clicked and typed with token validation, rejected a stale target, Distill used the local tools, the login page stayed open, and the run recorded the ACP session id in needs_user"
 docker rm -f "$NAME" >/dev/null 2>&1 || true

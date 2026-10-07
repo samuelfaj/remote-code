@@ -1,4 +1,5 @@
 import { Database } from "bun:sqlite";
+import { createHash, randomBytes } from "node:crypto";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -187,5 +188,85 @@ describe("RC-009 run supervision", () => {
     const reconciled = (await (await request(restarted, restartedCookie, `/api/runs/${run.id}`)).json()) as RunSummary;
     expect(reconciled.state).toBe("interrupted");
     expect(reconciled.stopReason).toBe("host_restart");
+  });
+});
+describe("needs_user handoff", () => {
+  type HandoffView = RunSummary & { sessionId?: string | null; handoffReason?: string | null };
+
+  it("records the ACP session id and keeps a handoff run in needs_user when the agent finishes", async () => {
+    const path = tempDb("handoff");
+    const { app, cookie } = await api(path);
+    const workspace = await createWorkspace(app, cookie, "runs");
+    const created = await request(app, cookie, "/api/runs", "POST", { workspaceId: workspace.id, prompt: "quick task" });
+    const run = (await created.json()) as { id: string };
+
+    const running = (await waitForState(app, cookie, run.id, ["running"])) as HandoffView;
+    expect(running.sessionId).toBe("stub-session");
+
+    const handoff = await request(app, cookie, `/api/runs/${run.id}/handoff`, "POST", { reason: "user must sign in" });
+    expect(handoff.status).toBe(200);
+    const handed = (await handoff.json()) as HandoffView;
+    expect(handed.state).toBe("needs_user");
+    expect(handed.handoffReason).toBe("user must sign in");
+    expect(handed.sessionId).toBe("stub-session");
+
+    // The stub agent answers the prompt 60ms in; the handoff must not be
+    // overwritten by that completion.
+    await Bun.sleep(300);
+    const after = (await (await request(app, cookie, `/api/runs/${run.id}`)).json()) as HandoffView;
+    expect(after.state).toBe("needs_user");
+    expect(after.handoffReason).toBe("user must sign in");
+
+    const db = new Database(path, { create: true });
+    try {
+      const row = db.query("SELECT state, session_id, handoff_reason FROM runs WHERE id = ?").get(run.id);
+      expect(row).toEqual({ state: "needs_user", session_id: "stub-session", handoff_reason: "user must sign in" });
+    } finally {
+      db.close();
+    }
+  });
+
+  it("refuses a handoff on a finished run and changes nothing", async () => {
+    const path = tempDb("handoff-terminal");
+    const { app, cookie } = await api(path);
+    const workspace = await createWorkspace(app, cookie, "runs");
+    const created = await request(app, cookie, "/api/runs", "POST", { workspaceId: workspace.id, prompt: "quick task" });
+    const run = (await created.json()) as { id: string };
+    const finished = (await waitForState(app, cookie, run.id, ["completed", "failed"])) as HandoffView;
+
+    const handoff = await request(app, cookie, `/api/runs/${run.id}/handoff`, "POST", { reason: "too late" });
+    expect(handoff.status).toBe(409);
+    expect((await handoff.json()) as { error: string }).toEqual({ error: "run_finished" });
+
+    const after = (await (await request(app, cookie, `/api/runs/${run.id}`)).json()) as HandoffView;
+    expect(after.state).toBe(finished.state);
+    expect(after.handoffReason ?? null).toBeNull();
+  });
+
+  it("does not let another login or an unknown id hand off a run", async () => {
+    const path = tempDb("handoff-foreign");
+    const { app, cookie } = await api(path);
+    const workspace = await createWorkspace(app, cookie, "runs");
+    const created = await request(app, cookie, "/api/runs", "POST", { workspaceId: workspace.id, prompt: "SLOW task" });
+    const run = (await created.json()) as { id: string };
+    const before = (await (await request(app, cookie, `/api/runs/${run.id}`)).json()) as HandoffView;
+
+    const db = new Database(path, { create: true });
+    let otherCookie: string;
+    try {
+      const otherToken = randomBytes(32).toString("hex");
+      db.query("INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)")
+        .run(createHash("sha256").update(otherToken).digest("hex"), "other-user", Date.now() + 60_000);
+      otherCookie = `remotecode_session=${otherToken}`;
+    } finally {
+      db.close();
+    }
+
+    expect((await request(app, otherCookie, `/api/runs/${run.id}/handoff`, "POST", { reason: "foreign" })).status).toBe(404);
+    expect((await request(app, cookie, "/api/runs/00000000-0000-0000-0000-000000000000/handoff", "POST", { reason: "ghost" })).status).toBe(404);
+
+    const after = (await (await request(app, cookie, `/api/runs/${run.id}`)).json()) as HandoffView;
+    expect(after.state).toBe(before.state);
+    expect(after.handoffReason ?? null).toBeNull();
   });
 });

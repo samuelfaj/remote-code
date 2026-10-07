@@ -5,7 +5,7 @@ import { Elysia, t } from "elysia";
 import { sessionExpiresAt, sessionTokenHash, sessionUserId } from "./auth";
 import { startAcpPrompt, type AcpSessionHandle } from "./acp-distill";
 
-export type RunState = "starting" | "running" | "completed" | "interrupted" | "failed";
+export type RunState = "starting" | "running" | "completed" | "interrupted" | "failed" | "needs_user";
 
 export type RunView = {
   id: string;
@@ -18,6 +18,8 @@ export type RunView = {
   stopRequestedAt: string | null;
   stopReason: string | null;
   error: string | null;
+  sessionId: string | null;
+  handoffReason: string | null;
 };
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -37,6 +39,8 @@ type RunRow = {
   stop_requested_at: string | null;
   stop_reason: string | null;
   error: string | null;
+  session_id: string | null;
+  handoff_reason: string | null;
 };
 
 function view(row: RunRow): RunView {
@@ -51,6 +55,8 @@ function view(row: RunRow): RunView {
     stopRequestedAt: row.stop_requested_at,
     stopReason: row.stop_reason,
     error: row.error,
+    sessionId: row.session_id,
+    handoffReason: row.handoff_reason,
   };
 }
 
@@ -102,9 +108,16 @@ export function runsFeature(
         heartbeat_at TEXT,
         stop_requested_at TEXT,
         stop_reason TEXT,
-        error TEXT
+        error TEXT,
+        session_id TEXT,
+        handoff_reason TEXT
       )`);
       db.exec("CREATE INDEX IF NOT EXISTS runs_workspace ON runs(workspace_id, created_at)");
+      const columns = db.query<{ name: string }, []>("PRAGMA table_info(runs)").all();
+      const columnNames = columns.map((column) => column.name);
+      for (const name of ["session_id", "handoff_reason"]) {
+        if (!columnNames.includes(name)) db.exec(`ALTER TABLE runs ADD COLUMN ${name} TEXT`);
+      }
       return callback(db);
     } finally {
       db.close();
@@ -136,7 +149,7 @@ export function runsFeature(
     if (row) options.onUpdate(view(row));
   }
 
-  function transition(id: string, patch: Partial<Pick<RunRow, "state" | "heartbeat_at" | "stop_requested_at" | "stop_reason" | "error">>) {
+  function transition(id: string, patch: Partial<Pick<RunRow, "state" | "heartbeat_at" | "stop_requested_at" | "stop_reason" | "error" | "session_id" | "handoff_reason">>) {
     const at = new Date().toISOString();
     const fields = Object.keys(patch);
     if (!fields.length) return;
@@ -155,7 +168,7 @@ export function runsFeature(
         prompt,
         env: agentEnv,
         wrapSpawn,
-        onSessionId: () => { transition(id, { state: "running", heartbeat_at: new Date().toISOString() }); emit(id); },
+        onSessionId: (sessionId) => { transition(id, { state: "running", heartbeat_at: new Date().toISOString(), session_id: sessionId }); emit(id); },
         onProgress: () => { transition(id, { heartbeat_at: new Date().toISOString() }); emit(id); },
       });
     } catch (error) {
@@ -167,6 +180,8 @@ export function runsFeature(
     const requestedStop = () => readRow(id)?.stop_requested_at ?? null;
     handle.done.then(({ stopReason }) => {
       live.delete(id);
+      const current = readRow(id);
+      if (current?.state === "needs_user") return;
       const stopped = requestedStop() !== null;
       const state: RunState = stopReason === "cancelled" || stopped
         ? "interrupted"
@@ -222,11 +237,12 @@ export function runsFeature(
           id: body.requestId ?? id, user_id: owner.userId, workspace_id: body.workspaceId,
           prompt: body.prompt, state: "starting", created_at: createdAt, updated_at: createdAt,
           heartbeat_at: null, stop_requested_at: null, stop_reason: null, error: null,
+          session_id: null, handoff_reason: null,
         };
-        db.query(`INSERT INTO runs (id, user_id, workspace_id, prompt, state, created_at, updated_at, heartbeat_at, stop_requested_at, stop_reason, error)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+        db.query(`INSERT INTO runs (id, user_id, workspace_id, prompt, state, created_at, updated_at, heartbeat_at, stop_requested_at, stop_reason, error, session_id, handoff_reason)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
           row.id, row.user_id, row.workspace_id, row.prompt, row.state, row.created_at, row.updated_at,
-          row.heartbeat_at, row.stop_requested_at, row.stop_reason, row.error,
+          row.heartbeat_at, row.stop_requested_at, row.stop_reason, row.error, row.session_id, row.handoff_reason,
         );
         return { row };
       }).immediate());
@@ -288,7 +304,21 @@ export function runsFeature(
         emit(row.id);
       }
       return view(readRow(row.id)!);
-    }, { params: t.Object({ id: uuidSchema }) });
+    }, { params: t.Object({ id: uuidSchema }) })
+    .post("/api/runs/:id/handoff", ({ params, body, request, set }) => {
+      const owner = identity(request);
+      if (!owner || !uuid.test(params.id)) { set.status = owner ? 404 : 401; return { error: owner ? "not_found" : "unauthorized" }; }
+      try { assertSession(owner); } catch { set.status = 401; return { error: "unauthorized" as const }; }
+      const row = database((db) => db.query<RunRow, [string, string]>(
+        "SELECT * FROM runs WHERE id = ? AND user_id = ?",
+      ).get(params.id, owner.userId) ?? null);
+      if (!row) { set.status = 404; return { error: "not_found" as const }; }
+      if (TERMINAL_STATES.includes(row.state)) { set.status = 409; return { error: "run_finished" as const }; }
+      if (row.state === "needs_user") return view(row);
+      transition(row.id, { state: "needs_user", handoff_reason: body.reason });
+      emit(row.id);
+      return view(readRow(row.id)!);
+    }, { params: t.Object({ id: uuidSchema }), body: t.Object({ reason: t.String({ minLength: 1, maxLength: 500 }) }) });
 
   return { routes, stopAll: () => { for (const handle of live.values()) handle.kill(); live.clear(); } };
 }

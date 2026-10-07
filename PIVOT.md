@@ -1,5 +1,11 @@
 # Pivot policy
 
+## RC-023 accepted — "Needs you" handoff and persisted session id 2026-10-07 (UTC)
+
+- **Closed the open clause of the entry below.** The run supervisor now persists the real ACP session id and can record a run as `needs_user` (the "Needs you" state from `plan/index.html`) through `POST /api/runs/:id/handoff`. A handoff is not overwritten when the agent finishes and survives a host restart, so the Bot's paused session is honest after a restart.
+- **Who triggers the handoff today:** the run's owner (the supervisor or client acting for the user). Teaching the agent itself to request the handoff automatically is RC-024/RC-035 work; the route, the persisted state and the session id are in place for it.
+- **Proof:** the container proof now starts the real API, records a real Distill ACP session id on a run, hands it off, and asserts `needs_user` + session id + reason while the login page stays open and after the agent finishes. Two PASS runs on current source.
+
 ## RC-023 first Linux session — linux-use observation/input unblocked 2026-10-07 (UTC)
 
 - **Was meant to achieve:** the Bot observes and controls the first X11 session through linux-use (identify the window by PID, capture real state, click/type with target validation), Distill uses the same local tools, and the obsolete-target check refuses.

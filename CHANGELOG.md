@@ -1,4 +1,11 @@
 # Changelog
+## RC-023 accepted — first Linux session and the "Needs you" handoff 2026-10-07T06:40:00Z (UTC)
+
+- Closes the clause left open by the earlier RC-023 slice. `runs` now persists the ACP `session_id` when the agent creates its session, and a run can enter a new `needs_user` state through `POST /api/runs/:id/handoff` (owner-only, `{reason}`; 404 for an unknown/foreign run, 409 `run_finished` for a finished one, idempotent when already `needs_user`). A handoff is not overwritten when the agent later finishes its turn, and it survives a host restart. `RunView` exposes `sessionId` and `handoffReason`. Schema change is migrated in place (`PRAGMA table_info` + `ALTER TABLE`).
+- `scripts/rc023/run-first-session-proof.sh` now also starts the real API in the container, creates a workspace and a run, waits for the run to record a real Distill ACP session id, hands it off, and asserts `state=needs_user` with `sessionId` and `handoffReason` persisted while the login page stays open and after the agent finishes.
+- Verified: `scripts/rc023/run-first-session-proof.sh` PASS (two runs). Tests: `apps/api/src/runs.test.ts` 9 pass (3 new); full suite 186 pass / 68 skip / 0 fail; `tsc --noEmit` clean; `python3 scripts/check-doc-links.py` clean.
+- `plan/tasks.html`: RC-023 Complete; summary now 20 complete / 9 in progress / 0 blocked / 39 to do. Full evidence in `plan/checkpoint-evidence.md`.
+
 ## Fix — shared-image regression in the linux-use readiness smoke 2026-10-07T06:20:00Z (UTC)
 
 - Adding ImageMagick and x11-apps to `prototype/Dockerfile` (needed by the RC-023 GUI proof) made linux-use report `screenshot`, `left_click` and `type` as supported. `scripts/linux-use-smoke.py` still asserted they were unsupported, so `prototype/start.sh` aborted before writing the services-ready marker and the RC-007 and RC-019 proofs failed with "services never became ready".
