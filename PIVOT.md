@@ -1,5 +1,12 @@
 # Pivot policy
 
+## RC-032 managed credential API — delivered 2026-10-07 (UTC)
+
+- **Was open by:** the earlier decision to keep RC-032 "In progress" with the managed SSH-credential API (secret storage, revocation surface) unimplemented, because it needed design rather than a slice.
+- **Route taken:** a user-scoped credential store under the runtime volume (0700 directory, 0600 key files, per-user `known_hosts`), a store/list/revoke route family that only ever returns a public-key fingerprint, and a workspace-scoped transfer route that reuses the existing fd-guarded folder so the local path can never leave the workspace. `scp` runs on the Linux host with an argv array and `BatchMode=yes`.
+- **Result:** proven end to end against a real sshd in the container, including revocation failing the same transfer. The earlier host-initiated scp slice is superseded by this proof.
+
+
 ## RC-030 fetch/pull/push — unblocked with a local bare remote 2026-10-07 (UTC)
 
 - **Was blocked by:** the earlier decision that fetch/pull/push "need a network remote with credentials", which no proof runner provides.

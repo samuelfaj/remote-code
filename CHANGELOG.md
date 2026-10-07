@@ -1,4 +1,13 @@
 # Changelog
+## RC-032 accepted — managed SSH credential API 2026-10-07T11:35:00Z (UTC)
+
+- New `apps/api/src/features/ssh.ts` (registered in `app.ts`) closes the surface the earlier sessions left open: `POST /api/ssh/credentials` stores a private key at `<REMOTECODE_SSH_ROOT>/<userId>/<id>` with mode 0600 in a 0700 directory and returns only `{id, name, fingerprint}` (fingerprint = sha256 of the public key produced by `ssh-keygen -y`, so the key itself is validated and never echoed); `GET /api/ssh/credentials` lists metadata only; `DELETE /api/ssh/credentials/:id` removes the row and the key file; `POST /api/workspaces/:workspaceId/ssh/transfer` uploads or downloads with the stored key.
+- The transfer reuses the workspace fd guard, so local paths always resolve inside the workspace folder (`../escape` is refused), and it spawns `scp` with an argv array (never a shell), `BatchMode=yes`, a per-user `known_hosts`, and a 60s bound. Non-zero exits map to `ssh_auth_failed` (403), `ssh_unreachable` (502) or `ssh_transfer_failed` (502); the key path never appears in a response.
+- The schema is created once with a writable connection; the read paths use a read-only connection and fail closed with 503 `ssh_unavailable`, because SQLite refuses DDL on a read-only connection.
+- Proof `scripts/run-ssh-proof.ts` (rewritten to drive the shipped routes, `RC032_SSH_IMAGE=rc032-sshproof:local`) PASS twice on real Linux against a real sshd in the container: stored key mode 600, upload and download with identical sha256 (`0821a09a…`), bytes read back in the container, revoke removes the key file, the same transfer then returns 404 `credential_not_found` and writes no remote file, `../escape` → 400, a closed port → 502, anonymous transfer → 401, and no response body contains key material.
+- Checks: `bun test apps/api/src packages/client/src` 216 pass / 74 skip / 0 fail; `bun run typecheck` clean; documentation-links gate clean.
+- `plan/tasks.html`: RC-032 Complete; summary now 25 complete / 5 in progress / 0 blocked / 38 to do.
+
 ## RC-031 accepted — PTY terminal contract met on current source 2026-10-07T10:55:00Z (UTC)
 
 - Fixed a stale assertion in `scripts/run-terminal-linux-browser-proof.ts`: it expected the lowercase fragment "start outcome is unknown" while the shipped panel renders "Start outcome is unknown" inside one of several honest messages. The proof now asserts the shared fragment, so it checks the product's own wording instead of a reworded string.

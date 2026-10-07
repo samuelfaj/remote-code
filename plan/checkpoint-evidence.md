@@ -1,3 +1,11 @@
+# RC-032 managed SSH credentials — acceptance — 2026-10-07 (UTC)
+
+- **Status:** Complete. The Linux host holds a protected SSH credential and uses it to connect and transfer files, with clear errors, and revocation stops it.
+- **Command:** `RC032_SSH_IMAGE=rc032-sshproof:local RC032_SSH_PROOF_DIR=<fresh dir> bun scripts/run-ssh-proof.ts` (Docker Linux/arm64 with sshd/scp/ssh-keygen, the shipped API over TLS, a real sshd listening on port 2222 in the same container).
+- **Observed (two runs):** `POST /api/ssh/credentials` → 201 with a 64-hex fingerprint and no key material in the body; the stored file was mode `600`; `GET /api/ssh/credentials` listed one credential with no key material. Upload returned `{bytes: 55, sha256: 0821a09a3eb31a29724824bf086ed421d152c7cfe76542dbbfa2db1bb23f053c}` and the container read back the same bytes at the remote path; download returned the identical sha256 and the local file matched. `DELETE` → `{revoked: true}`, the key file was gone, and the same upload then returned 404 `credential_not_found` with no file written at the remote path. `localPath: "../escape.txt"` → 400 `invalid_local_path`; a closed port → 502 `ssh_unreachable`/`ssh_transfer_failed`; anonymous transfer → 401; a wrong password → 401.
+- **Failure-if check:** both transferred files hashed identically to the payload, and no response body contained the private key — the client only ever holds the fingerprint.
+- **Checks:** `bun test apps/api/src packages/client/src` 216 pass / 74 skip / 0 fail; `bun run typecheck` exit 0; documentation-links gate exit 0.
+
 # RC-031 PTY terminal — acceptance — 2026-10-07 (UTC)
 
 - **Status:** Complete against its contract. An interactive PTY runs in the container with resize, limited scrollback, flow control and readable termination, and the executable proof's journey passes on real Linux.
