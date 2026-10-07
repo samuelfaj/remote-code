@@ -1,7 +1,7 @@
 # Where to resume
 
-Latest confirmed state: the RC-026 checkpoint `8474bf2` on
-`checkpoint/rc002-linux-runtime-evidence`, with the handoff commits on top. Plan status: **52 complete / 0 in progress / 0 blocked / 16 to do**
+Latest confirmed state: the RC-044 checkpoint `95ab16b` on
+`checkpoint/rc002-linux-runtime-evidence`, with the handoff commits on top. Plan status: **53 complete / 0 in progress / 0 blocked / 15 to do**
 of the 68 tasks in `plan/tasks.html`.
 
 Read, in this order: `plan/tasks.html` (per-task status), `CHANGELOG.md`
@@ -10,23 +10,23 @@ observed result and the failure-if check for every accepted task), `PIVOT.md`
 (why a route changed) and `plan/capacity.md` / `plan/failure-state-contract.md`
 (measured limits and the per-operation failure table).
 
-Accepted since the previous resume page: RC-025 (the mobile client takes over and
-returns the screen on a real simulator) and RC-026 (one shared offline state
-machine, proven on a committed-but-lost release).
+Accepted since the previous resume page: RC-026 (one shared offline state machine,
+proven on a committed-but-lost release) and RC-044 (the sign-in happens on the Bot's
+screen and the credential stays out of argv and the log).
 
 ## Ready right now
 
 | Task | Why it is ready |
 | --- | --- |
-| **RC-044** | RC-025 landed and RC-043 landed, so the shared journey can be finished across both clients. |
+| **RC-046** | RC-044 just landed, so every dependency is met. |
 | **RC-048** | Every dependency landed, most recently RC-026 (and RC-045/RC-038/RC-034 before it). |
-RC-044 and RC-048 are the two ready tasks. Everything else is behind this chain: RC-046 needs
-RC-044, RC-047 needs RC-046, and RC-049 onward need RC-048 and then RC-050/RC-051.
+RC-046 and RC-048 are the two ready tasks. RC-047 needs RC-046, and RC-049 onward need RC-048 and
+then RC-050/RC-051.
 
 ## In progress and blocked
 
-Nothing. Every task is either Complete or still To do with an unmet dependency. The 16 tasks
-left are all behind RC-044 and RC-048, the only two whose dependencies are now met.
+Nothing. Every task is either Complete or still To do with an unmet dependency. The 15 tasks
+left are all behind RC-046 and RC-048, the two whose dependencies are now met.
 
 ## The pattern that produced every recent defect
 
