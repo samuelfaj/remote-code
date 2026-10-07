@@ -1,4 +1,7 @@
 # Changelog
+## Handoff sync — RC-030 cites authority change 2026-10-07T08:30:00Z (UTC)
+
+- tasks.html RC-030 status now cites 3fc78a6. Doc-links clean.
 ## RC-030 test trim — 404 authority moved to proof runner 2026-10-07T08:00:00Z (UTC)
 
 - workspace-git.test.ts drops the standalone 404 case (env artifact: no volume-backed guard); 404 `not_a_repository` authority is run-git-status-proof.ts (strict body assert, run15/run13 passed). TSC clean, 77-file suites green.
