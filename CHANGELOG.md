@@ -1,4 +1,7 @@
 # Changelog
+## RC-032 SSH re-proof — passed on 09f8324 2026-10-07T01:00:00Z (UTC)
+
+- `run-ssh-proof.ts` run2 `ssh_transfer_slice_passed` on 09f8324, cleanup true.
 ## RC-030 git re-proof — passed on aefe69f 2026-10-07T00:30:00Z (UTC)
 
 - `run-git-status-proof.ts` run14 `git_status_slice_passed` on aefe69f: status/commit/branch/diff incl strict 404, cleanup true.
