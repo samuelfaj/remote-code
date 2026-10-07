@@ -1,5 +1,11 @@
 # Pivot policy
 
+## RC-046 uses the repository's own agent stub, like RC-036 2026-10-08 (UTC)
+
+- **Blocker:** the Inbox is raised by real run transitions, and the real Distill binary cannot start without the Linux credential RC-002 gates.
+- **Pivot:** the shipped supervisor runs against the repository's own ACP stub, held open with a short delay so a run can be handed to the human. Everything else is real: the shipped supervisor, the shipped Inbox routes, a real database and a real container restart.
+- **Ceiling:** this proves the Inbox and the run-to-Inbox wiring, not a Distill-produced outcome.
+
 ## RC-044 proven against a local sign-in page rather than a named provider 2026-10-08 (UTC)
 
 - **Blocker:** the task names MFA, and there is no identity provider this host can reach or authenticate to.

@@ -1,4 +1,14 @@
 # Changelog
+## RC-046 accepted — create durable Inbox 2026-10-08T21:40:00Z (UTC)
+
+- RC-046 is **Complete**. New `apps/api/src/features/inbox.ts` (registered in `app.ts`): an item carries its **type** (`needs_you`, `result`, `approval`, `intervention`), the **Bot/thread/run** it belongs to, its **read state** and its **exact destination** (`{ screen, runId, workspaceId, botId }`). A unique `(user_id, dedupe_key)` with `INSERT OR IGNORE` means the same underlying event can never produce a second item. Routes: list, open one, mark read (idempotent), resolve.
+- The shipped run supervisor raises the items at its own transitions: a completed run becomes a `result`, a handoff becomes a `needs_you`, and a failed or interrupted run becomes an `intervention`. Nothing in the run state machine can fail because of the Inbox — every recording call is guarded.
+- **Resolve refuses to lie.** While the item's run is still `needs_user` the route answers **409 `action_required`** with the run id and leaves the item unresolved, so an item cannot be marked done while the action it stands for is still owed; a second resolve of an already-resolved item is still 200.
+- Proof `scripts/rc046/run-inbox-proof.ts` on real Linux: two runs on **two different Bots** produced a `result` item and a `needs_you` item whose destinations named their own Bot and run (the "points to the wrong Bot" failure-if); reading one did not resolve it; resolving the waiting one was refused **409 `action_required`** and left it unresolved; resolving the finished one succeeded and was idempotent; then a **real container restart** left both items listed with their Bot, run, destination and state unchanged, the run still `needs_user`, and the waiting item still refusing resolution. **Exit 0 on three runs**, ending `inbox_item_type_bot_run_read_state_and_destination_survived_a_host_restart_and_a_waiting_item_refused_resolution_passed`.
+- **Ceiling:** the agent binary is the repository's own ACP stub, because the real Distill needs the Linux credential RC-002 gates; the supervisor and the Inbox are the shipped code.
+- Checks: `bun test apps/api apps/gateway packages/client` 425 pass / 79 skip / 0 fail; `bun test apps/mobile` 10 pass / 0 fail; `bun run typecheck` clean; documentation-links gate clean.
+- `plan/tasks.html`: RC-046 Complete; summary now 54 complete / 0 in progress / 0 blocked / 14 to do. RC-047 is now dependency-ready.
+
 ## RC-044 accepted — strengthen login and return to Bot 2026-10-08T20:30:00Z (UTC)
 
 - RC-044 is **Complete**. The human signs in to the site on the Bot's own screen through the takeover channel: the Bot is refused for the whole sign-in, the typed credential never leaves that channel, and the browser profile that carries the session is durable across a host restart.

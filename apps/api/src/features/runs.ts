@@ -7,6 +7,7 @@ import { sessionExpiresAt, sessionTokenHash, sessionUserId } from "./auth";
 import { startAcpPrompt, type AcpSessionHandle } from "./acp-distill";
 import { withProvisionedWorkspaceFolder } from "./workspace-folders";
 import { hasGitDir, parsePorcelain, runGit } from "./workspace-git";
+import { recordInboxItem } from "./inbox";
 
 export type RunState = "starting" | "running" | "completed" | "interrupted" | "failed" | "needs_user";
 
@@ -340,11 +341,22 @@ export function runsFeature(
       });
       emit(id);
       if (current) captureRunChanges(id, current.workspace_id, current.user_id);
+      if (current) {
+        const dest = { screen: "run" as const, runId: id, workspaceId: current.workspace_id, botId: current.bot_id };
+        const kind = state === "failed" ? "intervention" : state === "completed" ? "result" : "intervention";
+        const title = state === "failed" ? "Run failed" : state === "completed" ? "Run finished" : "Run interrupted";
+        try { recordInboxItem(databasePath, { userId: current.user_id, kind, botId: current.bot_id, workspaceId: current.workspace_id, runId: id, title, destination: dest, dedupeKey: `run:${id}:${kind}` }); } catch { /* never fail the run state machine */ }
+      }
     }).catch((error) => {
       cancelPendingPermissions(id);
       live.delete(id);
       transition(id, { state: "failed", stop_reason: "client_error", error: String(error) });
       emit(id);
+      const current = readRow(id);
+      if (current) {
+        const dest = { screen: "run" as const, runId: id, workspaceId: current.workspace_id, botId: current.bot_id };
+        try { recordInboxItem(databasePath, { userId: current.user_id, kind: "intervention", botId: current.bot_id, workspaceId: current.workspace_id, runId: id, title: "Run failed", destination: dest, dedupeKey: `run:${id}:intervention` }); } catch { /* never fail the run state machine */ }
+      }
     });
   }
 
@@ -510,11 +522,18 @@ export function runsFeature(
             live.get(row.id)?.kill();
             transition(row.id, { state: "interrupted", stop_reason: "stop_deadline" });
             emit(row.id);
+            const dest = { screen: "run" as const, runId: row.id, workspaceId: current.workspace_id, botId: current.bot_id };
+            try { recordInboxItem(databasePath, { userId: current.user_id, kind: "intervention", botId: current.bot_id, workspaceId: current.workspace_id, runId: row.id, title: "Run interrupted", destination: dest, dedupeKey: `run:${row.id}:intervention` }); } catch { /* never fail the run state machine */ }
           }
         }, STOP_DEADLINE_MS);
       } else {
         transition(row.id, { state: "interrupted", stop_reason: "not_running" });
         emit(row.id);
+        const current = readRow(row.id);
+        if (current) {
+          const dest = { screen: "run" as const, runId: row.id, workspaceId: current.workspace_id, botId: current.bot_id };
+          try { recordInboxItem(databasePath, { userId: current.user_id, kind: "intervention", botId: current.bot_id, workspaceId: current.workspace_id, runId: row.id, title: "Run interrupted", destination: dest, dedupeKey: `run:${row.id}:intervention` }); } catch { /* never fail the run state machine */ }
+        }
       }
       return view(readRow(row.id)!);
     }, { params: t.Object({ id: uuidSchema }) })
@@ -531,7 +550,10 @@ export function runsFeature(
       cancelPendingPermissions(row.id);
       transition(row.id, { state: "needs_user", handoff_reason: body.reason });
       emit(row.id);
-      return view(readRow(row.id)!);
+      const handoffRow = readRow(row.id)!;
+      const handoffDest = { screen: "run" as const, runId: row.id, workspaceId: handoffRow.workspace_id, botId: handoffRow.bot_id };
+      try { recordInboxItem(databasePath, { userId: handoffRow.user_id, kind: "needs_you", botId: handoffRow.bot_id, workspaceId: handoffRow.workspace_id, runId: row.id, title: "Needs you", destination: handoffDest, dedupeKey: `run:${row.id}:needs_you` }); } catch { /* never fail the run state machine */ }
+      return view(handoffRow);
     }, { params: t.Object({ id: uuidSchema }), body: t.Object({ reason: t.String({ minLength: 1, maxLength: 500 }) }) })
     .get("/api/runs/:id/permissions", ({ params, request, set }) => {
       const owner = identity(request);

@@ -1,3 +1,12 @@
+# RC-046 create durable Inbox — acceptance — 2026-10-08 (UTC)
+
+- **Status:** Complete. Every item carries its type, Bot/thread/run, read state and exact destination, and the Inbox survives a host restart.
+- **Command:** `RC046_PROOF_DIR=<fresh absolute dir> bun scripts/rc046/run-inbox-proof.ts` -> **exit 0 on three runs**.
+- **Observed:** in a real Linux account container with a durable data root, two runs were started on two different Bots. The first finished (`completed`) and produced a `result` item; the second was handed to the human (`needs_user`) and produced a `needs_you` item. Both destinations named their **own** Bot and run. Reading the waiting item returned `read: true` with `resolvedAt` still null. Resolving it answered **409 `action_required`** and left it unresolved. Resolving the finished item answered 200 with `resolvedAt` set, and a second resolve was still 200. The container was then **restarted**: both items were still listed, the finished one still resolved, the waiting one still unresolved, its destination unchanged and naming the same Bot and run, the run still `needs_user`, and resolve still answered **409 `action_required`**. The run ended `inbox_item_type_bot_run_read_state_and_destination_survived_a_host_restart_and_a_waiting_item_refused_resolution_passed`.
+- **Failure-if check:** no item disappeared across the restart (both ids still listed); neither item pointed at the wrong Bot (each destination carried its own bot id, asserted before and after the restart); and no item was marked resolved while its action was still owed (the 409 path left `resolvedAt` null, and the database row was read back).
+- **Ceiling:** the agent binary is the repository's own ACP stub (the real Distill needs the credential RC-002 gates); the run supervisor, the Inbox and its routes are the shipped code.
+- **Checks:** `bun test apps/api apps/gateway packages/client` 425 pass / 79 skip / 0 fail; `bun test apps/mobile` 10 pass / 0 fail; `bun run typecheck` clean; documentation-links gate clean.
+
 # RC-044 strengthen login and return to Bot — acceptance — 2026-10-08 (UTC)
 
 - **Status:** Complete. Signing in happens on the Bot's own screen through the takeover channel, the Bot cannot act while the human types, and the credential never reaches a command line or the server log.
