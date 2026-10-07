@@ -1,4 +1,10 @@
 # Changelog
+## Fix — shared-image regression in the linux-use readiness smoke 2026-10-07T06:20:00Z (UTC)
+
+- Adding ImageMagick and x11-apps to `prototype/Dockerfile` (needed by the RC-023 GUI proof) made linux-use report `screenshot`, `left_click` and `type` as supported. `scripts/linux-use-smoke.py` still asserted they were unsupported, so `prototype/start.sh` aborted before writing the services-ready marker and the RC-007 and RC-019 proofs failed with "services never became ready".
+- The smoke now requires those three tools to be supported, captures a real screenshot of the guest window, and keeps proving fail-closed behaviour with `get_ui_tree` and `click_element`, which this backend does not implement.
+- Re-verified after the fix: RC-007 PASS (services ready ~6s, GUI window, linux-use 20 tools, Distill agent end_turn), RC-019 PASS, RC-015 PASS, RC-022 PASS.
+
 ## RC-023 slice — first Linux session via linux-use proven 2026-10-07T05:15:00Z (UTC)
 
 - New `scripts/rc023/run-first-session-proof.sh` and `scripts/rc023/linux-use-session.py`. Real container: Xvfb + openbox + Chromium over a local test login page. linux-use `doctor` reports the native tools, `list_windows` finds the target window, `screenshot` returns real pixels with a state token, `left_click` focuses the field, `type` writes a harmless marker (the window pixels change), the pre-typing token is refused afterwards, and the login page is left open. The main Distill project then uses the same local linux-use MCP: it listed the X11 windows and wrote them to `/workspace/rc023-agent-windows.json` with the `RC023 login` window, `stopReason: end_turn`. Two consecutive full runs PASS (`scratch/rc023-session/run.log`, `run2.log`).

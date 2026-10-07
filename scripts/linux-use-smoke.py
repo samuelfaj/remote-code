@@ -47,23 +47,29 @@ try:
         raise RuntimeError("linux-use did not find wmctrl")
 
     offered_tools = {tool["name"] for tool in tools}
-    for unsupported in ("screenshot", "left_click", "type"):
-        if unsupported not in offered_tools or unsupported not in doctor.get("unsupported", []):
-            raise RuntimeError(f"linux-use did not mark {unsupported} unsupported")
+    # The image ships ImageMagick and x11-apps, so the native GUI tools are live.
+    for available in ("screenshot", "left_click", "type"):
+        if available not in offered_tools or available not in doctor.get("supported_native_tools", []):
+            raise RuntimeError(f"linux-use did not report {available} as supported")
 
     target = {"target_pid": proof_window["pid"], "target_window_id": proof_window["window_id"]}
+    shot = request(5, "tools/call", {"name": "screenshot", "arguments": target})
+    image = next((item for item in shot.get("content", []) if item.get("type") == "image"), None)
+    if not image or not image.get("data"):
+        raise RuntimeError("linux-use did not return a real screenshot of the guest window")
+
+    # Tools the backend does not implement must still fail closed.
     unsupported_confirmed = []
     unsupported_arguments = {
-        "screenshot": target,
-        "left_click": {**target, "expected_state_token": "rc003-unsupported-check", "coordinate": [0, 0]},
-        "type": {**target, "expected_state_token": "rc003-unsupported-check", "text": "RC003 unsupported probe"},
+        "get_ui_tree": target,
+        "click_element": {**target, "expected_state_token": "rc003-unsupported-check", "role": "button", "label": "Continue"},
     }
-    for request_id, name in enumerate(("screenshot", "left_click", "type"), start=5):
+    for request_id, name in enumerate(("get_ui_tree", "click_element"), start=6):
         if name in doctor.get("supported_native_tools", []):
             raise RuntimeError(f"Refusing to invoke {name}: doctor reports it as supported")
         result = request(request_id, "tools/call", {"name": name, "arguments": unsupported_arguments[name]})
         detail = " ".join(item.get("text", "") for item in result.get("content", []))
-        if not result.get("isError") or not any(term in detail.lower() for term in ("unsupported", "unavailable", "no action was performed", "imagemagick")):
+        if not result.get("isError") or not any(term in detail.lower() for term in ("unsupported", "unavailable", "no action was performed")):
             raise RuntimeError(f"linux-use did not explicitly reject unsupported {name}")
         unsupported_confirmed.append(name)
 
@@ -72,6 +78,7 @@ try:
         "x11": {"platform": doctor["platform"], "session_type": doctor["session_type"], "wmctrl": doctor["wmctrl"]},
         "proof_window_found": True,
         "window_count": len(windows),
+        "screenshot_captured": True,
         "unsupported_confirmed": unsupported_confirmed,
     }, sort_keys=True))
 finally:
