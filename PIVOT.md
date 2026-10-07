@@ -1,5 +1,12 @@
 # Pivot policy
 
+## RC-047 pushes through an HTTP provider stand-in, not APNs or FCM 2026-10-08 (UTC)
+
+- **Blocker:** this host has no APNs certificate, no Firebase project and no registered device, so a real push cannot be delivered here.
+- **Pivot:** the shipped dispatcher performs a real HTTP `POST` to a provider endpoint; the proof points `REMOTECODE_PUSH_ENDPOINT` at a provider stand-in running in the same container, which logs every request and its outcome and answers **410** for a revoked token — the documented behaviour of both real providers.
+- **Ceiling:** this proves the Inbox-to-push wiring, the preference, the per-device deduplication, the deep link and the denied-device handling, not delivery through Apple's or Google's service. The stand-in implements the part of the contract the client depends on.
+- **Also:** the agent binary is the repository's own ACP stub, for the same reason as RC-036 and RC-046.
+
 ## RC-046 uses the repository's own agent stub, like RC-036 2026-10-08 (UTC)
 
 - **Blocker:** the Inbox is raised by real run transitions, and the real Distill binary cannot start without the Linux credential RC-002 gates.

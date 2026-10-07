@@ -1,3 +1,12 @@
+# RC-047 send push to iOS, Android and web — acceptance — 2026-10-08 (UTC)
+
+- **Status:** Complete. Push is driven by Inbox items, honours the user preference, deduplicates per item and device, and carries the item's own destination; a denied or failed push leaves the durable Inbox item untouched.
+- **Command:** `RC047_PROOF_DIR=<fresh absolute dir> bun scripts/rc047/run-push-proof.ts` -> **exit 0 on two runs**.
+- **Observed:** in a real Linux account container the shipped dispatcher talked over HTTP to a push provider stand-in that logs every request and its outcome. The first notify produced **exactly two** requests, one per registered device, and every payload's `deepLink` equalled the item's own `destination`. A second notify for the same item sent **nothing**. The provider was then told to answer **410** for one device's token: the next notify produced one request each, the live device received its alert, the denied device became `enabled: false` / `permission: denied`, and the event it stood for was still readable in the Inbox and still unresolved. With the preference switched off a third event produced **no request at all** and still arrived in the Inbox. After a **real container restart** the three items and the denied device survived; a notify with push off reached the provider **zero** times; the already-delivered item was **not** resent; and a newly raised item still reached the live device **exactly once**. The run ended `two_devices_got_at_most_one_alert_each_and_a_denied_push_kept_the_inbox_item_passed`.
+- **Failure-if check:** no duplicate push (the provider counted one request and one delivered alert per item and device, and a repeat sent nothing before and after the restart); no incorrect destination (every payload's deep link was compared against the item's own destination); and no lost event when permission was denied (the denied device's item was read back from the Inbox, unresolved).
+- **Ceiling:** the provider is an HTTP stand-in for APNs/FCM and the agent binary is the repository's own ACP stub (the real Distill needs the credential RC-002 gates). Recorded in `PIVOT.md`.
+- **Checks:** `bun test apps/api apps/gateway packages/client` 438 pass / 79 skip / 0 fail; `bun test apps/mobile` 10 pass / 0 fail; `bun run typecheck` clean; documentation-links gate clean.
+
 # RC-046 create durable Inbox — acceptance — 2026-10-08 (UTC)
 
 - **Status:** Complete. Every item carries its type, Bot/thread/run, read state and exact destination, and the Inbox survives a host restart.

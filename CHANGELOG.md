@@ -1,4 +1,15 @@
 # Changelog
+## RC-047 accepted — send push to iOS, Android and web 2026-10-08T23:30:00Z (UTC)
+
+- RC-047 is **Complete**. New `apps/api/src/features/push.ts` (registered in `app.ts`): device registration per user (`ios`/`android`/`web`), a per-user push preference, and a dispatcher that is driven by **Inbox items** and sends the item's own `destination` as the notification's deep link. Tokens are never returned by the device list.
+- **Deduplication is the primary key.** A delivery is keyed on `(inbox_item_id, device_id)`, so a repeat notify for the same item and device sends no HTTP request at all and creates no second row.
+- **A denied device is disabled, not retried forever.** A provider answering **401 or 410** marks that device `permission: denied`, `enabled: 0` with the reason recorded, while every other device still gets its alert. A network error or timeout records a `failed` delivery.
+- **A failed push never loses the event.** In every case the Inbox item is left exactly as it was — still listed, still unresolved — so an app that never received the alert still finds it. The Inbox write also guards the push call, so a push problem cannot break it.
+- Proof `scripts/rc047/run-push-proof.ts` on real Linux, **exit 0 on two runs**, against a real HTTP push provider inside the container that logs every request and its outcome. Two devices each received **exactly one** alert for the item; a repeat notify sent nothing; every payload's `deepLink` equalled the item's destination (the "incorrect destination" failure-if); the device the provider denied became `enabled: false` / `permission: denied` while the other stayed live; the denied event was still in the Inbox; and with the preference off no request was attempted. After a **real container restart** the three items and the denied device survived, a notify with push off reached the provider zero times, the already-delivered item was not resent, and a newly raised item still reached the live device exactly once. The run ended `two_devices_got_at_most_one_alert_each_and_a_denied_push_kept_the_inbox_item_passed`.
+- **Ceiling:** the provider is an HTTP stand-in for APNs/FCM, and the agent binary is the repository's own ACP stub because the real Distill needs the credential RC-002 gates. Recorded in `PIVOT.md`.
+- Checks: `bun test apps/api apps/gateway packages/client` 438 pass / 79 skip / 0 fail; `bun test apps/mobile` 10 pass / 0 fail; `bun run typecheck` clean; documentation-links gate clean.
+- `plan/tasks.html`: RC-047 Complete; summary now 55 complete / 0 in progress / 0 blocked / 13 to do.
+
 ## RC-046 accepted — create durable Inbox 2026-10-08T21:40:00Z (UTC)
 
 - RC-046 is **Complete**. New `apps/api/src/features/inbox.ts` (registered in `app.ts`): an item carries its **type** (`needs_you`, `result`, `approval`, `intervention`), the **Bot/thread/run** it belongs to, its **read state** and its **exact destination** (`{ screen, runId, workspaceId, botId }`). A unique `(user_id, dedupe_key)` with `INSERT OR IGNORE` means the same underlying event can never produce a second item. Routes: list, open one, mark read (idempotent), resolve.

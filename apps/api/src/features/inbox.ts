@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { Elysia, t } from "elysia";
 import { sessionExpiresAt, sessionTokenHash, sessionUserId } from "./auth";
+import { dispatchInboxItem } from "./push";
 
 const canonicalUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
@@ -42,6 +43,13 @@ export function recordInboxItem(
     const row = db.query<{ id: string }, [string, string]>(
       "SELECT id FROM inbox_items WHERE user_id = ? AND dedupe_key = ?",
     ).get(options.userId, options.dedupeKey);
+    void dispatchInboxItem(databasePath, {
+      userId: options.userId,
+      itemId: row!.id,
+      title: options.title,
+      body: options.title,
+      deepLink: options.destination,
+    }).catch(() => {});
     return row!.id;
   } finally {
     db.close();
