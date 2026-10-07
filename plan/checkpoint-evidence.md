@@ -1,3 +1,12 @@
+# RC-058 verifiable backup and restore — acceptance — 2026-10-07 (UTC)
+
+- **Status:** Complete. A backup of the database, workspace files and Bot profiles restores on another host with a report of what returned and what needs a new login, and an invalid copy is rejected.
+- **Command:** `RC058_PROOF_DIR=<fresh dir> bun scripts/rc058/run-backup-restore-proof.ts` (two Docker Linux/arm64 hosts, each with its own volume, the shipped API over TLS on both).
+- **Observed (two runs, `result: backup_restored_on_another_host_and_bad_copies_rejected_passed`):** host A held one workspace with a file, one Bot and one routine; its backup produced a 7,290-byte archive whose host sha256 matched the archive's own sha256 and whose manifest counted 1 workspace, 1 Bot, 0 runs, 1 schedule and 0 history rows. Restoring that archive on host B returned 200 with `requiresNewLogin: true`; the session issued before the restore was refused (401) and a new login worked; the restored state contained the same workspace, Bot and routine ids, each exactly once (no duplicates), and the file read back through the shipped file route had sha256 identical to the original. A truncated copy and a byte-corrupted copy were both refused with the live database sha256 unchanged before and after.
+- **Failure-if check:** the restore did not report success with missing data (ids and bytes compared), a partial copy was not accepted, and the routine came back exactly once.
+- **Defects found and fixed while proving:** a self-referential manifest made every restore report "corrupt"; the live-state swap renamed across the volume and `/tmp` filesystems so it failed inside the container; and the workspace folder guard refused a restored workspace because its device/inode and marker mode do not survive a copy. Each is fixed in the feature, not worked around in the proof.
+- **Checks:** `bun test apps/api/src apps/gateway/src packages/client/src` 310 pass / 74 skip / 0 fail; `bun run typecheck` exit 0; documentation-links gate exit 0.
+
 # RC-045 schedules — acceptance — 2026-10-07 (UTC)
 
 - **Status:** Complete. A workspace agent task and a Bot routine each support schedule, timezone, pause, history and a key per occurrence, with an explicit daylight-saving policy and no automatic repeat after an ambiguous execution.

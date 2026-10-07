@@ -15,6 +15,7 @@ import { runsFeature } from "./features/runs";
 import { schedulesFeature } from "./features/schedules";
 import { workspaceFolderSchemaReady, workspaceFoldersFeature } from "./features/workspace-folders";
 import { checkDatabase, healthFeature, initializeDatabase, type ReadinessCheck } from "./features/health";
+import { backupFeature } from "./features/backup";
 
 const databasePath = process.env.DATABASE_PATH ?? "/tmp/remotecode.sqlite";
 
@@ -122,6 +123,7 @@ export function createApi(
     .use(gitStatusFeature(configuredDatabasePath))
     .use(sshFeature(configuredDatabasePath))
     .use(botsFeature(configuredDatabasePath))
+    .use(backupFeature(configuredDatabasePath, { dataRoot: process.env.REMOTECODE_DATA_ROOT ?? "/var/lib/remotecode" }))
     .use(workspaceLayoutFeature(configuredDatabasePath).routes)
     .use(terminals.routes)
     .use(runs.routes)

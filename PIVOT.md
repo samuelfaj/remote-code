@@ -1,5 +1,10 @@
 # Pivot policy
 
+## RC-058 landed — RC-046 and RC-060 became dependency-ready 2026-10-07 (UTC)
+
+- Completing RC-058 unlocked **RC-060** (hosted provisioning) and, with RC-045, **RC-046** (durable Inbox). RC-060 leads to RC-061 (billing), which is the last surface RC-017's failure-state table needs.
+
+
 ## RC-045 landed — RC-046 and RC-058 became dependency-ready 2026-10-07 (UTC)
 
 - Completing RC-045 unlocked **RC-046** (durable Inbox) and **RC-058** (verifiable backup and restore), which in turn unblock RC-060/RC-061 (hosted offer and billing) and therefore RC-017's last missing row.
