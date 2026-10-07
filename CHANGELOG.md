@@ -1,4 +1,12 @@
 # Changelog
+## RC-033 accepted — shared layout and device-local focus proven with two real clients 2026-10-07T12:40:00Z (UTC)
+
+- New `scripts/rc033/run-layout-device-focus-proof.ts`. On real Linux (Docker container, the shipped API over TLS, the shipped web panel through vite) it drives two real browser contexts, desktop 1440 and mobile 390, against one workspace whose shared row was seeded through the real `PUT /api/workspaces/:id/layout` route with two tabs and two panes.
+- Observed (two runs): both clients load the shared row ("Layout restored: 2 tab(s). Shared tabs: 2"); the mobile client switches to the other tab, its own focus becomes `tab-thread`, the desktop keeps `tab-file`/`pane-1`, and the switch issues **zero** PUTs to the layout route, so one device cannot hijack another's navigation. The desktop context is then closed and reopened: the panel restores the same shared layout and the stored row is byte-identical to what was seeded (2 tabs, `pane-1`/`pane-2`, `activePaneId` preserved).
+- This closes the clause the earlier sessions left open (the mobile side had no proof). The API-level slice `scripts/run-layout-proof.ts` (two panes saved/reopened/switched per workspace, cross-workspace isolation) still stands and no layout code changed, so it was not re-run.
+- Checks: `bun test apps/api/src packages/client/src` 216 pass / 74 skip / 0 fail; `bun run typecheck` clean; documentation-links gate clean.
+- `plan/tasks.html`: RC-033 Complete; summary now 26 complete / 4 in progress / 0 blocked / 38 to do.
+
 ## Fix — SSH credential review findings 2026-10-07T12:05:00Z (UTC)
 
 Independent review of the RC-032 surface found nine issues; the security-relevant ones are fixed:

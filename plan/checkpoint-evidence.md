@@ -1,3 +1,12 @@
+# RC-033 shared layout and device focus — acceptance — 2026-10-07 (UTC)
+
+- **Status:** Complete. The backend saves the layout per workspace and a client opens tabs/panes without changing another device's focus.
+- **Command:** `RC033_LAYOUT_PROOF_DIR=<fresh dir> bun scripts/rc033/run-layout-device-focus-proof.ts` (Docker Linux/arm64 with the shipped API over TLS, the shipped web panel served by vite, and Playwright driving two real browser contexts).
+- **Observed (two runs, `result: shared_layout_persists_and_device_focus_is_local_passed`):** the shared row was seeded through the real PUT route with tabs `tab-file`/`tab-thread` and panes `pane-1`/`pane-2` (dense order 0/1). Desktop and mobile both showed "Layout restored: 2 tab(s). Shared tabs: 2; this device: tab-file; pane: pane-1". The mobile client clicked "Open tab-thread": its own state became "this device: tab-thread; pane: none", the desktop still read "this device: tab-file; pane: pane-1", and `layoutWritesDuringSwitch` was 0 — the switch never wrote the shared row. The desktop context was then closed and a fresh context reopened: it restored "Shared tabs: 2; this device: tab-file; pane: pane-1" and the stored row read back exactly as seeded (two tabs, two panes, `activePaneId: pane-1`).
+- **Failure-if check:** the layout did not disappear (it returned after the client was closed and reopened, and the stored row was unchanged), and no client hijacked another's navigation (the desktop's tab and pane were untouched by the mobile switch, which issued no write).
+- **Supporting slice (unchanged, not re-run):** `scripts/run-layout-proof.ts` covers the API-level save/open/switch of two panes per workspace with cross-workspace isolation.
+- **Checks:** `bun test apps/api/src packages/client/src` 216 pass / 74 skip / 0 fail; `bun run typecheck` exit 0; documentation-links gate exit 0.
+
 # RC-032 managed SSH credentials — acceptance — 2026-10-07 (UTC)
 
 - **Status:** Complete. The Linux host holds a protected SSH credential and uses it to connect and transfer files, with clear errors, and revocation stops it.

@@ -1,5 +1,12 @@
 # Pivot policy
 
+## RC-033 device focus — proven with two real clients 2026-10-07 (UTC)
+
+- **Was open by:** the earlier stance that the "switching tab on mobile does not change focus on desktop" clause was vacuous, because the product had no mobile tab surface to exercise.
+- **Route taken:** the shipped web panel already carries the tab/pane surface and keeps the active tab/pane device-local, so the clause is proven with two real browser contexts (desktop and mobile viewport) against the real API instead of a mobile app: the mobile client switches its own tab with zero writes to the shared row while the desktop keeps its selection, and closing/reopening the desktop client restores the whole shared layout.
+- **Result:** RC-033 is accepted; a native mobile tab surface remains a separate product task (RC-057 territory), not a blocker for this contract.
+
+
 ## RC-032 managed credential API — delivered 2026-10-07 (UTC)
 
 - **Was open by:** the earlier decision to keep RC-032 "In progress" with the managed SSH-credential API (secret storage, revocation surface) unimplemented, because it needed design rather than a slice.
