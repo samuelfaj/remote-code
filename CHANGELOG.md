@@ -1,4 +1,10 @@
 # Changelog
+## RC-022 accepted — workspace thread runs Distill 2026-10-07T00:40:00Z (UTC)
+
+- `actionsFeature` exposes `broadcast`; `runsFeature` takes `onUpdate` and pushes `run.updated` on `/api/events`; wired in `apps/api/src/app.ts`.
+- `apps/api/src/runs.test.ts` gains a live WebSocket progress test (5 pass); full suite 182 pass / 68 skip / 0 fail.
+- Real proof `scripts/rc022/run-thread-proof.sh`: API inside the Linux container, client A submits and leaves, client B reads the same run+file, Distill created `rc022-thread.txt` in-container, exactly 1 run row.
+- `plan/tasks.html`: RC-022 Complete; summary now 17 complete / 9 in progress / 0 blocked / 42 to do.
 ## RC-009 accepted — Distill run supervision 2026-10-07T00:20:00Z (UTC)
 
 - New `apps/api/src/features/acp-distill.ts` (full ACP stdio driver) and `apps/api/src/features/runs.ts` (durable run state, heartbeat, stop deadline, restart reconciliation) wired into `apps/api/src/app.ts`.

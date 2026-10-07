@@ -56,7 +56,7 @@ function view(row: RunRow): RunView {
 
 export function runsFeature(
   databasePath: string,
-  options: { command?: string; args?: string[]; cwd?: string } = {},
+  options: { command?: string; args?: string[]; cwd?: string; onUpdate?: (run: RunView) => void } = {},
 ) {
   const command = options.command ?? process.env.REMOTECODE_DISTILL_BIN ?? "distill";
   const args = options.args ?? ["agent", "stdio"];
@@ -107,6 +107,12 @@ export function runsFeature(
     return database((db) => db.query<RunRow, [string]>("SELECT * FROM runs WHERE id = ?").get(id) ?? null);
   }
 
+  function emit(id: string) {
+    if (!options.onUpdate) return;
+    const row = readRow(id);
+    if (row) options.onUpdate(view(row));
+  }
+
   function transition(id: string, patch: Partial<Pick<RunRow, "state" | "heartbeat_at" | "stop_requested_at" | "stop_reason" | "error">>) {
     const at = new Date().toISOString();
     const fields = Object.keys(patch);
@@ -124,11 +130,12 @@ export function runsFeature(
         args,
         cwd,
         prompt,
-        onSessionId: () => transition(id, { state: "running", heartbeat_at: new Date().toISOString() }),
-        onProgress: () => transition(id, { heartbeat_at: new Date().toISOString() }),
+        onSessionId: () => { transition(id, { state: "running", heartbeat_at: new Date().toISOString() }); emit(id); },
+        onProgress: () => { transition(id, { heartbeat_at: new Date().toISOString() }); emit(id); },
       });
     } catch (error) {
       transition(id, { state: "failed", stop_reason: "spawn_failed", error: String(error) });
+      emit(id);
       return;
     }
     live.set(id, handle);
@@ -140,9 +147,11 @@ export function runsFeature(
         ? "interrupted"
         : stopReason === "end_turn" ? "completed" : "failed";
       transition(id, { state, stop_reason: stopReason ?? (stopped ? "stop_requested" : "unknown") });
+      emit(id);
     }).catch((error) => {
       live.delete(id);
       transition(id, { state: "failed", stop_reason: "client_error", error: String(error) });
+      emit(id);
     });
   }
 
@@ -236,6 +245,7 @@ export function runsFeature(
       if (TERMINAL_STATES.includes(row.state)) return view(row);
       const at = new Date().toISOString();
       transition(row.id, { stop_requested_at: at });
+      emit(row.id);
       const handle = live.get(row.id);
       if (handle) {
         handle.cancel();
@@ -245,10 +255,12 @@ export function runsFeature(
           if (current && !TERMINAL_STATES.includes(current.state)) {
             live.get(row.id)?.kill();
             transition(row.id, { state: "interrupted", stop_reason: "stop_deadline" });
+            emit(row.id);
           }
         }, STOP_DEADLINE_MS);
       } else {
         transition(row.id, { state: "interrupted", stop_reason: "not_running" });
+        emit(row.id);
       }
       return view(readRow(row.id)!);
     }, { params: t.Object({ id: uuidSchema }) });

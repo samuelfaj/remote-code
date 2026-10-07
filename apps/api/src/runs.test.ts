@@ -12,6 +12,26 @@ function tempDb(label: string) {
   return join(mkdtempSync(join(tmpdir(), `rc009-${label}-`)), "remotecode.sqlite");
 }
 
+function openSocket(url: string, cookie: string) {
+  const BunWebSocketWithHeaders = WebSocket as unknown as new (
+    url: string,
+    options: { headers: Record<string, string> },
+  ) => WebSocket;
+  return new BunWebSocketWithHeaders(url, { headers: { cookie, origin: "http://localhost:5173" } });
+}
+
+function waitForEvent(socket: WebSocket, type: string) {
+  return new Promise<Record<string, unknown>>((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error(`Timed out waiting for ${type}`)), 5_000);
+    socket.addEventListener("message", (message) => {
+      const event = JSON.parse(String((message as MessageEvent).data)) as Record<string, unknown>;
+      if (event.type !== type) return;
+      clearTimeout(timeout);
+      resolve(event);
+    });
+  });
+}
+
 async function api(path: string, password = testPassword) {
   const app = createApi(path, undefined, { password }, undefined, {
     command: process.execPath,
@@ -114,6 +134,28 @@ describe("RC-009 run supervision", () => {
     }
 
     expect((await app.handle(new Request("https://localhost/api/runs/" + requestId))).status).toBe(401);
+  });
+
+  it("broadcasts run progress to a connected client", async () => {
+    const { app, cookie } = await api(tempDb("events"));
+    const server = app.listen(0);
+    const port = server.server?.port;
+    if (!port) throw new Error("no test port");
+    const socket = openSocket(`ws://127.0.0.1:${port}/api/events`, cookie);
+    try {
+      await new Promise<void>((resolve) => socket.addEventListener("open", () => resolve(), { once: true }));
+      const workspace = await createWorkspace(app, cookie, "runs");
+      const progress = waitForEvent(socket, "run.updated");
+      const created = await request(app, cookie, "/api/runs", "POST", { workspaceId: workspace.id, prompt: "SLOW push" });
+      expect(created.status).toBe(201);
+      const event = await progress;
+      const run = event.run as { state: string; workspaceId: string };
+      expect(run.workspaceId).toBe(workspace.id);
+      expect(["starting", "running"]).toContain(run.state);
+    } finally {
+      socket.close();
+      await server.stop(true);
+    }
   });
 
   it("reconciles a live run to interrupted when the host process restarts", async () => {

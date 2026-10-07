@@ -770,3 +770,10 @@ Keep safe, evidence-backed work moving when a task encounters a blocker. A pivot
 - **Change:** `apps/api/src/features/acp-distill.ts` and `apps/api/src/features/runs.ts`; `apps/api/src/app.ts` wiring; `apps/api/src/runs.test.ts`; `apps/api/src/features/runs-stub-agent.mjs` (deterministic test double, explicitly not a Distill substitute); `scripts/rc009/run-runs-proof.sh` (real Distill).
 - **Result:** a killed host process never leaves a run "in progress" (restart reconciles to `interrupted`/`host_restart`), the prompt is never replayed (frozen effect, single durable row), and stop ends a live run as `interrupted` within the bounded deadline.
 - **Next:** Phase 02 keystone RC-022 ("Run Distill on the first thread") now has RC-009; RC-014/RC-018/RC-020/RC-021 are the remaining prerequisites. RC-015 isolation and RC-019 outside-Docker detection extend the supervision work.
+
+## RC-022 thread journey built on the run supervisor — 2026-10-06
+
+- **Decision:** RC-022 ("Run Distill on the first thread") was implemented on top of the RC-009 supervisor rather than a new executor, so the shipped path is the same one the proof drives. Progress is pushed to clients through the existing events WebSocket.
+- **Change:** `actionsFeature.broadcast`, `runsFeature` `onUpdate`, `app.ts` wiring, a live WebSocket test in `runs.test.ts`, and `scripts/rc022/run-thread-proof.sh`.
+- **Result:** the API inside the Linux container accepted a thread run from one client, Distill created the file in the container, a second client read `completed`/`end_turn` and the file by receipt, and the run survived the submitting client going away (exactly one run row).
+- **Next:** RC-023 (Bot's first Linux session) needs RC-007 (done), RC-015 and RC-019; RC-014/RC-018 remain open for their own aggregate acceptance.

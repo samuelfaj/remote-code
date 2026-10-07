@@ -1,3 +1,12 @@
+# RC-022 workspace thread runs Distill — acceptance — 2026-10-06 (UTC)
+
+- **Status:** Complete. One workspace thread sends a task to the main Distill, Distill modifies a file, the run transmits progress, and the final state is recorded; no client needs to stay open.
+- **Implementation:** the RC-009 supervisor (`apps/api/src/features/runs.ts` + `apps/api/src/features/acp-distill.ts`) is the thread task. `actionsFeature` now exposes `broadcast`, and `runsFeature` takes `onUpdate`, so every run transition is pushed as `run.updated` on the existing `/api/events` WebSocket.
+- **Client independence:** the run is durable and owner-scoped; any client can read it by id/receipt after the submitting client disappears.
+- **Deterministic tests:** `apps/api/src/runs.test.ts` (5 pass) — start/observe/stop, completion, idempotent `requestId`, owner isolation, the live `run.updated` broadcast over a real listening WebSocket, and restart reconciliation. Full suite 182 pass / 68 skip / 0 fail.
+- **Real proof:** `scripts/rc022/run-thread-proof.sh` runs the API inside the Linux container (current backend source). Client A logged in, created a workspace and submitted the thread run, then never polled again. Client B (a separate session) observed `state=completed`, `stopReason=end_turn` for run `343d56a2-067a-4557-aa85-94fdbc275c0b`; `rc022-thread.txt` inside the container held exactly `rc022-done`; client A read the same run; the database held exactly 1 run. Transcript in the goal scratch `rc022-thread.txt`.
+- **Failure-if check:** the file was created inside the container (not on the host); no false progress appeared (terminal state matched the created file); the run did not depend on any client being open.
+
 # RC-009 Distill run supervision — acceptance — 2026-10-06 (UTC)
 
 - **Status:** Complete. The backend starts, observes, stops and reconciles Distill runs; a heartbeat distinguishes a live process from a stalled one, and a host restart never leaves a run "in progress".

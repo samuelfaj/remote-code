@@ -56,7 +56,10 @@ export function createApi(
   const actions = actionsFeature(configuredDatabasePath, authConfig.webOrigin ?? "http://localhost:5173");
   const storage = storageFeature(configuredDatabasePath);
   const terminals = terminalsFeature(configuredDatabasePath, terminalConfig);
-  const runs = runsFeature(configuredDatabasePath, runsConfig);
+  const runs = runsFeature(configuredDatabasePath, {
+    ...(runsConfig ?? {}),
+    onUpdate: (run) => actions.broadcast({ type: "run.updated", run }),
+  });
   if (configuredDatabasePath === databasePath) registerTerminalsShutdown(terminals.shutdown);
   const workspaceFolders = workspaceFoldersFeature(configuredDatabasePath, undefined, terminals.workspaceIdentity);
   let storageUnavailable = corruptAtStartup(configuredDatabasePath) || !workspaceFolders.isReady() ||

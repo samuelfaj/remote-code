@@ -153,6 +153,20 @@ export function actionsFeature(databasePath: string, allowedOrigin: string) {
     }
   }
 
+  function broadcast(payload: string) {
+    for (const client of clients.keys()) {
+      if (!isAuthenticated(databasePath, client.data.request)) {
+        revokeClient(client, "session expired or revoked");
+      } else {
+        try {
+          client.send(payload);
+        } catch {
+          revokeClient(client, "event delivery failed");
+        }
+      }
+    }
+  }
+
   const routes = new Elysia()
     .get("/api/actions", ({ request, set }) => {
       if (!isAuthenticated(databasePath, request)) {
@@ -229,18 +243,7 @@ export function actionsFeature(databasePath: string, allowedOrigin: string) {
         }
 
         set.status = 201;
-        const event = JSON.stringify({ type: "action.created", cursor, receipt });
-        for (const client of clients.keys()) {
-          if (!isAuthenticated(databasePath, client.data.request)) {
-            revokeClient(client, "session expired or revoked");
-          } else {
-            try {
-              client.send(event);
-            } catch {
-              revokeClient(client, "event delivery failed");
-            }
-          }
-        }
+        broadcast(JSON.stringify({ type: "action.created", cursor, receipt }));
         return receipt;
       },
       { body: t.Object({
@@ -305,6 +308,9 @@ export function actionsFeature(databasePath: string, allowedOrigin: string) {
 
   return {
     routes,
+    broadcast(payload: unknown) {
+      broadcast(JSON.stringify(payload));
+    },
     revokeSessions(userId: string, tokenHash?: string) {
       for (const [client, identity] of clients) {
         if (identity.userId === userId && (tokenHash === undefined || identity.tokenHash === tokenHash)) revokeClient(client, "session revoked");
