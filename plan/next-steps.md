@@ -1,7 +1,7 @@
 # Where to resume
 
-Pushed checkpoint: `2404f88` on `checkpoint/rc002-linux-runtime-evidence`
-(matches `origin`). Plan status: **51 complete / 1 in progress / 0 blocked / 16 to do**
+Latest confirmed state: the RC-026 checkpoint `2404f88` on
+`checkpoint/rc002-linux-runtime-evidence`, with the handoff commits on top. Plan status: **51 complete / 1 in progress / 0 blocked / 16 to do**
 of the 68 tasks in `plan/tasks.html`.
 
 Read, in this order: `plan/tasks.html` (per-task status), `CHANGELOG.md`
