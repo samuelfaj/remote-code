@@ -1,4 +1,7 @@
 # Changelog
+## Storage/auth requests — 35 pass 2026-10-07T06:00:00Z (UTC)
+
+- `storage-requests + auth-requests`: 35 pass / 0 fail on e3c7457.
 ## Mobile storage observation — 10 pass 2026-10-07T05:30:00Z (UTC)
 
 - `apps/mobile` native storage suite: 10 pass / 0 fail on 71289d9.
