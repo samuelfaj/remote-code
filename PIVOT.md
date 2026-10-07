@@ -777,3 +777,10 @@ Keep safe, evidence-backed work moving when a task encounters a blocker. A pivot
 - **Change:** `actionsFeature.broadcast`, `runsFeature` `onUpdate`, `app.ts` wiring, a live WebSocket test in `runs.test.ts`, and `scripts/rc022/run-thread-proof.sh`.
 - **Result:** the API inside the Linux container accepted a thread run from one client, Distill created the file in the container, a second client read `completed`/`end_turn` and the file by receipt, and the run survived the submitting client going away (exactly one run row).
 - **Next:** RC-023 (Bot's first Linux session) needs RC-007 (done), RC-015 and RC-019; RC-014/RC-018 remain open for their own aggregate acceptance.
+
+## RC-015 agent identity implemented via privilege drop and ACP terminals — 2026-10-06
+
+- **Decision:** isolation is enforced by the shipped supervisor, not by a test harness: the agent and every terminal command it requests run under a distinct system identity, and the agent never inherits the backend's secrets.
+- **Change:** `runs.ts` (scrubbed agent env + `runuser` spawn wrapper), `acp-distill.ts` (ACP `terminal/*`, shell-line tolerance), `prototype/Dockerfile` (unprivileged `rcagent`, `bash`), `scripts/rc015/run-isolation-proof.sh`.
+- **Result:** from the agent side the database, gateway token and backend environ are denied; an authorized API task still completed as uid 1001 and wrote the expected file; no routing token appeared in the agent output.
+- **Next:** RC-019 (detect Docker stuck outside the container) then RC-023 (Bot's first Linux session), both now closer: the image carries the X11 stack (RC-007) and the isolated agent identity (RC-015).

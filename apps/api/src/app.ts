@@ -48,8 +48,13 @@ export function createApi(
       ? { volumeName: process.env.REMOTECODE_TERMINAL_VOLUME, image: process.env.REMOTECODE_TERMINAL_IMAGE }
       : undefined,
   runsConfig: Parameters<typeof runsFeature>[1] =
-    process.env.REMOTECODE_DISTILL_BIN || process.env.REMOTECODE_RUNS_CWD
-      ? { command: process.env.REMOTECODE_DISTILL_BIN, cwd: process.env.REMOTECODE_RUNS_CWD }
+    process.env.REMOTECODE_DISTILL_BIN || process.env.REMOTECODE_RUNS_CWD || process.env.REMOTECODE_AGENT_USER
+      ? {
+          command: process.env.REMOTECODE_DISTILL_BIN,
+          cwd: process.env.REMOTECODE_RUNS_CWD,
+          agentUser: process.env.REMOTECODE_AGENT_USER,
+          agentHome: process.env.REMOTECODE_AGENT_HOME,
+        }
       : undefined,
 ) {
   initializeDatabase(configuredDatabasePath);

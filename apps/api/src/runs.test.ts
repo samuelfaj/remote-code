@@ -1,5 +1,5 @@
 import { Database } from "bun:sqlite";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "bun:test";
@@ -32,16 +32,16 @@ function waitForEvent(socket: WebSocket, type: string) {
   });
 }
 
-async function api(path: string, password = testPassword) {
-  const app = createApi(path, undefined, { password }, undefined, {
+async function api(path: string, cwd = mkdtempSync(join(tmpdir(), "rc009-cwd-"))) {
+  const app = createApi(path, undefined, { password: testPassword }, undefined, {
     command: process.execPath,
     args: [stubAgent],
-    cwd: tmpdir(),
+    cwd,
   });
   const response = await app.handle(new Request("https://localhost/api/auth/login", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ password }),
+    body: JSON.stringify({ password: testPassword }),
   }));
   if (response.status !== 200) throw new Error("login failed");
   const cookie = response.headers.get("set-cookie")?.split(";")[0];
@@ -134,6 +134,22 @@ describe("RC-009 run supervision", () => {
     }
 
     expect((await app.handle(new Request("https://localhost/api/runs/" + requestId))).status).toBe(401);
+  });
+
+  it("does not pass backend secrets to the agent process", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "rc015-cwd-"));
+    process.env.REMOTECODE_GATEWAY_TOKEN = "backend-only-secret";
+    try {
+      const { app, cookie } = await api(tempDb("isolation"), cwd);
+      const workspace = await createWorkspace(app, cookie, "runs");
+      const created = await request(app, cookie, "/api/runs", "POST", { workspaceId: workspace.id, prompt: "ENVCHECK now" });
+      const run = (await created.json()) as { id: string };
+      await waitForState(app, cookie, run.id, ["completed", "failed"]);
+      const seen = readFileSync(join(cwd, "envcheck.txt"), "utf8");
+      expect(seen).toBe("absent");
+    } finally {
+      delete process.env.REMOTECODE_GATEWAY_TOKEN;
+    }
   });
 
   it("broadcasts run progress to a connected client", async () => {

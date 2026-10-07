@@ -1,4 +1,10 @@
 # Changelog
+## RC-015 accepted — backend/agent identity isolation 2026-10-07T01:10:00Z (UTC)
+
+- `runs.ts`: agent environment drops `REMOTECODE_*` secrets; every spawn (agent + its terminal commands) is wrapped in the agent identity via `runuser -u` (`REMOTECODE_AGENT_USER`/`REMOTECODE_AGENT_HOME`).
+- `acp-distill.ts`: implements ACP `terminal/create|output|wait_for_exit|kill|release`; tolerates a whole shell line in `command`. `prototype/Dockerfile`: unprivileged `rcagent` (uid 1001) + `bash`.
+- Tests: `does not pass backend secrets to the agent process` (6 run tests); full suite 183 pass / 68 skip / 0 fail. Proof `scripts/rc015/run-isolation-proof.sh` PASS (denials + authorized task as uid 1001). RC-022/RC-009 proofs re-run PASS.
+- `plan/tasks.html`: RC-015 Complete; summary now 18 complete / 9 in progress / 0 blocked / 41 to do.
 ## RC-022 accepted — workspace thread runs Distill 2026-10-07T00:40:00Z (UTC)
 
 - `actionsFeature` exposes `broadcast`; `runsFeature` takes `onUpdate` and pushes `run.updated` on `/api/events`; wired in `apps/api/src/app.ts`.

@@ -1,3 +1,12 @@
+# RC-015 isolate backend and agent identities — acceptance — 2026-10-06 (UTC)
+
+- **Status:** Complete. Elysia (backend) and Distill/terminal run with distinct system identities in the container; the agent cannot read the gateway token, the backend environment or the database, yet an API-authorized task still succeeds.
+- **Implementation:** `apps/api/src/features/runs.ts` now builds the agent environment by dropping every `REMOTECODE_*` secret and wrapping each spawn in the agent identity (`runuser -u <agent>`, configured by `REMOTECODE_AGENT_USER`/`REMOTECODE_AGENT_HOME`). `apps/api/src/features/acp-distill.ts` implements the ACP `terminal/*` methods (and tolerates a whole shell line in `command`), so the agent's shell commands run under that same identity. `prototype/Dockerfile` adds the unprivileged `rcagent` user (uid 1001) and installs `bash`.
+- **Deterministic test:** `apps/api/src/runs.test.ts` "does not pass backend secrets to the agent process" sets `REMOTECODE_GATEWAY_TOKEN` on the backend, runs a task and asserts the agent process saw it as absent. Suite 183 pass / 68 skip / 0 fail.
+- **Real proof:** `scripts/rc015/run-isolation-proof.sh` — backend root with the token in its environment; agent uid 1001. From the agent side, reads of `/var/lib/remotecode/rc015.sqlite`, `/var/lib/remotecode/gateway-token` and `/proc/<backend>/environ` were each denied. The API-authorized Distill run completed and wrote `rc015-identity.txt` = `1001`, owned by uid 1001, with no gateway token in its output. Transcript in the goal scratch `rc015-isolation.txt`.
+- **Failure-if check:** the agent read no service secret or database and saw no routing token; the separation did not prevent the authorized task (it completed and produced the expected file).
+- **Boundary:** this covers the first Linux/graphical session host; site-session policy for the Bot is RC-023/RC-024.
+
 # RC-022 workspace thread runs Distill — acceptance — 2026-10-06 (UTC)
 
 - **Status:** Complete. One workspace thread sends a task to the main Distill, Distill modifies a file, the run transmits progress, and the final state is recorded; no client needs to stay open.

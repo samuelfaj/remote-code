@@ -13,7 +13,7 @@ ENV DISPLAY=:99 \
 VOLUME ["/var/lib/remotecode"]
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates chromium curl git nodejs openbox python3 wmctrl x11-utils xdotool xvfb \
+    && apt-get install -y --no-install-recommends bash ca-certificates chromium curl git nodejs openbox python3 wmctrl x11-utils xdotool xvfb \
     && rm -rf /var/lib/apt/lists/* \
     && arch="$(dpkg --print-architecture)" \
     && case "$arch" in \
@@ -24,6 +24,7 @@ RUN apt-get update \
     && curl -fsSL "https://github.com/samuelfaj/distill/releases/download/v$DISTILL_VERSION/distill-linux-$([ "$arch" = amd64 ] && echo x86_64 || echo aarch64)" -o /usr/local/bin/distill \
     && echo "$dsha  /usr/local/bin/distill" | sha256sum -c - \
     && chmod 0755 /usr/local/bin/distill \
+    && useradd --create-home --uid 1001 rcagent \
     && git init /opt/linux-use \
     && git -C /opt/linux-use remote add origin https://github.com/samuelfaj/linux-use.git \
     && git -C /opt/linux-use fetch --depth=1 origin "$LINUX_USE_COMMIT" \

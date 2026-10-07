@@ -56,11 +56,34 @@ function view(row: RunRow): RunView {
 
 export function runsFeature(
   databasePath: string,
-  options: { command?: string; args?: string[]; cwd?: string; onUpdate?: (run: RunView) => void } = {},
+  options: {
+    command?: string; args?: string[]; cwd?: string; env?: NodeJS.ProcessEnv;
+    agentUser?: string; agentHome?: string;
+    wrapSpawn?: (command: string, args: string[]) => { command: string; args: string[] };
+    onUpdate?: (run: RunView) => void;
+  } = {},
 ) {
   const command = options.command ?? process.env.REMOTECODE_DISTILL_BIN ?? "distill";
   const args = options.args ?? ["agent", "stdio"];
   const cwd = options.cwd ?? process.env.REMOTECODE_RUNS_CWD ?? process.cwd();
+  // The agent must not inherit the backend's environment: RC-015 requires that
+  // gateway/routing secrets never reach the Distill/terminal process. Keep the
+  // rest (PATH, DISPLAY, locale, ...) so the agent still works.
+  const agentUser = options.agentUser ?? process.env.REMOTECODE_AGENT_USER;
+  const agentHome = options.agentHome ?? process.env.REMOTECODE_AGENT_HOME ??
+    (agentUser ? `/home/${agentUser}` : process.env.HOME);
+  const agentEnv = options.env ?? Object.fromEntries(
+    Object.entries(process.env).filter(([key]) => !key.startsWith("REMOTECODE_")),
+  ) as NodeJS.ProcessEnv;
+  agentEnv.HOME = agentHome;
+  // Drop privileges for the agent and every terminal command it asks for, so
+  // the agent identity is separate from the backend identity (RC-015).
+  const wrapSpawn = options.wrapSpawn ?? (agentUser
+    ? (command: string, args: string[]) => ({
+        command: "runuser",
+        args: ["-u", agentUser, "--", command, ...args],
+      })
+    : undefined);
   const live = new Map<string, AcpSessionHandle>();
 
   function database<T>(callback: (db: Database) => T): T {
@@ -130,6 +153,8 @@ export function runsFeature(
         args,
         cwd,
         prompt,
+        env: agentEnv,
+        wrapSpawn,
         onSessionId: () => { transition(id, { state: "running", heartbeat_at: new Date().toISOString() }); emit(id); },
         onProgress: () => { transition(id, { heartbeat_at: new Date().toISOString() }); emit(id); },
       });

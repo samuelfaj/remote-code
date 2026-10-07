@@ -3,6 +3,7 @@
 // shipped Distill binary; it only makes supervisor state transitions
 // deterministic. Real Distill is exercised by scripts/rc009/run-runs-proof.sh.
 import process from "node:process";
+import { writeFileSync } from "node:fs";
 
 let buffer = "";
 let sessionId = "stub-session";
@@ -26,6 +27,9 @@ function handle(message) {
     promptId = message.id;
     const text = message.params?.prompt?.[0]?.text ?? "";
     send({ method: "session/update", params: { sessionId, update: { sessionUpdate: "agent_message_chunk" } } });
+    if (text.includes("ENVCHECK")) {
+      writeFileSync("envcheck.txt", String(process.env.REMOTECODE_GATEWAY_TOKEN ?? "absent"));
+    }
     if (text.includes("SLOW")) return; // wait for session/cancel
     setTimeout(() => send({ id: promptId, result: { stopReason: "end_turn" } }), 60);
     return;

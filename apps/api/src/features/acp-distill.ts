@@ -1,5 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
 export type AcpProgress = { kind: string; at: string; detail?: string };
 
@@ -19,6 +19,8 @@ type Options = {
   cwd: string;
   prompt: string;
   env?: NodeJS.ProcessEnv;
+  /** Wrap every spawn (agent and its terminal commands) in the agent identity. */
+  wrapSpawn?: (command: string, args: string[]) => { command: string; args: string[] };
   onProgress?: (progress: AcpProgress) => void;
   onSessionId?: (sessionId: string) => void;
 };
@@ -29,16 +31,26 @@ type Options = {
  * a prompt cannot stall waiting on the client, and it never replays the prompt.
  */
 export function startAcpPrompt(options: Options): AcpSessionHandle {
-  const child = spawn(options.command, options.args ?? ["agent", "stdio"], {
-    cwd: options.cwd,
-    env: { ...process.env, ...options.env },
-    stdio: ["pipe", "pipe", "pipe"],
-  }) as ChildProcessWithoutNullStreams;
+  const spawnAgent = (command: string, args: string[], cwd: string) => {
+    const wrapped = options.wrapSpawn ? options.wrapSpawn(command, args) : { command, args };
+    return spawn(wrapped.command, wrapped.args, {
+      cwd,
+      env: options.env ?? process.env,
+      stdio: ["pipe", "pipe", "pipe"],
+    }) as ChildProcessWithoutNullStreams;
+  };
+  const child = spawnAgent(options.command, options.args ?? ["agent", "stdio"], options.cwd);
 
   let sessionId: string | null = null;
   let settled = false;
   let buffered = "";
   const pending = new Map<string, (message: Record<string, unknown>) => void>();
+  const terminals = new Map<string, {
+    proc: ChildProcessWithoutNullStreams;
+    output: string;
+    exitCode: number | null;
+    waiters: Array<(code: number | null) => void>;
+  }>();
 
   const send = (message: Record<string, unknown>) => {
     if (child.stdin.writable) child.stdin.write(JSON.stringify({ jsonrpc: "2.0", ...message }) + "\n");
@@ -80,6 +92,51 @@ export function startAcpPrompt(options: Options): AcpSessionHandle {
         } catch (error) {
           send({ id: message.id, error: { code: -32603, message: String(error) } });
         }
+      } else if (method === "terminal/create") {
+        // ACP normally separates the program from its args, but some agents put
+        // a whole shell line in `command` with no `args`; run that through a shell.
+        let command = String(params.command);
+        let args = Array.isArray(params.args) ? (params.args as string[]) : [];
+        if (args.length === 0 && /\s/.test(command) && !existsSync(command)) {
+          args = ["-c", command];
+          command = "/bin/sh";
+        }
+        const terminalId = crypto.randomUUID();
+        const proc = spawnAgent(
+          command,
+          args,
+          typeof params.cwd === "string" ? params.cwd : options.cwd,
+        );
+        const entry = { proc, output: "", exitCode: null as number | null, waiters: [] as Array<(code: number | null) => void> };
+        proc.stdout.setEncoding("utf8");
+        proc.stdout.on("data", (chunk: string) => { entry.output += chunk; });
+        proc.stderr.setEncoding("utf8");
+        proc.stderr.on("data", (chunk: string) => { entry.output += chunk; });
+        proc.on("exit", (code) => {
+          entry.exitCode = code;
+          for (const waiter of entry.waiters.splice(0)) waiter(code);
+        });
+        terminals.set(terminalId, entry);
+        respond(message.id, { terminalId });
+      } else if (method === "terminal/output") {
+        const entry = terminals.get(String(params.terminalId));
+        respond(message.id, {
+          output: entry?.output ?? "",
+          truncated: false,
+          ...(entry && entry.exitCode !== null ? { exitStatus: { exitCode: entry.exitCode } } : {}),
+        });
+      } else if (method === "terminal/wait_for_exit") {
+        const entry = terminals.get(String(params.terminalId));
+        if (!entry) respond(message.id, { exitCode: 0 });
+        else if (entry.exitCode !== null) respond(message.id, { exitCode: entry.exitCode });
+        else entry.waiters.push((code) => respond(message.id, { exitCode: code }));
+      } else if (method === "terminal/kill") {
+        const entry = terminals.get(String(params.terminalId));
+        if (entry) { try { entry.proc.kill("SIGTERM"); } catch { /* already gone */ } }
+        respond(message.id, {});
+      } else if (method === "terminal/release") {
+        terminals.delete(String(params.terminalId));
+        respond(message.id, {});
       } else {
         // Unknown client methods must be answered so the agent never blocks.
         send({ id: message.id, error: { code: -32601, message: `unsupported client method: ${method}` } });
