@@ -1,4 +1,7 @@
 # Changelog
+## Mid-backlog assessment — Distill-gated 2026-10-06T22:00:00Z (UTC)
+
+- PIVOT.md records RC-037/038/039/045/046/048/049/050 deferred (Distill chain, gated behind RC-002). Criteria unchanged.
 ## RC-012 file-routes re-proof — passed on current source 2026-10-06T21:00:00Z (UTC)
 
 - `run-files-proof.ts` passed `file_routes_session_bound_passed` on d039fe2, cleanup api+volume true.

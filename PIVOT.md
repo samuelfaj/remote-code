@@ -1,5 +1,9 @@
 # Pivot policy
 
+## Mid-backlog assessment — Distill-gated, deferred 2026-10-06 (UTC)
+
+- **Decision:** RC-037/038/039/045/046/048/049/050 stay To Do unchanged. All depend on Distill threads/Bots/schedules (RC-022/023/034/038/040/044/045 chain) with no existing code surface — gated behind blocked RC-002. Every Distill-free local surface already proven this session. No partial claim.
+
 ## RC-011/RC-019 assessment — new infra, deferred 2026-10-06 (UTC)
 
 - **Decision:** RC-011 (gateway + two-account routing) and RC-019 (host supervisor + stuck detection) stay To Do unchanged. Both need new infrastructure (gateway, supervisor, hosted provisioning) with no existing code surface — multi-slice builds, not single-round work. No partial claim.
