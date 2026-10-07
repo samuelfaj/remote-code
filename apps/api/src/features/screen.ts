@@ -28,16 +28,26 @@ export function screenFeature(
   databasePath: string,
   options?: {
     possessionMs?: number;
-    capture?: (workspaceId: string) => Promise<Uint8Array>;
+    previewMs?: number;
+    capture?: (request: { workspaceId: string; botId: string }) => Promise<Uint8Array>;
     input?: (workspaceId: string, event: ScreenInput) => Promise<void>;
   },
 ) {
   const possessionMs = options?.possessionMs ?? Number(process.env.REMOTECODE_SCREEN_POSSESSION_MS ?? 30_000);
+  const previewMs = options?.previewMs ?? Number(process.env.REMOTECODE_SCREEN_PREVIEW_MS ?? 60_000);
 
-  const captureSeam = options?.capture ?? (async (_workspaceId: string) => {
+  const captureSeam = options?.capture ?? (async (request) => {
+    const { workspaceId, botId } = request;
+    let display: string;
+    try {
+      const botDisplays = JSON.parse(process.env.REMOTECODE_BOT_DISPLAYS ?? "{}") as Record<string, string>;
+      display = botDisplays[botId] ?? process.env.REMOTECODE_DISPLAY ?? ":99";
+    } catch {
+      display = process.env.REMOTECODE_DISPLAY ?? ":99";
+    }
     const proc = Bun.spawnSync(
       ["import", "-window", "root", "png:-"],
-      { env: { ...process.env, DISPLAY: process.env.REMOTECODE_DISPLAY ?? ":99" }, timeout: 15_000 },
+      { env: { ...process.env, DISPLAY: display }, timeout: 15_000 },
     );
     if (proc.exitCode !== 0) throw new ScreenError(503, "capture_failed");
     return new Uint8Array(proc.stdout);
@@ -92,6 +102,15 @@ export function screenFeature(
       epoch INTEGER NOT NULL,
       created_at TEXT NOT NULL
     )`);
+    db.exec(`CREATE TABLE IF NOT EXISTS screen_previews (
+      preview_id TEXT PRIMARY KEY,
+      workspace_id TEXT NOT NULL,
+      bot_id TEXT NOT NULL,
+      token_hash TEXT NOT NULL,
+      holder_user_id TEXT NOT NULL,
+      expires_at INTEGER NOT NULL,
+      created_at TEXT NOT NULL
+    )`);
   }
 
   try {
@@ -127,6 +146,18 @@ export function screenFeature(
       "SELECT expires_at, released_at FROM screen_possessions WHERE workspace_id = ?",
     ).get(workspaceId));
     return !!row && row.released_at === null && row.expires_at > Date.now();
+  }
+
+  function botBelongsToUser(botId: string, userId: string): boolean {
+    return Boolean(db((database) => database.query<{ id: string }, [string, string]>(
+      "SELECT id FROM bots WHERE id = ? AND user_id = ?",
+    ).get(botId, userId)));
+  }
+
+  function previewForBotExists(workspaceId: string, botId: string): boolean {
+    return Boolean(db((database) => database.query<{ preview_id: string }, [string, string]>(
+      "SELECT preview_id FROM screen_previews WHERE workspace_id = ? AND bot_id = ?",
+    ).get(workspaceId, botId)));
   }
 
   return new Elysia()
@@ -262,7 +293,7 @@ export function screenFeature(
           return { error: "possession_required" as const };
         }
 
-        const bytes = await captureSeam(params.workspaceId);
+        const bytes = await captureSeam({ workspaceId: params.workspaceId, botId: "" });
         return new Response(Buffer.from(bytes), { headers: { "content-type": "image/png" } });
       } catch (error) {
         if (error instanceof ScreenError && error.status === 503) {
@@ -480,5 +511,152 @@ export function screenFeature(
         text: t.Optional(t.String()),
         key: t.Optional(t.String()),
       }),
-    }) });
+    }) })
+    .post("/api/workspaces/:workspaceId/screen/preview", ({ params, request, set, body }) => {
+      const owner = resolveOwner(request);
+      if (owner.kind === "anonymous") { set.status = 401; return { error: "unauthorized" as const }; }
+      if (owner.kind === "unavailable") { set.status = 503; return { error: "storage_unavailable" as const }; }
+      if (!canonicalUuid.test(params.workspaceId)) { set.status = 404; return { error: "not_found" as const }; }
+      if (!workspaceExists(params.workspaceId, owner.userId)) { set.status = 404; return { error: "not_found" as const }; }
+
+      const botId = typeof body?.botId === "string" ? body.botId : "";
+      if (!botId) { set.status = 404; return { error: "not_found" as const }; }
+      if (!botBelongsToUser(botId, owner.userId)) { set.status = 404; return { error: "not_found" as const }; }
+
+      try {
+        const result = db((database) => {
+          initializeSchema(database);
+          const now = new Date().toISOString();
+          const expiresAt = Date.now() + previewMs;
+          const previewId = crypto.randomUUID();
+          const token = randomBytes(32).toString("hex");
+          const hash = tokenHash(token);
+
+          const existing = database.query<{ preview_id: string }, [string, string]>(
+            "SELECT preview_id FROM screen_previews WHERE workspace_id = ? AND bot_id = ?",
+          ).get(params.workspaceId, botId);
+
+          if (existing) {
+            database.query(
+              "UPDATE screen_previews SET token_hash = ?, holder_user_id = ?, expires_at = ?, created_at = ? WHERE workspace_id = ? AND bot_id = ?",
+            ).run(hash, owner.userId, expiresAt, now, params.workspaceId, botId);
+          } else {
+            database.query(
+              "INSERT INTO screen_previews (preview_id, workspace_id, bot_id, token_hash, holder_user_id, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            ).run(previewId, params.workspaceId, botId, hash, owner.userId, expiresAt, now);
+          }
+
+          set.cookie = {
+            rc_screen_preview: {
+              value: token,
+              httpOnly: true,
+              sameSite: "strict",
+              maxAge: Math.floor((expiresAt - Date.now()) / 1000),
+              path: "/",
+            },
+          };
+
+          return { previewId, botId, expiresAt };
+        });
+        return result;
+      } catch {
+        set.status = 503;
+        return { error: "storage_unavailable" as const };
+      }
+    }, { params: t.Object({ workspaceId: uuidSchema }), body: t.Object({ botId: t.String() }) })
+    .get("/api/workspaces/:workspaceId/screen/preview/frame", async ({ params, request, set, query }) => {
+      const owner = resolveOwner(request);
+      if (owner.kind === "anonymous") { set.status = 401; return { error: "unauthorized" as const }; }
+      if (owner.kind === "unavailable") { set.status = 503; return { error: "storage_unavailable" as const }; }
+      if (!canonicalUuid.test(params.workspaceId)) { set.status = 404; return { error: "not_found" as const }; }
+      if (!workspaceExists(params.workspaceId, owner.userId)) { set.status = 404; return { error: "not_found" as const }; }
+
+      const botId = typeof query.botId === "string" ? query.botId : "";
+      if (!botId) { set.status = 404; return { error: "not_found" as const }; }
+
+      const token = request.headers.get("cookie") ?? "";
+      const match = token.match(/(?:^|;\s*)rc_screen_preview=([^;]+)/);
+      const cookieToken = match ? match[1] : "";
+      if (!cookieToken) { set.status = 409; return { error: "preview_required" as const }; }
+
+      try {
+        const hash = tokenHash(cookieToken);
+        const row = db((database) => database.query<
+          { preview_id: string; token_hash: string; holder_user_id: string; expires_at: number },
+          [string, string]
+        >("SELECT * FROM screen_previews WHERE workspace_id = ? AND bot_id = ?").get(params.workspaceId, botId));
+
+        if (!row || row.token_hash !== hash || row.expires_at <= Date.now() || row.holder_user_id !== owner.userId) {
+          set.status = 409;
+          return { error: "preview_required" as const };
+        }
+
+        const bytes = await captureSeam({ workspaceId: params.workspaceId, botId });
+        return new Response(Buffer.from(bytes), { headers: { "content-type": "image/png" } });
+      } catch (error) {
+        if (error instanceof ScreenError && error.status === 503) {
+          set.status = 503;
+          return { error: "capture_failed" as const };
+        }
+        set.status = 503;
+        return { error: "storage_unavailable" as const };
+      }
+    }, { params: t.Object({ workspaceId: uuidSchema }), query: t.Object({ botId: t.String() }) })
+    .post("/api/workspaces/:workspaceId/screen/preview/refresh", ({ params, request, set, body }) => {
+      const owner = resolveOwner(request);
+      if (owner.kind === "anonymous") { set.status = 401; return { error: "unauthorized" as const }; }
+      if (owner.kind === "unavailable") { set.status = 503; return { error: "storage_unavailable" as const }; }
+      if (!canonicalUuid.test(params.workspaceId)) { set.status = 404; return { error: "not_found" as const }; }
+      if (!workspaceExists(params.workspaceId, owner.userId)) { set.status = 404; return { error: "not_found" as const }; }
+
+      const botId = typeof body?.botId === "string" ? body.botId : "";
+      if (!botId) { set.status = 404; return { error: "not_found" as const }; }
+
+      const token = request.headers.get("cookie") ?? "";
+      const match = token.match(/(?:^|;\s*)rc_screen_preview=([^;]+)/);
+      const cookieToken = match ? match[1] : "";
+      if (!cookieToken) { set.status = 409; return { error: "preview_required" as const }; }
+
+      try {
+        const result = db((database) => {
+          initializeSchema(database);
+          const hash = tokenHash(cookieToken);
+          const row = database.query<
+            { preview_id: string; token_hash: string; holder_user_id: string; expires_at: number },
+            [string, string]
+          >("SELECT * FROM screen_previews WHERE workspace_id = ? AND bot_id = ?").get(params.workspaceId, botId);
+
+          if (!row || row.token_hash !== hash || row.holder_user_id !== owner.userId || row.expires_at <= Date.now()) {
+            return null;
+          }
+
+          const newToken = randomBytes(32).toString("hex");
+          const newHash = tokenHash(newToken);
+          const expiresAt = Date.now() + previewMs;
+          const now = new Date().toISOString();
+
+          database.query(
+            "UPDATE screen_previews SET token_hash = ?, expires_at = ?, created_at = ? WHERE workspace_id = ? AND bot_id = ?",
+          ).run(newHash, expiresAt, now, params.workspaceId, botId);
+
+          set.cookie = {
+            rc_screen_preview: {
+              value: newToken,
+              httpOnly: true,
+              sameSite: "strict",
+              maxAge: Math.floor((expiresAt - Date.now()) / 1000),
+              path: "/",
+            },
+          };
+
+          return { previewId: row.preview_id, botId, expiresAt };
+        });
+
+        if (!result) { set.status = 409; return { error: "preview_required" as const }; }
+        return result;
+      } catch {
+        set.status = 503;
+        return { error: "storage_unavailable" as const };
+      }
+    }, { params: t.Object({ workspaceId: uuidSchema }), body: t.Object({ botId: t.String() }) });
 }

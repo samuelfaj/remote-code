@@ -1,4 +1,14 @@
 # Changelog
+## RC-042 accepted — strengthen computer preview 2026-10-08T08:30:00Z (UTC)
+
+- `apps/api/src/features/screen.ts` gains a per-Bot preview. The capture seam is now keyed by `{ workspaceId, botId }` and the default capture resolves each Bot's own display through `REMOTECODE_BOT_DISPLAYS` (JSON bot id -> display), falling back to `REMOTECODE_DISPLAY`. `POST /api/workspaces/:id/screen/preview` opens a preview for one Bot and returns `{ previewId, botId, expiresAt }`, delivering the token **only** as an httpOnly SameSite cookie named `rc_screen_preview`; `GET .../screen/preview/frame?botId=` reads that cookie alone and matches on workspace, Bot and token hash; `POST .../screen/preview/refresh` rotates the token and extends the window while keeping the preview identity, which is the reconnect path.
+- The preview cannot show the wrong screen: it is captured from the Bot's own display, and a preview opened for one workspace cannot read another workspace's screen even for the same Bot.
+- The token is never exposed: it is not in the response body, not in a URL and not in a header other than the httpOnly cookie.
+- Proof `scripts/rc042/run-preview-proof.ts` PASS twice on real Linux with **two** X11 displays (:99 and :98) showing different pages. For each Bot the previewed frame was **byte-identical** (sha256) to that display's own `import` capture, so a mixed-up screen would fail; Bot A's cookie got 409 `preview_required` for Bot B's frame; refresh rotated the token (old cookie 409, new cookie 200, same `previewId`); an expired preview stopped serving; and a preview cookie from one workspace was refused on another workspace while that workspace's own cookie served it.
+- Honest limits: the repository's auth model is a single password for a single user, so "test another account" is proven as a second workspace rather than a second account.
+- Checks: `bun test apps/api apps/gateway packages/client` 398 pass / 74 skip / 0 fail; `bun run typecheck` exit 0.
+- `plan/tasks.html`: RC-042 Complete; summary now 46 complete / 1 in progress / 0 blocked / 21 to do. RC-043 is now dependency-ready.
+
 ## RC-064 accepted — measure real cost and capacity 2026-10-08T07:30:00Z (UTC)
 
 - New `apps/api/src/features/capacity.ts` (registered in `app.ts`): `GET /api/hosted/capacity` reports the per-account CPU, memory and disk budget, the accounts that occupy capacity, the host's free disk and memory, and whether new accounts are accepted. `capacityAllows` is the single helper behind both that report and the new gate in `POST /api/hosted/accounts`, which answers **503 `capacity_exhausted` with a reason** (`account_limit`, `disk_pressure` or `memory_pressure`) after ownership resolution and **before** any volume or container is created — so an over-limit request leaves no partial resource, and the report and the refusal can never disagree.

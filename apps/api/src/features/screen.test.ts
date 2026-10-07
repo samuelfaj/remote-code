@@ -628,4 +628,302 @@ describe("Screen routes", () => {
     expect(input.status).toBe(409);
     expect(inputCalls).toBe(0);
   });
+
+  it("POST /api/workspaces/:workspaceId/screen/preview returns 401 for anonymous", async () => {
+    const { app, workspaceId } = setup();
+    const response = await request(app, `http://localhost/api/workspaces/${workspaceId}/screen/preview`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ botId: "00000000-0000-4000-8000-000000000000" }),
+    });
+    expect(response.status).toBe(401);
+  });
+
+  it("POST /api/workspaces/:workspaceId/screen/preview returns 404 for a workspace the caller does not own", async () => {
+    const { app, otherWorkspaceId } = setup();
+    const response = await request(app, `http://localhost/api/workspaces/${otherWorkspaceId}/screen/preview`, {
+      method: "POST",
+      headers: { cookie: `remotecode_session=${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ botId: "00000000-0000-4000-8000-000000000000" }),
+    });
+    expect(response.status).toBe(404);
+  });
+
+  it("POST /api/workspaces/:workspaceId/screen/preview returns 404 when bot does not belong to user", async () => {
+    const { app, workspaceId } = setup();
+    const botResponse = await request(app, "http://localhost/api/bots", {
+      method: "POST",
+      headers: { cookie: `remotecode_session=${otherToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ name: "bobbot" }),
+    });
+    const { id: botId } = await botResponse.json() as { id: string };
+
+    const response = await request(app, `http://localhost/api/workspaces/${workspaceId}/screen/preview`, {
+      method: "POST",
+      headers: { cookie: `remotecode_session=${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ botId }),
+    });
+    expect(response.status).toBe(404);
+  });
+
+  it("POST /api/workspaces/:workspaceId/screen/preview creates a preview and sets cookie", async () => {
+    const { app, workspaceId } = setup();
+    const botResponse = await request(app, "http://localhost/api/bots", {
+      method: "POST",
+      headers: { cookie: `remotecode_session=${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ name: "alicebot" }),
+    });
+    const { id: botId } = await botResponse.json() as { id: string };
+
+    const response = await request(app, `http://localhost/api/workspaces/${workspaceId}/screen/preview`, {
+      method: "POST",
+      headers: { cookie: `remotecode_session=${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ botId }),
+    });
+    expect(response.status).toBe(200);
+    const bodyText = await response.text();
+    const body = JSON.parse(bodyText) as { previewId: string; botId: string; expiresAt: number };
+    expect(body.previewId).toBeTruthy();
+    expect(body.botId).toBe(botId);
+    expect(body.expiresAt).toBeGreaterThan(Date.now());
+
+    const rawToken = response.headers.get("set-cookie") ?? "";
+    expect(rawToken).toContain("rc_screen_preview=");
+    expect(bodyText).not.toContain(rawToken.split(";")[0].split("=")[1]);
+  });
+
+  it("POST /api/workspaces/:workspaceId/screen/preview response body contains no token", async () => {
+    const { app, workspaceId } = setup();
+    const botResponse = await request(app, "http://localhost/api/bots", {
+      method: "POST",
+      headers: { cookie: `remotecode_session=${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ name: "tokenleakbot" }),
+    });
+    const { id: botId } = await botResponse.json() as { id: string };
+
+    const response = await request(app, `http://localhost/api/workspaces/${workspaceId}/screen/preview`, {
+      method: "POST",
+      headers: { cookie: `remotecode_session=${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ botId }),
+    });
+    const bodyText = await response.text();
+    const setCookie = response.headers.get("set-cookie") ?? "";
+    const tokenMatch = setCookie.match(/rc_screen_preview=([^;]+)/);
+    if (tokenMatch) {
+      expect(bodyText).not.toContain(tokenMatch[1]);
+    }
+    expect(response.headers.get("content-type")).not.toContain("text");
+  });
+
+  it("GET /api/workspaces/:workspaceId/screen/preview/frame returns PNG for correct bot and cookie", async () => {
+    const capturedBytes = new Uint8Array([0x89, 0x50, 0x4E, 0x47]);
+    const captureCalls: { workspaceId: string; botId: string }[] = [];
+    const { app, workspaceId } = setup({
+      previewMs: 60_000,
+      capture: async (request) => {
+        captureCalls.push(request);
+        return capturedBytes;
+      },
+    });
+    const botResponse = await request(app, "http://localhost/api/bots", {
+      method: "POST",
+      headers: { cookie: `remotecode_session=${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ name: "framebot" }),
+    });
+    const { id: botId } = await botResponse.json() as { id: string };
+
+    const preview = await request(app, `http://localhost/api/workspaces/${workspaceId}/screen/preview`, {
+      method: "POST",
+      headers: { cookie: `remotecode_session=${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ botId }),
+    });
+    expect(preview.status).toBe(200);
+    const previewCookie = preview.headers.get("set-cookie") ?? "";
+    const tokenMatch = previewCookie.match(/rc_screen_preview=([^;]+)/);
+    expect(tokenMatch).toBeTruthy();
+    const token = tokenMatch![1];
+
+    const frame = await request(app, `http://localhost/api/workspaces/${workspaceId}/screen/preview/frame?botId=${botId}`, {
+      headers: {
+        cookie: `remotecode_session=${ownerToken}; rc_screen_preview=${token}`,
+      },
+    });
+    expect(frame.status).toBe(200);
+    expect(frame.headers.get("content-type")).toBe("image/png");
+    const bytes = new Uint8Array(await frame.arrayBuffer());
+    expect(bytes).toEqual(capturedBytes);
+    expect(captureCalls).toHaveLength(1);
+    expect(captureCalls[0]).toMatchObject({ workspaceId, botId });
+  });
+
+  it("GET /api/workspaces/:workspaceId/screen/preview/frame returns 409 for wrong bot cookie", async () => {
+    const captureCalls: { workspaceId: string; botId: string }[] = [];
+    const { app, workspaceId } = setup({
+      previewMs: 60_000,
+      capture: async (request) => {
+        captureCalls.push(request);
+        return new Uint8Array([0x89, 0x50]);
+      },
+    });
+    const botAResponse = await request(app, "http://localhost/api/bots", {
+      method: "POST",
+      headers: { cookie: `remotecode_session=${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ name: "bot-a" }),
+    });
+    const { id: botAId } = await botAResponse.json() as { id: string };
+    const botBResponse = await request(app, "http://localhost/api/bots", {
+      method: "POST",
+      headers: { cookie: `remotecode_session=${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ name: "bot-b" }),
+    });
+    const { id: botBId } = await botBResponse.json() as { id: string };
+
+    const previewA = await request(app, `http://localhost/api/workspaces/${workspaceId}/screen/preview`, {
+      method: "POST",
+      headers: { cookie: `remotecode_session=${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ botId: botAId }),
+    });
+    const cookieA = previewA.headers.get("set-cookie") ?? "";
+    const tokenA = cookieA.match(/rc_screen_preview=([^;]+)/)![1];
+
+    await request(app, `http://localhost/api/workspaces/${workspaceId}/screen/preview`, {
+      method: "POST",
+      headers: { cookie: `remotecode_session=${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ botId: botBId }),
+    });
+
+    const frame = await request(app, `http://localhost/api/workspaces/${workspaceId}/screen/preview/frame?botId=${botBId}`, {
+      headers: {
+        cookie: `remotecode_session=${ownerToken}; rc_screen_preview=${tokenA}`,
+      },
+    });
+    expect(frame.status).toBe(409);
+    const body = await frame.json() as { error: string };
+    expect(body.error).toBe("preview_required");
+    expect(captureCalls).toHaveLength(0);
+  });
+
+  it("GET /api/workspaces/:workspaceId/screen/preview/frame returns 409 for expired preview", async () => {
+    const { app, workspaceId } = setup({ previewMs: 50 });
+    const botResponse = await request(app, "http://localhost/api/bots", {
+      method: "POST",
+      headers: { cookie: `remotecode_session=${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ name: "expiredbot" }),
+    });
+    const { id: botId } = await botResponse.json() as { id: string };
+
+    await request(app, `http://localhost/api/workspaces/${workspaceId}/screen/preview`, {
+      method: "POST",
+      headers: { cookie: `remotecode_session=${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ botId }),
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    const frame = await request(app, `http://localhost/api/workspaces/${workspaceId}/screen/preview/frame?botId=${botId}`, {
+      headers: {
+        cookie: `remotecode_session=${ownerToken}; rc_screen_preview=anytoken`,
+      },
+    });
+    expect(frame.status).toBe(409);
+    const body = await frame.json() as { error: string };
+    expect(body.error).toBe("preview_required");
+  });
+
+  it("POST /api/workspaces/:workspaceId/screen/preview/refresh rotates token and keeps previewId", async () => {
+    const capturedBytes = new Uint8Array([0x89, 0x50, 0x4E, 0x47]);
+    const { app, workspaceId } = setup({ previewMs: 60_000, capture: async () => capturedBytes });
+    const botResponse = await request(app, "http://localhost/api/bots", {
+      method: "POST",
+      headers: { cookie: `remotecode_session=${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ name: "refreshbot" }),
+    });
+    const { id: botId } = await botResponse.json() as { id: string };
+
+    const preview = await request(app, `http://localhost/api/workspaces/${workspaceId}/screen/preview`, {
+      method: "POST",
+      headers: { cookie: `remotecode_session=${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ botId }),
+    });
+    expect(preview.status).toBe(200);
+    const { previewId } = await preview.json() as { previewId: string };
+    const cookie1 = preview.headers.get("set-cookie") ?? "";
+    const token1 = cookie1.match(/rc_screen_preview=([^;]+)/)![1];
+
+    const frame1 = await request(app, `http://localhost/api/workspaces/${workspaceId}/screen/preview/frame?botId=${botId}`, {
+      headers: {
+        cookie: `remotecode_session=${ownerToken}; rc_screen_preview=${token1}`,
+      },
+    });
+    expect(frame1.status).toBe(200);
+
+    const refresh = await request(app, `http://localhost/api/workspaces/${workspaceId}/screen/preview/refresh`, {
+      method: "POST",
+      headers: {
+        cookie: `remotecode_session=${ownerToken}; rc_screen_preview=${token1}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ botId }),
+    });
+    expect(refresh.status).toBe(200);
+    const { previewId: refreshedPreviewId, expiresAt } = await refresh.json() as { previewId: string; botId: string; expiresAt: number };
+    expect(refreshedPreviewId).toBe(previewId);
+    expect(expiresAt).toBeGreaterThan(Date.now());
+
+    const cookie2 = refresh.headers.get("set-cookie") ?? "";
+    const token2 = cookie2.match(/rc_screen_preview=([^;]+)/)![1];
+    expect(token2).not.toBe(token1);
+
+    const frameOld = await request(app, `http://localhost/api/workspaces/${workspaceId}/screen/preview/frame?botId=${botId}`, {
+      headers: {
+        cookie: `remotecode_session=${ownerToken}; rc_screen_preview=${token1}`,
+      },
+    });
+    expect(frameOld.status).toBe(409);
+
+    const frameNew = await request(app, `http://localhost/api/workspaces/${workspaceId}/screen/preview/frame?botId=${botId}`, {
+      headers: {
+        cookie: `remotecode_session=${ownerToken}; rc_screen_preview=${token2}`,
+      },
+    });
+    expect(frameNew.status).toBe(200);
+  });
+
+  it("POST /api/workspaces/:workspaceId/screen/preview returns 404 for bot belonging to another user", async () => {
+    const { app, workspaceId } = setup();
+    const botResponse = await request(app, "http://localhost/api/bots", {
+      method: "POST",
+      headers: { cookie: `remotecode_session=${otherToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ name: "bobpreviewbot" }),
+    });
+    const { id: botId } = await botResponse.json() as { id: string };
+
+    const response = await request(app, `http://localhost/api/workspaces/${workspaceId}/screen/preview`, {
+      method: "POST",
+      headers: { cookie: `remotecode_session=${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ botId }),
+    });
+    expect(response.status).toBe(404);
+  });
+
+  it("GET /api/workspaces/:workspaceId/screen/preview/frame returns 404 for workspace the caller does not own", async () => {
+    const { app, workspaceId, otherWorkspaceId } = setup();
+    const botResponse = await request(app, "http://localhost/api/bots", {
+      method: "POST",
+      headers: { cookie: `remotecode_session=${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ name: "foreignworkspacebot" }),
+    });
+    const { id: botId } = await botResponse.json() as { id: string };
+
+    await request(app, `http://localhost/api/workspaces/${workspaceId}/screen/preview`, {
+      method: "POST",
+      headers: { cookie: `remotecode_session=${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ botId }),
+    });
+
+    const frame = await request(app, `http://localhost/api/workspaces/${otherWorkspaceId}/screen/preview/frame?botId=${botId}`, {
+      headers: { cookie: `remotecode_session=${ownerToken}` },
+    });
+    expect(frame.status).toBe(404);
+  });
 });

@@ -1,3 +1,12 @@
+# RC-042 strengthen computer preview — acceptance — 2026-10-08 (UTC)
+
+- **Status:** Complete. Each Bot's preview shows that Bot's own screen, survives a reconnect by rotating its token, and is refused outside the workspace and Bot it was opened for; the viewing token never leaves the httpOnly cookie.
+- **Command:** `RC042_PROOF_DIR=<fresh dir> bun scripts/rc042/run-preview-proof.ts` (real Docker; a real Linux account container running two X11 displays with the shipped API, journey executed inside the container over loopback).
+- **Observed (two runs, `result: preview_served_each_bots_own_screen_reconnected_and_stayed_authorized_passed`):** the two reference captures differed (`3c1fecc0…` vs `d52c232e…`); Bot A's previewed frame was byte-identical to display `:99`'s own capture and Bot B's to `:98`'s; Bot A's cookie got **409 `preview_required`** for Bot B's frame; the preview token was inside an **httpOnly** cookie and was **not** a substring of the response body; `refresh` returned 200 and rotated the token (old cookie 409, new cookie 200, same `previewId`); an expired preview returned 409; a preview opened in a second workspace returned 200 while the first workspace's cookie got 409 there and the second workspace's own cookie served it.
+- **Failure-if check:** the preview never showed the wrong screen (byte equality against each display), it never became public (a crossed cookie was refused), and the token was not exposed (absent from the body and from any URL, httpOnly only).
+- **Honest limit:** the auth model has one user, so the "another account" step is covered as a second workspace instead of a second account.
+- **Checks:** `bun test apps/api apps/gateway packages/client` 398 pass / 74 skip / 0 fail; `bun run typecheck` exit 0.
+
 # RC-064 measure real cost and capacity — acceptance — 2026-10-08 (UTC)
 
 - **Status:** Complete. Per-account cost is measured on this host, the limits are derived from that measurement, and an over-limit request is refused with an explicit state before any resource is created.
