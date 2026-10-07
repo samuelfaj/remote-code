@@ -33,11 +33,12 @@ function waitForEvent(socket: WebSocket, type: string) {
   });
 }
 
-async function api(path: string, cwd = mkdtempSync(join(tmpdir(), "rc009-cwd-")), env?: NodeJS.ProcessEnv) {
+async function api(path: string, cwd = mkdtempSync(join(tmpdir(), "rc009-cwd-")), env?: NodeJS.ProcessEnv, stallMs?: number) {
   const app = createApi(path, undefined, { password: testPassword }, undefined, {
     command: process.execPath,
     args: [stubAgent],
     cwd,
+    stallMs,
     ...(env ? { env } : {}),
   });
   const response = await app.handle(new Request("https://localhost/api/auth/login", {
@@ -189,6 +190,53 @@ describe("RC-009 run supervision", () => {
     const reconciled = (await (await request(restarted, restartedCookie, `/api/runs/${run.id}`)).json()) as RunSummary;
     expect(reconciled.state).toBe("interrupted");
     expect(reconciled.stopReason).toBe("host_restart");
+  });
+
+  it("ends a run whose agent goes silent as interrupted with stopReason stalled", async () => {
+    const { app, cookie } = await api(tempDb("stall"), undefined, undefined, 300);
+    const workspace = await createWorkspace(app, cookie, "runs");
+    const created = await request(app, cookie, "/api/runs", "POST", { workspaceId: workspace.id, prompt: "SLOW silent task" });
+    expect(created.status).toBe(201);
+    const run = (await created.json()) as { id: string };
+
+    await waitForState(app, cookie, run.id, ["running"]);
+    const stalled = await waitForState(app, cookie, run.id, ["interrupted"], 5_000);
+    expect(stalled.state).toBe("interrupted");
+    expect(stalled.stopReason).toBe("stalled");
+
+    // No further progress after the stall interrupt.
+    const after = (await (await request(app, cookie, `/api/runs/${run.id}`)).json()) as RunSummary;
+    expect(after.state).toBe("interrupted");
+    expect(after.stopReason).toBe("stalled");
+  });
+
+  it("does not stall a quick run when stallMs is comfortably larger", async () => {
+    const { app, cookie } = await api(tempDb("no-stall"), undefined, undefined, 5_000);
+    const workspace = await createWorkspace(app, cookie, "runs");
+    const created = await request(app, cookie, "/api/runs", "POST", { workspaceId: workspace.id, prompt: "quick task" });
+    expect(created.status).toBe(201);
+    const run = (await created.json()) as { id: string };
+    const finished = await waitForState(app, cookie, run.id, ["completed", "failed"], 5_000);
+    expect(finished.state).toBe("completed");
+    expect(finished.stopReason).toBe("end_turn");
+  });
+
+  it("does not disturb a handoff run that is in needs_user", async () => {
+    const { app, cookie } = await api(tempDb("stall-handoff"), undefined, undefined, 300);
+    const workspace = await createWorkspace(app, cookie, "runs");
+    const created = await request(app, cookie, "/api/runs", "POST", { workspaceId: workspace.id, prompt: "SLOW handoff task" });
+    expect(created.status).toBe(201);
+    const run = (await created.json()) as { id: string };
+
+    await waitForState(app, cookie, run.id, ["running"]);
+    const handoff = await request(app, cookie, `/api/runs/${run.id}/handoff`, "POST", { reason: "user must review" });
+    expect(handoff.status).toBe(200);
+    expect(((await handoff.json()) as RunSummary).state).toBe("needs_user");
+
+    // Wait longer than stallMs; the watchdog must not touch needs_user runs.
+    await Bun.sleep(1_000);
+    const after = (await (await request(app, cookie, `/api/runs/${run.id}`)).json()) as RunSummary;
+    expect(after.state).toBe("needs_user");
   });
 });
 describe("needs_user handoff", () => {

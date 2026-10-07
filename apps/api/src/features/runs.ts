@@ -67,6 +67,7 @@ export function runsFeature(
     agentUser?: string; agentHome?: string;
     wrapSpawn?: (command: string, args: string[]) => { command: string; args: string[] };
     onUpdate?: (run: RunView) => void;
+    stallMs?: number;
   } = {},
 ) {
   const command = options.command ?? process.env.REMOTECODE_DISTILL_BIN ?? "distill";
@@ -91,6 +92,33 @@ export function runsFeature(
       })
     : undefined);
   const live = new Map<string, AcpSessionHandle>();
+
+  const stallMs = options.stallMs ?? Number(process.env.REMOTECODE_RUN_STALL_MS ?? 600_000);
+  let watchdogInterval: ReturnType<typeof setInterval> | undefined;
+  if (stallMs > 0) {
+    const period = Math.max(250, Math.min(Math.floor(stallMs / 2), 5_000));
+    watchdogInterval = setInterval(() => {
+      // Only a run with a live agent process can stall; skipping the scan when
+      // there is none keeps the watchdog from polling an idle API's database.
+      if (live.size === 0) return;
+      const now = Date.now();
+      const rows = database((db) => db.query<RunRow, []>(
+        "SELECT * FROM runs WHERE state IN ('starting', 'running')",
+      ).all());
+      for (const row of rows) {
+        const progressAt = row.heartbeat_at
+          ? new Date(row.heartbeat_at).getTime()
+          : new Date(row.created_at).getTime();
+        if (now - progressAt <= stallMs) continue;
+        const current = readRow(row.id);
+        if (!current || TERMINAL_STATES.includes(current.state) || current.state === "needs_user") continue;
+        live.get(row.id)?.kill();
+        live.delete(row.id);
+        transition(row.id, { state: "interrupted", stop_reason: "stalled" });
+        emit(row.id);
+      }
+    }, period);
+  }
 
   function database<T>(callback: (db: Database) => T): T {
     mkdirSync(dirname(databasePath), { recursive: true });
@@ -330,5 +358,5 @@ export function runsFeature(
       return view(readRow(row.id)!);
     }, { params: t.Object({ id: uuidSchema }), body: t.Object({ reason: t.String({ minLength: 1, maxLength: 500 }) }) });
 
-  return { routes, stopAll: () => { for (const handle of live.values()) handle.kill(); live.clear(); } };
+  return { routes, stopAll: () => { if (watchdogInterval !== undefined) clearInterval(watchdogInterval); for (const handle of live.values()) handle.kill(); live.clear(); } };
 }

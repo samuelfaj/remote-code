@@ -1,4 +1,11 @@
 # Changelog
+## RC-027 slice — heartbeat stall watchdog 2026-10-07T07:35:00Z (UTC)
+
+- `runs.ts`: a run that stops making progress is now ended honestly. One watchdog interval (`REMOTECODE_RUN_STALL_MS`, default 600_000 ms; `stallMs` option; <= 0 disables it; period `max(250, min(stallMs/2, 5000))`) scans `starting`/`running` runs whose progress (`heartbeat_at`, else `created_at`) is older than the bound, kills the live ACP handle, and records `interrupted` with `stop_reason: stalled`. A `needs_user` run is never touched, and the scan is skipped while no agent process is live, so an idle API does not poll its database. `stopAll()` clears the interval.
+- Tests in `apps/api/src/runs.test.ts`: a silent run ends as `interrupted`/`stalled`; a quick run is not stalled when the bound is larger; a handed-off run stays `needs_user` past the bound. 13 pass in that file; full suite 190 pass / 68 skip / 0 fail across three consecutive runs; typecheck clean.
+- Open on RC-027: the executable proof (freeze the process and kill the host mid-command, restart, and show the process ended with honest state and no second external effect) is not written yet. RC-027 stays In progress.
+- `plan/tasks.html`: RC-027 In progress; summary now 20 complete / 10 in progress / 0 blocked / 38 to do.
+
 ## Fix — handoff race found in review 2026-10-07T07:05:00Z (UTC)
 
 - Independent review of `15cb04d` found that `onSessionId` set `state: "running"` unconditionally, so a handoff made while the agent was still creating its session (state `starting`) was pulled back to `running` and then overwritten by the agent's completion. `onSessionId` now records the session id and heartbeat without changing a state that is already `needs_user`.
