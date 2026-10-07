@@ -1,4 +1,7 @@
 # Changelog
+## RC-032 SSH transfer slice — passed on Linux 2026-10-06T18:00:00Z (UTC)
+
+- `run-ssh-proof.ts` passed `ssh_transfer_slice_passed`: sshd in proof container, scp upload + download byte-equal, key removal enforces failure. Host-initiated path proven; managed credential API remains open.
 ## Tree health at 6b7aee9 — green 2026-10-06T17:00:00Z (UTC)
 
 - Full regression: TSC clean, 177 pass / 68 skip / 0 fail (245 files across api+client). Skips are platform-gated Linux-only tests covered by proof runners. Tree clean, remote in sync.
