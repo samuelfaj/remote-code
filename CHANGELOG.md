@@ -1,4 +1,7 @@
 # Changelog
+## Auth + native recovery — 7 pass 2026-10-07T03:00:00Z (UTC)
+
+- `auth-process + native-recovery-fixture`: 7 pass / 0 fail on 1d79763.
 ## RC-020 storage degradation — 9 pass 2026-10-07T02:30:00Z (UTC)
 
 - `storage-degradation.test.ts`: 9 pass / 2 skip / 0 fail on 60b5c30. SQLite lock degrades readiness and recovers; supports RC-020 evidence.
