@@ -1,4 +1,7 @@
 # Changelog
+## Action suites fresh — 22 pass 2026-10-07T06:30:00Z (UTC)
+
+- `action-requests + recovery + events`: 22 pass / 0 fail on 30c3fd5.
 ## Storage/auth requests — 35 pass 2026-10-07T06:00:00Z (UTC)
 
 - `storage-requests + auth-requests`: 35 pass / 0 fail on e3c7457.
