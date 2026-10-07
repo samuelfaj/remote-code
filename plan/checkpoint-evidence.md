@@ -1,3 +1,11 @@
+# RC-040 Bot runs its own Distill thread — acceptance — 2026-10-07 (UTC)
+
+- **Status:** Complete. A configured Bot starts a Distill session with its instructions, its events belong to that Bot's thread, and the run can be interrupted.
+- **Command:** `RC040_PROOF_DIR=<fresh dir> bun scripts/rc040/run-bot-thread-proof.ts` (Docker Linux/arm64, the shipped API over TLS on a task-owned volume, one controlled ACP agent recording every prompt).
+- **Observed (two runs, `result: two_bots_ran_their_own_threads_and_one_bot_was_interrupted_passed`):** Alpha and Beta Bots were created with distinct instructions, then two tasks were submitted at the same time in one workspace. Alpha's run (`state: completed`, `stopReason: end_turn`) carried `botId` = Alpha and the prompt "ALPHA-INSTRUCTIONS: answer only about alpha.\n\nTASK_ALPHA please"; Beta's run carried `botId` = Beta and "BETA-INSTRUCTIONS: … TASK_BETA please". Neither prompt contained the other Bot's instructions. `GET /api/bots/<alpha>/runs` returned exactly Alpha's run and `GET /api/bots/<beta>/runs` exactly Beta's. The agent wrote `alpha.txt` = "alpha: ALPHA-INSTRUCTIONS…" and `beta.txt` = "beta: BETA-INSTRUCTIONS…", each without the other's text. The agent's log held exactly 2 attempts with 1 unique command line (same harness for both Bots). A third Bot run with a slow task was stopped and ended `interrupted` with `stopReason: cancelled`.
+- **Failure-if check:** no Bot responds in the other's thread (per-Bot run lists and prompts are disjoint) and no Bot starts a different harness (one unique command line for both runs).
+- **Checks:** `bun test apps/api/src packages/client/src` 268 pass / 74 skip / 0 fail; `bun run typecheck` exit 0; documentation-links gate exit 0.
+
 # RC-034 Distill run in a thread — acceptance — 2026-10-07 (UTC)
 
 - **Status:** Complete. A message starts the Distill run in the workspace directory, the host keeps the run and its history, and provider refusals show distinct states without retrying or switching model/account.

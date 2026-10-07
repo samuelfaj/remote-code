@@ -10,6 +10,7 @@ export type RunState = "starting" | "running" | "completed" | "interrupted" | "f
 export type RunView = {
   id: string;
   workspaceId: string;
+  botId: string | null;
   state: RunState;
   prompt: string;
   createdAt: string;
@@ -32,6 +33,7 @@ type RunRow = {
   id: string;
   user_id: string;
   workspace_id: string;
+  bot_id: string | null;
   prompt: string;
   state: RunState;
   created_at: string;
@@ -49,6 +51,7 @@ function view(row: RunRow): RunView {
   return {
     id: row.id,
     workspaceId: row.workspace_id,
+    botId: row.bot_id,
     state: row.state,
     prompt: row.prompt,
     createdAt: row.created_at,
@@ -154,6 +157,7 @@ export function runsFeature(
         id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL,
         workspace_id TEXT NOT NULL,
+        bot_id TEXT,
         prompt TEXT NOT NULL,
         state TEXT NOT NULL,
         created_at TEXT NOT NULL,
@@ -169,6 +173,7 @@ export function runsFeature(
       db.exec("CREATE INDEX IF NOT EXISTS runs_workspace ON runs(workspace_id, created_at)");
       const columns = db.query<{ name: string }, []>("PRAGMA table_info(runs)").all();
       const columnNames = columns.map((column) => column.name);
+      if (!columnNames.includes("bot_id")) db.exec("ALTER TABLE runs ADD COLUMN bot_id TEXT");
       for (const name of ["session_id", "handoff_reason", "retry_after_seconds"]) {
         if (!columnNames.includes(name)) db.exec(`ALTER TABLE runs ADD COLUMN ${name} INTEGER`);
       }
@@ -307,13 +312,13 @@ export function runsFeature(
         }
         const row: RunRow = {
           id: body.requestId ?? id, user_id: owner.userId, workspace_id: body.workspaceId,
-          prompt: body.prompt, state: "starting", created_at: createdAt, updated_at: createdAt,
+          bot_id: null, prompt: body.prompt, state: "starting", created_at: createdAt, updated_at: createdAt,
           heartbeat_at: null, stop_requested_at: null, stop_reason: null, error: null,
           session_id: null, handoff_reason: null, retry_after_seconds: null,
         };
-        db.query(`INSERT INTO runs (id, user_id, workspace_id, prompt, state, created_at, updated_at, heartbeat_at, stop_requested_at, stop_reason, error, session_id, handoff_reason, retry_after_seconds)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
-          row.id, row.user_id, row.workspace_id, row.prompt, row.state, row.created_at, row.updated_at,
+        db.query(`INSERT INTO runs (id, user_id, workspace_id, bot_id, prompt, state, created_at, updated_at, heartbeat_at, stop_requested_at, stop_reason, error, session_id, handoff_reason, retry_after_seconds)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+          row.id, row.user_id, row.workspace_id, row.bot_id, row.prompt, row.state, row.created_at, row.updated_at,
           row.heartbeat_at, row.stop_requested_at, row.stop_reason, row.error, row.session_id, row.handoff_reason, row.retry_after_seconds,
         );
         return { row };
@@ -347,6 +352,65 @@ export function runsFeature(
       ).all(params.workspaceId, owner.userId));
       return { runs: rows.map(view) };
     }, { params: t.Object({ workspaceId: uuidSchema }) })
+    .post("/api/bots/:id/run", ({ params, body, request, set }) => {
+      const owner = identity(request);
+      if (!owner) { set.status = 401; return { error: "unauthorized" as const }; }
+      try { assertSession(owner); } catch { set.status = 401; return { error: "unauthorized" as const }; }
+      const result: { botNotFound: true } | { workspaceNotFound: true } | { existing: RunRow } | { row: RunRow } = database((db) => db.transaction(() => {
+        const bot = db.query<{ id: string; user_id: string; instructions: string }, [string, string]>(
+          "SELECT id, user_id, instructions FROM bots WHERE id = ? AND user_id = ?",
+        ).get(params.id, owner.userId);
+        if (!bot) return { botNotFound: true as const };
+        const workspace = db.query<{ id: string }, [string, string]>(
+          "SELECT id FROM workspaces WHERE id = ? AND user_id = ?",
+        ).get(body.workspaceId, owner.userId);
+        if (!workspace) return { workspaceNotFound: true as const };
+        if (body.requestId) {
+          const existing = db.query<RunRow, [string, string]>(
+            "SELECT * FROM runs WHERE id = ? AND user_id = ?",
+          ).get(body.requestId, owner.userId);
+          if (existing) return { existing };
+        }
+        const composedPrompt = bot.instructions ? `${bot.instructions}\n\n${body.prompt}` : body.prompt;
+        const id = body.requestId ?? crypto.randomUUID();
+        const createdAt = new Date().toISOString();
+        const row: RunRow = {
+          id, user_id: owner.userId, workspace_id: body.workspaceId,
+          bot_id: bot.id, prompt: composedPrompt, state: "starting", created_at: createdAt, updated_at: createdAt,
+          heartbeat_at: null, stop_requested_at: null, stop_reason: null, error: null,
+          session_id: null, handoff_reason: null, retry_after_seconds: null,
+        };
+        db.query(`INSERT INTO runs (id, user_id, workspace_id, bot_id, prompt, state, created_at, updated_at, heartbeat_at, stop_requested_at, stop_reason, error, session_id, handoff_reason, retry_after_seconds)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+          row.id, row.user_id, row.workspace_id, row.bot_id, row.prompt, row.state, row.created_at, row.updated_at,
+          row.heartbeat_at, row.stop_requested_at, row.stop_reason, row.error, row.session_id, row.handoff_reason, row.retry_after_seconds,
+        );
+        return { row };
+      }).immediate());
+      if ("botNotFound" in result) { set.status = 404; return { error: "bot_not_found" as const }; }
+      if ("workspaceNotFound" in result) { set.status = 404; return { error: "workspace_not_found" as const }; }
+      if ("existing" in result) return view(result.existing);
+      set.status = 201;
+      launch(result.row.id, result.row.prompt);
+      return view(result.row);
+    }, { body: t.Object({
+      workspaceId: uuidSchema,
+      prompt: t.String({ minLength: 1, maxLength: 8_000 }),
+      requestId: t.Optional(uuidSchema),
+    }) })
+    .get("/api/bots/:id/runs", ({ params, request, set }) => {
+      const owner = identity(request);
+      if (!owner || !uuid.test(params.id)) { set.status = owner ? 404 : 401; return { error: owner ? "not_found" : "unauthorized" }; }
+      try { assertSession(owner); } catch { set.status = 401; return { error: "unauthorized" as const }; }
+      const bot = database((db) => db.query<{ user_id: string }, [string]>(
+        "SELECT user_id FROM bots WHERE id = ?",
+      ).get(params.id));
+      if (!bot || bot.user_id !== owner.userId) { set.status = 404; return { error: "bot_not_found" as const }; }
+      const rows = database((db) => db.query<RunRow, [string]>(
+        "SELECT * FROM runs WHERE bot_id = ? ORDER BY created_at DESC LIMIT 50",
+      ).all(params.id));
+      return { runs: rows.map(view) };
+    }, { params: t.Object({ id: uuidSchema }) })
     .post("/api/runs/:id/stop", ({ params, request, set }) => {
       const owner = identity(request);
       if (!owner || !uuid.test(params.id)) { set.status = owner ? 404 : 401; return { error: owner ? "not_found" : "unauthorized" }; }

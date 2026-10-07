@@ -1,4 +1,12 @@
 # Changelog
+## RC-040 accepted — two Bots run their own Distill threads 2026-10-07T15:00:00Z (UTC)
+
+- `runs` gains a nullable `bot_id` column (created and migrated in place) exposed as `botId`, plus `POST /api/bots/:id/run` and `GET /api/bots/:id/runs`. The Bot's `instructions` are prepended to the task (blank line between) and stored as the run's prompt, the run is bound to the Bot, `requestId` keeps the existing idempotency, and the run is interruptible through the existing stop route. Bot runs go through the same `launch`/`startAcpPrompt` path and the same command — no second harness.
+- Proof `scripts/rc040/run-bot-thread-proof.ts` PASS twice on real Linux: two Bots ran simultaneous tasks in one workspace; each run carried its own Bot id, its own instructions and its own file (`alpha.txt` / `beta.txt`) with nothing crossing; each `GET /api/bots/:id/runs` held exactly its own run; the agent recorded exactly two attempts on one identical command line; and a third Bot run was interrupted to `interrupted`/`cancelled`.
+- Unit tests in `apps/api/src/runs.test.ts` cover the composed prompt, per-Bot thread listing, requestId idempotency, unknown/foreign ids, plain runs never appearing in a Bot thread, and the interrupt. Two test-only defects were fixed while running them (the Bot object interpolated into the URL, and stopping a run before it reached `running`).
+- Checks: `bun test apps/api/src packages/client/src` 268 pass / 74 skip / 0 fail; `bun run typecheck` clean; documentation-links gate clean.
+- `plan/tasks.html`: RC-040 Complete; summary now 30 complete / 4 in progress / 0 blocked / 34 to do.
+
 ## RC-034 accepted — provider failures get distinct states without retry 2026-10-07T14:20:00Z (UTC)
 
 - `acp-distill.ts` now captures a JSON-RPC error on `session/prompt` and returns it on the handle, with stop reason `prompt_error`. `runs.ts` gains `classifyProviderFailure(stopReason, message)` and a `retry_after_seconds` column (created and migrated in place) exposed as `retryAfterSeconds`: an expired credential ends `provider_auth_expired`, a 429/usage limit ends `provider_rate_limited` with the parsed Retry-After, temporary unavailability ends `provider_unavailable`, anything else `provider_failed`. The supervisor still never retries and has no model or account parameter.

@@ -438,3 +438,115 @@ describe("RC-034 provider failure classification", () => {
     expect(lines[0]).not.toContain("--model");
   });
 });
+
+describe("RC-040 bot runs", () => {
+  async function createBot(app: ReturnType<typeof createApi>, cookie: string, name: string, instructions: string) {
+    const response = await request(app, cookie, "/api/bots", "POST", { name, instructions });
+    expect(response.status).toBe(201);
+    return (await response.json()) as { id: string; instructions: string };
+  }
+
+  it("two bots in the same workspace get a run each with their own instructions", async () => {
+    const { app, cookie } = await api(tempDb("bot-runs"));
+    const workspace = await createWorkspace(app, cookie, "runs");
+    const bot1 = await createBot(app, cookie, "bot1", "Bot one instructions");
+    const bot2 = await createBot(app, cookie, "bot2", "Bot two instructions");
+
+    const run1 = await request(app, cookie, `/api/bots/${bot1.id}/run`, "POST", { workspaceId: workspace.id, prompt: "hello" });
+    expect(run1.status).toBe(201);
+    const run1Body = (await run1.json()) as { id: string; prompt: string };
+    expect(run1Body.prompt).toBe("Bot one instructions\n\nhello");
+
+    const run2 = await request(app, cookie, `/api/bots/${bot2.id}/run`, "POST", { workspaceId: workspace.id, prompt: "hello" });
+    expect(run2.status).toBe(201);
+    const run2Body = (await run2.json()) as { id: string; prompt: string };
+    expect(run2Body.prompt).toBe("Bot two instructions\n\nhello");
+  });
+
+  it("each GET /api/bots/:id/runs returns only that bot's run", async () => {
+    const { app, cookie } = await api(tempDb("bot-runs-list"));
+    const workspace = await createWorkspace(app, cookie, "runs");
+    const bot1 = await createBot(app, cookie, "bot1", "instructions 1");
+    const bot2 = await createBot(app, cookie, "bot2", "instructions 2");
+
+    await request(app, cookie, `/api/bots/${bot1.id}/run`, "POST", { workspaceId: workspace.id, prompt: "task" });
+    await request(app, cookie, `/api/bots/${bot2.id}/run`, "POST", { workspaceId: workspace.id, prompt: "task" });
+
+    const runs1 = (await (await request(app, cookie, `/api/bots/${bot1.id}/runs`)).json()) as { runs: { id: string; botId: string | null }[] };
+    const runs2 = (await (await request(app, cookie, `/api/bots/${bot2.id}/runs`)).json()) as { runs: { id: string; botId: string | null }[] };
+
+    expect(runs1.runs.length).toBe(1);
+    expect(runs1.runs[0].botId).toBe(bot1.id);
+    expect(runs2.runs.length).toBe(1);
+    expect(runs2.runs[0].botId).toBe(bot2.id);
+  });
+
+  it("repeating POST with the same requestId returns the same run id and creates no second run", async () => {
+    const idempotencyPath = tempDb("bot-idem");
+    const { app, cookie } = await api(idempotencyPath);
+    const workspace = await createWorkspace(app, cookie, "runs");
+    const bot = await createBot(app, cookie, "bot", "instructions");
+    const requestId = crypto.randomUUID();
+
+    const first = await request(app, cookie, `/api/bots/${bot.id}/run`, "POST", { workspaceId: workspace.id, prompt: "quick", requestId });
+    const second = await request(app, cookie, `/api/bots/${bot.id}/run`, "POST", { workspaceId: workspace.id, prompt: "quick", requestId });
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(200);
+    expect(((await first.json()) as { id: string }).id).toBe(requestId);
+    expect(((await second.json()) as { id: string }).id).toBe(requestId);
+
+    const db = new Database(idempotencyPath, { create: true });
+    try {
+      const count = db.query<{ n: number }, [string]>("SELECT COUNT(*) AS n FROM runs WHERE id = ?").get(requestId);
+      expect(count?.n).toBe(1);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("unknown or foreign bot id returns 404", async () => {
+    const { app, cookie } = await api(tempDb("bot-not-found"));
+    const workspace = await createWorkspace(app, cookie, "runs");
+
+    const unknown = await request(app, cookie, "/api/bots/00000000-0000-4000-8000-000000000000/run", "POST", { workspaceId: workspace.id, prompt: "hello" });
+    expect(unknown.status).toBe(404);
+    expect(((await unknown.json()) as { error: string }).error).toBe("bot_not_found");
+
+    const bot = await createBot(app, cookie, "bot", "instructions");
+    const foreign = await request(app, cookie, `/api/bots/${bot.id}/run`, "POST", { workspaceId: "00000000-0000-4000-8000-000000000000", prompt: "hello" });
+    expect(foreign.status).toBe(404);
+    expect(((await foreign.json()) as { error: string }).error).toBe("workspace_not_found");
+  });
+
+  it("a run created through /api/runs never appears in any bot's run list", async () => {
+    const { app, cookie } = await api(tempDb("bot-no-plain-run"));
+    const workspace = await createWorkspace(app, cookie, "runs");
+    const bot = await createBot(app, cookie, "bot", "instructions");
+
+    const plainRun = await request(app, cookie, "/api/runs", "POST", { workspaceId: workspace.id, prompt: "plain task" });
+    expect(plainRun.status).toBe(201);
+    const plainRunResult = (await plainRun.json()) as { id: string };
+    const plainRunId = plainRunResult.id;
+
+    const botRuns = (await (await request(app, cookie, `/api/bots/${bot.id}/runs`)).json()) as { runs: { id: string }[] };
+    expect(botRuns.runs.map((r) => r.id)).not.toContain(plainRunId);
+  });
+
+  it("a bot run can be interrupted through the existing stop route", async () => {
+    const { app, cookie } = await api(tempDb("bot-stop"));
+    const workspace = await createWorkspace(app, cookie, "runs");
+    const bot = await createBot(app, cookie, "bot", "instructions");
+
+    const created = await request(app, cookie, `/api/bots/${bot.id}/run`, "POST", { workspaceId: workspace.id, prompt: "SLOW task" });
+    expect(created.status).toBe(201);
+    const run = (await created.json()) as { id: string; state: string };
+    expect(["starting", "running"]).toContain(run.state);
+    await waitForState(app, cookie, run.id, ["running"]);
+
+    const stopped = await request(app, cookie, `/api/runs/${run.id}/stop`, "POST");
+    expect(stopped.status).toBe(200);
+    const finished = await waitForState(app, cookie, run.id, ["interrupted", "failed"]);
+    expect(finished.state).toBe("interrupted");
+    expect(finished.stopReason).toBe("cancelled");
+  });
+});
