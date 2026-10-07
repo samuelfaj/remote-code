@@ -1,4 +1,7 @@
 # Changelog
+## RC-030 git re-proof — passed on aefe69f 2026-10-07T00:30:00Z (UTC)
+
+- `run-git-status-proof.ts` run14 `git_status_slice_passed` on aefe69f: status/commit/branch/diff incl strict 404, cleanup true.
 ## RC-031 shutdown re-proof — passed on 873bf0f 2026-10-07T00:00:00Z (UTC)
 
 - `run-terminal-shutdown-proof.ts` passed `terminal_graceful_live_actor_shutdown_passed` on 873bf0f, cleanup api+volume true.
