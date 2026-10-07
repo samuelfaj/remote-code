@@ -1,7 +1,7 @@
 # Where to resume
 
-Latest confirmed state: the RC-048 checkpoint `13b100c` on
-`checkpoint/rc002-linux-runtime-evidence`, with the handoff commits on top. Plan status: **56 complete / 0 in progress / 0 blocked / 12 to do**
+Latest confirmed state: the RC-049 checkpoint `219864a` on
+`checkpoint/rc002-linux-runtime-evidence`, with the handoff commits on top. Plan status: **57 complete / 0 in progress / 0 blocked / 11 to do**
 of the 68 tasks in `plan/tasks.html`.
 
 Read, in this order: `plan/tasks.html` (per-task status), `CHANGELOG.md`
@@ -10,25 +10,25 @@ observed result and the failure-if check for every accepted task), `PIVOT.md`
 (why a route changed) and `plan/capacity.md` / `plan/failure-state-contract.md`
 (measured limits and the per-operation failure table).
 
-Accepted since the previous resume page: RC-047 (push driven by Inbox items, with
-per-device deduplication and a denied device handled) and RC-048 (one shared client
-core covering every named domain, with the shared contract proven by breaking it).
+Accepted since the previous resume page: RC-048 (one shared client core covering
+every named domain, with the shared contract proven by breaking it) and RC-049 (the web
+sidebar and responsive keyboard navigation, proven in a real browser).
 
 ## Ready right now
 
 | Task | Why it is ready |
 | --- | --- |
-| **RC-049** | RC-048 just landed, so every dependency is met. |
-| **RC-055** | RC-025 and RC-047 both landed, so this mobile task is unblocked. |
-| **RC-056** | The same, and it needs only RC-025 and RC-047. |
+| **RC-050** | RC-049 just landed, so every dependency is met. |
+| **RC-051** | The same: all of its dependencies landed. |
+| **RC-055** | The iOS app: RC-025, RC-047 and RC-048 all landed. |
+| **RC-056** | The Android app, with the same dependencies. |
 
-RC-050 and RC-051 need RC-049, and RC-057 needs RC-055 and RC-056, so those three are the
-next steps to the remaining 12.
+RC-052 needs RC-050 and RC-051, and RC-057 needs RC-055 and RC-056.
 
 ## In progress and blocked
 
-Nothing. Every task is either Complete or still To do with an unmet dependency. The 12 tasks
-left are behind RC-049, RC-055 and RC-056, the three whose dependencies are now met.
+Nothing. Every task is either Complete or still To do with an unmet dependency. The 11 tasks
+left are behind RC-050, RC-051, RC-055 and RC-056, the four whose dependencies are now met.
 
 ## The pattern that produced every recent defect
 
