@@ -1,4 +1,9 @@
 # Changelog
+## Fix — handoff race found in review 2026-10-07T07:05:00Z (UTC)
+
+- Independent review of `15cb04d` found that `onSessionId` set `state: "running"` unconditionally, so a handoff made while the agent was still creating its session (state `starting`) was pulled back to `running` and then overwritten by the agent's completion. `onSessionId` now records the session id and heartbeat without changing a state that is already `needs_user`.
+- Regression test in `apps/api/src/runs.test.ts` ("keeps a handoff made before the agent creates its session") with a stub that delays `session/new`; it fails against the old code (verified by temporarily restoring it) and passes with the fix. Suite: 187 pass / 68 skip / 0 fail; typecheck clean.
+
 ## RC-023 accepted — first Linux session and the "Needs you" handoff 2026-10-07T06:40:00Z (UTC)
 
 - Closes the clause left open by the earlier RC-023 slice. `runs` now persists the ACP `session_id` when the agent creates its session, and a run can enter a new `needs_user` state through `POST /api/runs/:id/handoff` (owner-only, `{reason}`; 404 for an unknown/foreign run, 409 `run_finished` for a finished one, idempotent when already `needs_user`). A handoff is not overwritten when the agent later finishes its turn, and it survives a host restart. `RunView` exposes `sessionId` and `handoffReason`. Schema change is migrated in place (`PRAGMA table_info` + `ALTER TABLE`).

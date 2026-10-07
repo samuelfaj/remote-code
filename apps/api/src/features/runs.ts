@@ -168,7 +168,17 @@ export function runsFeature(
         prompt,
         env: agentEnv,
         wrapSpawn,
-        onSessionId: (sessionId) => { transition(id, { state: "running", heartbeat_at: new Date().toISOString(), session_id: sessionId }); emit(id); },
+        onSessionId: (sessionId) => {
+          // A handoff can arrive while the agent is still creating its session;
+          // record the id without pulling the run back out of needs_user.
+          const waiting = readRow(id)?.state === "needs_user";
+          transition(id, {
+            ...(waiting ? {} : { state: "running" as const }),
+            heartbeat_at: new Date().toISOString(),
+            session_id: sessionId,
+          });
+          emit(id);
+        },
         onProgress: () => { transition(id, { heartbeat_at: new Date().toISOString() }); emit(id); },
       });
     } catch (error) {

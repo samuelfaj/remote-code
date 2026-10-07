@@ -33,11 +33,12 @@ function waitForEvent(socket: WebSocket, type: string) {
   });
 }
 
-async function api(path: string, cwd = mkdtempSync(join(tmpdir(), "rc009-cwd-"))) {
+async function api(path: string, cwd = mkdtempSync(join(tmpdir(), "rc009-cwd-")), env?: NodeJS.ProcessEnv) {
   const app = createApi(path, undefined, { password: testPassword }, undefined, {
     command: process.execPath,
     args: [stubAgent],
     cwd,
+    ...(env ? { env } : {}),
   });
   const response = await app.handle(new Request("https://localhost/api/auth/login", {
     method: "POST",
@@ -224,6 +225,30 @@ describe("needs_user handoff", () => {
     } finally {
       db.close();
     }
+  });
+
+  it("keeps a handoff made before the agent creates its session", async () => {
+    const path = tempDb("handoff-starting");
+    const { app, cookie } = await api(path, mkdtempSync(join(tmpdir(), "rc009-cwd-")), {
+      ...process.env,
+      STUB_SESSION_NEW_DELAY_MS: "2000",
+    });
+    const workspace = await createWorkspace(app, cookie, "runs");
+    const created = await request(app, cookie, "/api/runs", "POST", { workspaceId: workspace.id, prompt: "quick task" });
+    const run = (await created.json()) as { id: string };
+
+    // Hand off long before the stub answers session/new, so this is the race
+    // window where the session id arrives after the state was set.
+    const handoff = await request(app, cookie, `/api/runs/${run.id}/handoff`, "POST", { reason: "needs the user early" });
+    expect(handoff.status).toBe(200);
+    expect(((await handoff.json()) as HandoffView).state).toBe("needs_user");
+
+    // Session creation and the agent's completion must both leave it waiting.
+    await Bun.sleep(3_000);
+    const after = (await (await request(app, cookie, `/api/runs/${run.id}`)).json()) as HandoffView;
+    expect(after.state).toBe("needs_user");
+    expect(after.sessionId).toBe("stub-session");
+    expect(after.handoffReason).toBe("needs the user early");
   });
 
   it("refuses a handoff on a finished run and changes nothing", async () => {

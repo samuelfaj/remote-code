@@ -20,7 +20,10 @@ function handle(message) {
     return;
   }
   if (message.method === "session/new") {
-    send({ id: message.id, result: { sessionId } });
+    // STUB_SESSION_NEW_DELAY_MS lets a test act while the run is still starting.
+    const delay = Number(process.env.STUB_SESSION_NEW_DELAY_MS ?? 0);
+    if (delay > 0) setTimeout(() => send({ id: message.id, result: { sessionId } }), delay);
+    else send({ id: message.id, result: { sessionId } });
     return;
   }
   if (message.method === "session/prompt") {
