@@ -1,9 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native-web";
-import { actionReceiptFromResponse, isDefinitiveActionRejection, isUnknownOutcomeError, applyActionEvent, CLIENT_VERSION, createApiClient, emptyActionEventState, workspacePanelUserId } from "@remotecode/client";
+import { actionReceiptFromResponse, isDefinitiveActionRejection, isUnknownOutcomeError, applyActionEvent, CLIENT_VERSION, createApiClient, emptyActionEventState, retryAllowed, retryDelayMs, workspacePanelUserId } from "@remotecode/client";
 import type { ActionEventState } from "@remotecode/client";
 import { getWebHealth } from "../health/api";
 import { WorkspacePanel } from "../workspaces/WorkspacePanel";
+
+// Bounded post-timeout receipt reads: two attempts, the second after an
+// increasing, jittered wait, both inside the ten-second window.
+const POST_TIMEOUT_READ_PLAN = { maxAttempts: 2, baseDelayMs: 1_500, maxDelayMs: 2_000 };
 
 function isUnsupportedClientVersion(error: unknown) {
   if (typeof error !== "object" || error === null || !("value" in error)) return false;
@@ -715,12 +719,13 @@ export function App() {
     // delayed reread after an increasing wait (2s cap each), still inside the
     // ten-second post-persistence window. No POST is replayed; a missing or
     // stalled read keeps the pending identity for explicit later lookup.
-    const attempts = 2;
-    for (let attempt = 0; attempt < attempts; attempt++) {
+    const plan = { maxAttempts: POST_TIMEOUT_READ_PLAN.maxAttempts, baseDelayMs: POST_TIMEOUT_READ_PLAN.baseDelayMs, maxDelayMs: POST_TIMEOUT_READ_PLAN.maxDelayMs };
+    for (let attempt = 0; retryAllowed(plan, attempt); attempt++) {
       const remaining = deadline - Date.now();
       if (remaining <= 0) break;
       if (attempt > 0) {
-        const waitMs = Math.min(1500 * attempt, remaining);
+        // Increasing wait with jitter, still inside the deadline.
+        const waitMs = Math.min(retryDelayMs(plan, attempt), remaining);
         await new Promise<void>((resolve) => { setTimeout(resolve, waitMs); });
         if (!isCurrent() || Date.now() >= deadline) break;
       }

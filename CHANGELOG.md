@@ -1,4 +1,12 @@
 # Changelog
+## RC-018 accepted — a cut connection is never a rollback 2026-10-07T20:20:00Z (UTC)
+
+- New `scripts/rc018/run-connection-cut-proof.ts` puts a fault injector in front of the shipped API and cuts the connection at the three points the task names: before the mutation is forwarded, after it commits but before the response, and mid-response. In each case the client is left uncertain; the receipt is then consulted and repeating the SAME request id produces one effect and the canonical receipt (`201` after a pre-acceptance cut, `200` with the same receipt id after a commit cut, and `409` when the payload differs while the stored row stays single). PASS twice on real Linux with one effect per marker.
+- Delivery closed on the client side: the post-timeout receipt read now uses a shared, unit-tested bounded retry policy — `retryAllowed`/`retryDelayMs` in `packages/client/src/retry.ts` — so the safe attempts are limited and each later wait grows exponentially and is jittered inside its ceiling, replacing the previous fixed increasing wait. Wired into the web action recovery path; `retry.test.ts` covers the ceiling growth, the jitter bounds, a broken random source and the attempt limit.
+- Regression check: the browser terminal proof (the only end-to-end proof that drives the web app) was re-run after the client change and still PASSes.
+- Checks: `bun test apps/api/src apps/gateway/src packages/client/src` 289 pass / 74 skip / 0 fail; `bun run typecheck` clean; documentation-links gate clean.
+- `plan/tasks.html`: RC-018 Complete; summary now 36 complete / 2 in progress / 0 blocked / 30 to do.
+
 ## RC-012 accepted — every resource route denies a second account 2026-10-07T19:30:00Z (UTC)
 
 - New `scripts/rc012/run-ownership-audit-proof.ts` audits the shipped API with two live sessions (a real login plus a seeded second account) and one expired session. It creates real resources as account A (workspace, folder, file, history, layout, Bot, Bot memory, a Bot run) and then calls all 31 resource routes that take a real id with account B's session: every one must deny it, and the two list routes must return no row owned by A. Afterwards it re-reads every A resource and asserts nothing changed, checks that an expired session is refused with 401 on list/read/write, and that an anonymous read is 401.

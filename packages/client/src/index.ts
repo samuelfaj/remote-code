@@ -9,6 +9,8 @@ export { workspaceLayoutFromValue, workspaceLayoutResponseFromValue } from "./la
 export type { WorkspaceLayout, LayoutTab, LayoutPane } from "./layout";
 export type { PendingTerminalStart, TerminalReference, TerminalState, TerminalInputState, TerminalReceipt, TerminalPoll, TerminalInputAck } from "./terminals";
 export type { ActionEventState, ActionReceipt } from "./action-events";
+export { retryAllowed, retryDelayMs } from "./retry";
+export type { RetryPlan } from "./retry";
 
 import { treaty } from "@elysiajs/eden";
 import type { App } from "@remotecode/api";

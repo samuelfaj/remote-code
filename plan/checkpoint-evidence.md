@@ -1,3 +1,12 @@
+# RC-018 receipts and limited requests — acceptance — 2026-10-07 (UTC)
+
+- **Status:** Complete. Each mutation carries a stable id, acceptance and result have a durable receipt, and a cut connection never means rollback.
+- **Command:** `RC018_PROOF_DIR=<fresh dir> bun scripts/rc018/run-connection-cut-proof.ts` (Docker Linux/arm64, the shipped API over TLS, a fault injector on the same host).
+- **Observed (two runs, `result: cut_connection_never_meant_rollback_and_every_effect_is_single_passed`):** for a cut *before* the mutation was forwarded the client's connection was closed (`threw: true`), the receipt for that id was 404 (no effect), and repeating the same id stored exactly one row. For a cut *after commit* the client was closed, the id's receipt returned 200 with the stored action, and repeating the same id returned 200 with the SAME receipt id while the store stayed at one row. For a cut *mid-response* the receipt again returned 200 and the store stayed at one row. A repeat with a different payload returned 409 with no second effect. Every marker had exactly one stored row and the receipt named the stored row.
+- **Failure-if check:** no screen waits forever (every attempt ends and the receipt is consulted), no edit or message is duplicated (one row per marker, repeat returns the same receipt), and a timeout is never treated as guaranteed rollback (the after-commit and mid-response cuts both left the effect in place).
+- **Client policy:** `packages/client/src/retry.ts` adds the bounded, jittered retry policy used by the web receipt read; `retry.test.ts` covers it.
+- **Checks:** `bun test apps/api/src apps/gateway/src packages/client/src` 289 pass / 74 skip / 0 fail; `bun run typecheck` exit 0; documentation-links gate exit 0; the browser terminal proof re-ran PASS after the client change.
+
 # RC-012 authorize resources per user — acceptance — 2026-10-07 (UTC)
 
 - **Status:** Complete. Every shipped resource route derives ownership from the authoritative session and denies another user's resource.
