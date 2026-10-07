@@ -1,4 +1,12 @@
 # Changelog
+## RC-034 accepted — provider failures get distinct states without retry 2026-10-07T14:20:00Z (UTC)
+
+- `acp-distill.ts` now captures a JSON-RPC error on `session/prompt` and returns it on the handle, with stop reason `prompt_error`. `runs.ts` gains `classifyProviderFailure(stopReason, message)` and a `retry_after_seconds` column (created and migrated in place) exposed as `retryAfterSeconds`: an expired credential ends `provider_auth_expired`, a 429/usage limit ends `provider_rate_limited` with the parsed Retry-After, temporary unavailability ends `provider_unavailable`, anything else `provider_failed`. The supervisor still never retries and has no model or account parameter.
+- Proof `scripts/rc034/run-provider-failure-proof.ts` PASS twice on real Linux with a controlled ACP agent: three runs ended `failed` with the three distinct reasons (`retryAfterSeconds: 30` only for the 429), each left exactly ONE prompt attempt, every attempt used the identical command line with no model/account flag, and the API stayed healthy. The real-provider half was re-verified: `scripts/rc022/run-thread-proof.sh` PASS on current source (Distill created its file in-container, run completed/end_turn, two client sessions read one run and file, no client needed to stay open).
+- Fixed a test-only defect found while running the suite: the new tests pointed the stub's prompt log at a path under the database file, so the agent crashed before answering; the log now uses its own temp directory.
+- Checks: `bun test apps/api/src packages/client/src` 262 pass / 74 skip / 0 fail; `bun run typecheck` clean; documentation-links gate clean.
+- `plan/tasks.html`: RC-034 Complete; summary now 29 complete / 4 in progress / 0 blocked / 35 to do.
+
 ## RC-039 accepted — Bot skills and memory persist and stay private 2026-10-07T13:40:00Z (UTC)
 
 - `bots` gains a `skills` JSON column (with a guarded `PRAGMA table_info` + `ALTER TABLE` migration for existing volumes) and every bot view now carries `skills: string[]`, parsed defensively. New `bot_memory` rows are keyed by both `bot_id` and `user_id`.

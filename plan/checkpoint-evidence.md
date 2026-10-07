@@ -1,3 +1,13 @@
+# RC-034 Distill run in a thread — acceptance — 2026-10-07 (UTC)
+
+- **Status:** Complete. A message starts the Distill run in the workspace directory, the host keeps the run and its history, and provider refusals show distinct states without retrying or switching model/account.
+- **Commands:** `RC034_PROOF_DIR=<fresh dir> bun scripts/rc034/run-provider-failure-proof.ts` and `bash scripts/rc022/run-thread-proof.sh`.
+- **Observed (provider failures, two runs, `result: provider_failures_get_distinct_states_without_retry_passed`):** with a controlled ACP agent, three runs ended `failed` with `provider_auth_expired` (error "401 Unauthorized: the provider credential has expired"), `provider_rate_limited` with `retryAfterSeconds: 30` (error "429 Too Many Requests. Retry-After: 30"), and `provider_unavailable` (error "503 Service Unavailable: provider temporarily unavailable"); each terminal state was stable on re-read; the attempt log had exactly 3 lines for 3 runs with a single unique command line (`bun <agent> agent stdio`) and no `--model`/`--account` flag; `/api/health/ready` stayed 200.
+- **Observed (real provider path, re-run on current source):** `scripts/rc022/run-thread-proof.sh` PASS — one workspace thread made real Distill create `rc022-thread.txt` in-container, the run completed with `end_turn`, two client sessions read the same run and file, and no client needed to stay open. The run, file and transcript therefore survive a client closing and returning.
+- **Failure-if check:** the response does not appear completed before the run (the POST returns `starting` and the terminal state only appears when the agent ends), execution stays inside the workspace (the created file is read back at the workspace path), and a provider failure triggers no retry and no model/account switch (one attempt per run, identical command line).
+- **Unit tests:** `apps/api/src/runs.test.ts` 18 pass, including the three classifications, the Retry-After value and the one-attempt log.
+- **Checks:** `bun test apps/api/src packages/client/src` 262 pass / 74 skip / 0 fail; `bun run typecheck` exit 0; documentation-links gate exit 0.
+
 # RC-039 Bot skills and memory — acceptance — 2026-10-07 (UTC)
 
 - **Status:** Complete. Enabled skills and Bot memory survive a restart and have a documented scope.

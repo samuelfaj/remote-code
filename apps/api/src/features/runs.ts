@@ -20,6 +20,7 @@ export type RunView = {
   error: string | null;
   sessionId: string | null;
   handoffReason: string | null;
+  retryAfterSeconds: number | null;
 };
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -41,6 +42,7 @@ type RunRow = {
   error: string | null;
   session_id: string | null;
   handoff_reason: string | null;
+  retry_after_seconds: number | null;
 };
 
 function view(row: RunRow): RunView {
@@ -57,7 +59,25 @@ function view(row: RunRow): RunView {
     error: row.error,
     sessionId: row.session_id,
     handoffReason: row.handoff_reason,
+    retryAfterSeconds: row.retry_after_seconds,
   };
+}
+
+export function classifyProviderFailure(stopReason: string | null, message: string | null):
+  { stopReason: string | null; retryAfterSeconds: number | null } {
+  if (stopReason !== "prompt_error") return { stopReason, retryAfterSeconds: null };
+  const msg = (message ?? "").toLowerCase();
+  if (/401|403|unauthori|unauthoriz|credential|api[-_ ]?key|token (expired|invalid)|expired/i.test(msg)) {
+    return { stopReason: "provider_auth_expired", retryAfterSeconds: null };
+  }
+  if (/429|rate[-_ ]?limit|too many requests|quota|usage limit/i.test(msg)) {
+    const match = msg.match(/retry[-_ ]?after[^0-9]{0,4}(\d{1,6})/i);
+    return { stopReason: "provider_rate_limited", retryAfterSeconds: match ? parseInt(match[1], 10) : null };
+  }
+  if (/503|502|500|unavailable|econn|etimedout|timed out|network|socket|overloaded|temporar/i.test(msg)) {
+    return { stopReason: "provider_unavailable", retryAfterSeconds: null };
+  }
+  return { stopReason: "provider_failed", retryAfterSeconds: null };
 }
 
 export function runsFeature(
@@ -143,13 +163,14 @@ export function runsFeature(
         stop_reason TEXT,
         error TEXT,
         session_id TEXT,
-        handoff_reason TEXT
+        handoff_reason TEXT,
+        retry_after_seconds INTEGER
       )`);
       db.exec("CREATE INDEX IF NOT EXISTS runs_workspace ON runs(workspace_id, created_at)");
       const columns = db.query<{ name: string }, []>("PRAGMA table_info(runs)").all();
       const columnNames = columns.map((column) => column.name);
-      for (const name of ["session_id", "handoff_reason"]) {
-        if (!columnNames.includes(name)) db.exec(`ALTER TABLE runs ADD COLUMN ${name} TEXT`);
+      for (const name of ["session_id", "handoff_reason", "retry_after_seconds"]) {
+        if (!columnNames.includes(name)) db.exec(`ALTER TABLE runs ADD COLUMN ${name} INTEGER`);
       }
       return callback(db);
     } finally {
@@ -182,7 +203,7 @@ export function runsFeature(
     if (row) options.onUpdate(view(row));
   }
 
-  function transition(id: string, patch: Partial<Pick<RunRow, "state" | "heartbeat_at" | "stop_requested_at" | "stop_reason" | "error" | "session_id" | "handoff_reason">>) {
+  function transition(id: string, patch: Partial<Pick<RunRow, "state" | "heartbeat_at" | "stop_requested_at" | "stop_reason" | "error" | "session_id" | "handoff_reason" | "retry_after_seconds">>) {
     const at = new Date().toISOString();
     const fields = Object.keys(patch);
     if (!fields.length) return;
@@ -231,10 +252,12 @@ export function runsFeature(
       const state: RunState = stopReason === "cancelled" || stopped
         ? "interrupted"
         : stopReason === "end_turn" ? "completed" : "failed";
+      const classified = classifyProviderFailure(stopReason, acpError ?? null);
       transition(id, {
         state,
-        stop_reason: stopReason ?? (stopped ? "stop_requested" : "unknown"),
+        stop_reason: classified.stopReason ?? (stopped ? "stop_requested" : "unknown"),
         ...(acpError ? { error: acpError } : {}),
+        ...(classified.retryAfterSeconds !== null ? { retry_after_seconds: classified.retryAfterSeconds } : {}),
       });
       emit(id);
     }).catch((error) => {
@@ -286,12 +309,12 @@ export function runsFeature(
           id: body.requestId ?? id, user_id: owner.userId, workspace_id: body.workspaceId,
           prompt: body.prompt, state: "starting", created_at: createdAt, updated_at: createdAt,
           heartbeat_at: null, stop_requested_at: null, stop_reason: null, error: null,
-          session_id: null, handoff_reason: null,
+          session_id: null, handoff_reason: null, retry_after_seconds: null,
         };
-        db.query(`INSERT INTO runs (id, user_id, workspace_id, prompt, state, created_at, updated_at, heartbeat_at, stop_requested_at, stop_reason, error, session_id, handoff_reason)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+        db.query(`INSERT INTO runs (id, user_id, workspace_id, prompt, state, created_at, updated_at, heartbeat_at, stop_requested_at, stop_reason, error, session_id, handoff_reason, retry_after_seconds)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
           row.id, row.user_id, row.workspace_id, row.prompt, row.state, row.created_at, row.updated_at,
-          row.heartbeat_at, row.stop_requested_at, row.stop_reason, row.error, row.session_id, row.handoff_reason,
+          row.heartbeat_at, row.stop_requested_at, row.stop_reason, row.error, row.session_id, row.handoff_reason, row.retry_after_seconds,
         );
         return { row };
       }).immediate());

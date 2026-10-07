@@ -211,7 +211,8 @@ export function startAcpPrompt(options: Options): AcpSessionHandle {
     }, 30 * 60_000);
     settled = true;
     const promptResult = answer.result as { stopReason?: string } | undefined;
-    return { stopReason: spawnFailure ? "spawn_failed" : promptResult?.stopReason ?? null, sessionId, error: spawnFailure };
+    const promptError = (answer.error as { message?: string } | undefined)?.message ?? null;
+    return { stopReason: spawnFailure ? "spawn_failed" : (promptResult?.stopReason ?? (promptError ? "prompt_error" : null)), sessionId, error: promptError ?? spawnFailure };
   })().catch(() => ({ stopReason: spawnFailure ? "spawn_failed" : null, sessionId, error: spawnFailure }));
 
   child.on("exit", () => {

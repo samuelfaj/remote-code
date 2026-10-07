@@ -3,7 +3,7 @@
 // shipped Distill binary; it only makes supervisor state transitions
 // deterministic. Real Distill is exercised by scripts/rc009/run-runs-proof.sh.
 import process from "node:process";
-import { writeFileSync } from "node:fs";
+import { appendFileSync, writeFileSync } from "node:fs";
 
 let buffer = "";
 let sessionId = "stub-session";
@@ -12,6 +12,11 @@ let cancelled = false;
 
 function send(message) {
   process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...message }) + "\n");
+}
+
+function logPrompt() {
+  const logFile = process.env.STUB_PROMPT_LOG;
+  if (logFile) appendFileSync(logFile, process.argv.join(" ") + "\n");
 }
 
 function handle(message) {
@@ -28,8 +33,21 @@ function handle(message) {
   }
   if (message.method === "session/prompt") {
     promptId = message.id;
+    logPrompt();
     const text = message.params?.prompt?.[0]?.text ?? "";
     send({ method: "session/update", params: { sessionId, update: { sessionUpdate: "agent_message_chunk" } } });
+    if (text.includes("AUTH_EXPIRED")) {
+      send({ id: promptId, error: { code: -32001, message: "401 Unauthorized: the provider credential has expired" } });
+      return;
+    }
+    if (text.includes("RATE_LIMITED")) {
+      send({ id: promptId, error: { code: -32002, message: "429 Too Many Requests. Retry-After: 30" } });
+      return;
+    }
+    if (text.includes("UNAVAILABLE")) {
+      send({ id: promptId, error: { code: -32003, message: "503 Service Unavailable: provider temporarily unavailable" } });
+      return;
+    }
     if (text.includes("ENVCHECK")) {
       writeFileSync("envcheck.txt", String(process.env.REMOTECODE_GATEWAY_TOKEN ?? "absent"));
     }

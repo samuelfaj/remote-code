@@ -371,3 +371,70 @@ describe("needs_user handoff", () => {
     expect(after.handoffReason ?? null).toBeNull();
   });
 });
+
+describe("RC-034 provider failure classification", () => {
+  type FailedView = RunSummary & { stopReason: string; retryAfterSeconds: number | null };
+
+  it("ends a run as failed with provider_auth_expired when the provider refuses with 401", async () => {
+    const path = tempDb("auth-expired");
+    const { app, cookie } = await api(path, mkdtempSync(join(tmpdir(), "rc034-cwd-")), {
+      ...process.env,
+      STUB_PROMPT_LOG: join(mkdtempSync(join(tmpdir(), "rc034-prompt-")), "prompt.log"),
+    });
+    const workspace = await createWorkspace(app, cookie, "runs");
+    const created = await request(app, cookie, "/api/runs", "POST", { workspaceId: workspace.id, prompt: "AUTH_EXPIRED task" });
+    const run = (await created.json()) as { id: string };
+    const failed = await waitForState(app, cookie, run.id, ["failed"]);
+    expect(failed.stopReason).toBe("provider_auth_expired");
+    expect((failed as FailedView).retryAfterSeconds).toBeNull();
+    expect((await request(app, cookie, "/api/health/ready")).status).toBe(200);
+  });
+
+  it("ends a run as failed with provider_rate_limited and retryAfterSeconds when the provider returns 429", async () => {
+    const path = tempDb("rate-limited");
+    const { app, cookie } = await api(path, mkdtempSync(join(tmpdir(), "rc034-cwd-")), {
+      ...process.env,
+      STUB_PROMPT_LOG: join(mkdtempSync(join(tmpdir(), "rc034-prompt-")), "prompt.log"),
+    });
+    const workspace = await createWorkspace(app, cookie, "runs");
+    const created = await request(app, cookie, "/api/runs", "POST", { workspaceId: workspace.id, prompt: "RATE_LIMITED task" });
+    const run = (await created.json()) as { id: string };
+    const failed = await waitForState(app, cookie, run.id, ["failed"]);
+    expect(failed.stopReason).toBe("provider_rate_limited");
+    expect((failed as FailedView).retryAfterSeconds).toBe(30);
+    expect((await request(app, cookie, "/api/health/ready")).status).toBe(200);
+  });
+
+  it("ends a run as failed with provider_unavailable when the provider returns 503", async () => {
+    const path = tempDb("unavailable");
+    const { app, cookie } = await api(path, mkdtempSync(join(tmpdir(), "rc034-cwd-")), {
+      ...process.env,
+      STUB_PROMPT_LOG: join(mkdtempSync(join(tmpdir(), "rc034-prompt-")), "prompt.log"),
+    });
+    const workspace = await createWorkspace(app, cookie, "runs");
+    const created = await request(app, cookie, "/api/runs", "POST", { workspaceId: workspace.id, prompt: "UNAVAILABLE task" });
+    const run = (await created.json()) as { id: string };
+    const failed = await waitForState(app, cookie, run.id, ["failed"]);
+    expect(failed.stopReason).toBe("provider_unavailable");
+    expect((failed as FailedView).retryAfterSeconds).toBeNull();
+    expect((await request(app, cookie, "/api/health/ready")).status).toBe(200);
+  });
+
+  it("logs exactly one prompt attempt per run and the argv contains no model switch", async () => {
+    const path = tempDb("prompt-log");
+    const logFile = join(mkdtempSync(join(tmpdir(), "rc034-prompt-")), "prompt.log");
+    const { app, cookie } = await api(path, mkdtempSync(join(tmpdir(), "rc034-cwd-")), {
+      ...process.env,
+      STUB_PROMPT_LOG: logFile,
+    });
+    const workspace = await createWorkspace(app, cookie, "runs");
+    const created = await request(app, cookie, "/api/runs", "POST", { workspaceId: workspace.id, prompt: "AUTH_EXPIRED task" });
+    const run = (await created.json()) as { id: string };
+    await waitForState(app, cookie, run.id, ["failed"]);
+
+    const logContent = readFileSync(logFile, "utf8");
+    const lines = logContent.trim().split("\n").filter((line) => line.length > 0);
+    expect(lines.length).toBe(1);
+    expect(lines[0]).not.toContain("--model");
+  });
+});
