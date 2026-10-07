@@ -1,3 +1,13 @@
+# RC-061 charge and apply managed plan — acceptance — 2026-10-08 (UTC)
+
+- **Status:** Complete. A confirmed provider event applies exactly one subscription transition, a duplicate or out-of-order event applies none, and a caller that lost the response reconciles through a receipt instead of re-charging.
+- **Command:** `RC061_PROOF_DIR=<fresh dir> bun scripts/rc061/run-billing-proof.ts` (the shipped API on this host over real HTTP, with signed webhooks, the documented test provider).
+- **Observed (three runs, `result: checkout_cancel_repeated_reversed_and_lost_webhooks_applied_one_transition_each_passed`):** the test checkout returned 200 `applied: true` and the subscription reached `active`/`hosted-basic`; the provider's repeat of the same `eventId` returned 200 `reason: duplicate` with `updatedAt` and `lastEventSequence` unchanged; `subscription.canceled` set `canceled` with `dataPurgeAfter` 30 days ahead and the Bot created before the cancel was still listed by `GET /api/bots`; the reversed delivery (`checkout.completed` sequence 3 after sequence 5) returned `out_of_order` and left the state `canceled` with `lastEventSequence` 5; a webhook whose response was deliberately aborted was reconciled by `GET /api/billing/receipt/:eventId` (`found: true`, `applied: true`) and its re-send returned `duplicate`; unsigned and forged-signature webhooks were both 401. Three of the four distinct events applied, each exactly once.
+- **Failure-if check:** no duplicate webhook charged or released twice (`updatedAt` compared), a lost response did not change access without a receipt (reconciliation first), and cancellation did not delete data (the Bot was read back afterwards).
+- **Defects fixed while proving:** the webhook required a session cookie, which a payment provider cannot send (signature is now the only credential and the subject comes from the payload); and the retention window was hard-coded to 30 rather than the configured policy.
+- **Pivot:** no live PSP credential exists here, so the provider side is a signed HTTP test plan behind the documented adapter seam; this is recorded in `PIVOT.md`.
+- **Checks:** `bun test apps/api apps/gateway packages/client` 341 pass / 74 skip / 0 fail; `bun run typecheck` exit 0; documentation-links gate exit 0.
+
 # RC-060 provision the hosted offer — acceptance — 2026-10-08 (UTC)
 
 - **Status:** Complete. Hosting provisions one container, one volume, one published port and one secret per account, and an account is `ready` only when its own host answers.

@@ -17,6 +17,7 @@ import { schedulesFeature } from "./features/schedules";
 import { workspaceFolderSchemaReady, workspaceFoldersFeature } from "./features/workspace-folders";
 import { checkDatabase, healthFeature, initializeDatabase, type ReadinessCheck } from "./features/health";
 import { backupFeature } from "./features/backup";
+import { billingFeature } from "./features/billing";
 
 const databasePath = process.env.DATABASE_PATH ?? "/tmp/remotecode.sqlite";
 
@@ -130,6 +131,7 @@ export function createApi(
     .use(terminals.routes)
     .use(runs.routes)
     .use(schedules.routes)
+    .use(billingFeature(configuredDatabasePath))
     .onStop(() => { terminals.stopAll(); runs.stopAll(); schedules.stop(); });
 }
 

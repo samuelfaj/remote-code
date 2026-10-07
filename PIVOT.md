@@ -1,5 +1,16 @@
 # Pivot policy
 
+## RC-061 accepted with a test provider instead of a live PSP 2026-10-08 (UTC)
+
+- **Blocker:** RC-061 "Charge and apply managed plan" needs a payment provider, and this host has no payment-provider credential or account of any kind. Waiting for one would halt the run.
+- **Pivot:** the provider boundary is a signed HTTP webhook behind a documented adapter seam (`REMOTECODE_BILLING_WEBHOOK_SECRET`), exercised by a test plan over real HTTP. The plan's own Executable proof already says "use test checkout, cancel, repeat and reverse webhook order". No npm dependency was added, no money is claimed to have moved, and the acceptance claim is limited to reconciliation of provider events.
+- **Ceiling and upgrade path:** a live PSP adapter plugs into the same route by replacing the signature scheme and the event vocabulary; the idempotency, ordering and receipt semantics do not change. Until a live credential exists, "charged" is never asserted — only "one transition per confirmed event".
+- **Unblocked:** RC-017's failure-state contract now has all six operation classes proven, and RC-062 (update without losing work) is dependency-ready.
+
+## RC-060 accepted and pushed at 82ffd93 2026-10-08 (UTC)
+
+- Provisioning each hosted account its own container, volume, port and secret, with a `ready` state only after a real readiness probe. Passing proof, three runs.
+
 ## RC-058 landed — RC-046 and RC-060 became dependency-ready 2026-10-07 (UTC)
 
 - Completing RC-058 unlocked **RC-060** (hosted provisioning) and, with RC-045, **RC-046** (durable Inbox). RC-060 leads to RC-061 (billing), which is the last surface RC-017's failure-state table needs.
