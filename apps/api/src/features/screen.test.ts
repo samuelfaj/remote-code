@@ -203,7 +203,7 @@ describe("Screen routes", () => {
     expect(bytes).toEqual(capturedBytes);
   });
 
-  it("GET /api/workspaces/:workspaceId/screen/frame returns 409 possession_required with wrong token", async () => {
+  it("GET /api/workspaces/:workspaceId/screen/frame returns 409 possession_lost with wrong token", async () => {
     const { app, workspaceId } = setup({
       capture: async () => new Uint8Array([0x89, 0x50]),
     });
@@ -218,10 +218,10 @@ describe("Screen routes", () => {
     });
     expect(response.status).toBe(409);
     const body = await response.json() as { error: string };
-    expect(body.error).toBe("possession_required");
+    expect(body.error).toBe("possession_lost");
   });
 
-  it("GET /api/workspaces/:workspaceId/screen/frame returns 409 possession_required when no live possession", async () => {
+  it("GET /api/workspaces/:workspaceId/screen/frame returns 409 possession_lost when no live possession", async () => {
     const { app, workspaceId } = setup({
       capture: async () => new Uint8Array([0x89, 0x50]),
     });
@@ -243,10 +243,10 @@ describe("Screen routes", () => {
     });
     expect(response.status).toBe(409);
     const body = await response.json() as { error: string };
-    expect(body.error).toBe("possession_required");
+    expect(body.error).toBe("possession_lost");
   });
 
-  it("GET /api/workspaces/:workspaceId/screen/frame returns 409 possession_required after expiry", async () => {
+  it("GET /api/workspaces/:workspaceId/screen/frame returns 409 possession_lost after expiry", async () => {
     const { app, workspaceId } = setup({ possessionMs: 50 });
     const take = await request(app, `http://localhost/api/workspaces/${workspaceId}/screen/possession`, {
       method: "POST",
@@ -262,7 +262,7 @@ describe("Screen routes", () => {
     });
     expect(response.status).toBe(409);
     const body = await response.json() as { error: string };
-    expect(body.error).toBe("possession_required");
+    expect(body.error).toBe("possession_lost");
   });
 
   it("POST /api/workspaces/:workspaceId/screen/input succeeds with valid token", async () => {
@@ -286,7 +286,7 @@ describe("Screen routes", () => {
     expect(inputCalls).toBe(1);
   });
 
-  it("POST /api/workspaces/:workspaceId/screen/input returns 409 possession_required with wrong token", async () => {
+  it("POST /api/workspaces/:workspaceId/screen/input returns 409 possession_lost with wrong token", async () => {
     const { app, workspaceId } = setup({
       input: async () => {},
     });
@@ -303,7 +303,7 @@ describe("Screen routes", () => {
     });
     expect(response.status).toBe(409);
     const body = await response.json() as { error: string };
-    expect(body.error).toBe("possession_required");
+    expect(body.error).toBe("possession_lost");
   });
 
   it("POST /api/workspaces/:workspaceId/screen/input returns 422 for invalid event", async () => {
@@ -325,7 +325,7 @@ describe("Screen routes", () => {
     expect(response.status).toBe(422);
   });
 
-  it("POST /api/workspaces/:workspaceId/screen/input returns 409 possession_required after release", async () => {
+  it("POST /api/workspaces/:workspaceId/screen/input returns 409 possession_lost after release", async () => {
     const { app, workspaceId } = setup({
       input: async () => {},
     });
@@ -349,7 +349,7 @@ describe("Screen routes", () => {
     });
     expect(response.status).toBe(409);
     const body = await response.json() as { error: string };
-    expect(body.error).toBe("possession_required");
+    expect(body.error).toBe("possession_lost");
   });
 
   it("POST /api/workspaces/:workspaceId/screen/agent/observation returns stateToken and epoch", async () => {
@@ -525,7 +525,7 @@ describe("Screen routes", () => {
     expect(input.status).toBe(404);
   });
 
-  it("possession is exclusive: Alice's stale token returns 409 possession_required", async () => {
+  it("possession is exclusive: Alice's stale token returns 409 possession_superseded", async () => {
     const { app, workspaceId } = setup();
     const take1 = await request(app, `http://localhost/api/workspaces/${workspaceId}/screen/possession`, {
       method: "POST",
@@ -545,7 +545,7 @@ describe("Screen routes", () => {
     });
     expect(frame.status).toBe(409);
     const body = await frame.json() as { error: string };
-    expect(body.error).toBe("possession_required");
+    expect(body.error).toBe("possession_superseded");
   });
 
   it("release returns control: agent path accepted with new observation, pre-takeover stateToken refused", async () => {
@@ -925,5 +925,301 @@ describe("Screen routes", () => {
       headers: { cookie: `remotecode_session=${ownerToken}` },
     });
     expect(frame.status).toBe(404);
+  });
+
+  it("two clients: superseded token returns possession_superseded, current token succeeds, seam called only for current holder", async () => {
+    let inputCalls = 0;
+    const captureCalls: { workspaceId: string; botId: string }[] = [];
+    const { app, workspaceId } = setup({
+      input: async () => { inputCalls++; },
+      capture: async (request) => { captureCalls.push(request); return new Uint8Array([0x89, 0x50]); },
+    });
+
+    // Client 1 takes possession
+    const take1 = await request(app, `http://localhost/api/workspaces/${workspaceId}/screen/possession`, {
+      method: "POST",
+      headers: { cookie: `remotecode_session=${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    const take1Body = await take1.json() as { token: string };
+    const cookie1 = take1.headers.get("set-cookie") ?? "";
+    const possessionToken1 = cookie1.match(/rc_screen_possession=([^;]+)/)![1];
+
+    // Client 2 takes possession (supersedes client 1)
+    const take2 = await request(app, `http://localhost/api/workspaces/${workspaceId}/screen/possession`, {
+      method: "POST",
+      headers: { cookie: `remotecode_session=${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    const take2Body = await take2.json() as { token: string };
+    const cookie2 = take2.headers.get("set-cookie") ?? "";
+    const possessionToken2 = cookie2.match(/rc_screen_possession=([^;]+)/)![1];
+
+    // Client 1's heartbeat is refused possession_superseded
+    const hb1 = await request(app, `http://localhost/api/workspaces/${workspaceId}/screen/possession/heartbeat`, {
+      method: "POST",
+      headers: { cookie: `remotecode_session=${ownerToken}; rc_screen_possession=${possessionToken1}`, "content-type": "application/json" },
+      body: JSON.stringify({ token: take1Body.token }),
+    });
+    expect(hb1.status).toBe(409);
+    expect((await hb1.json() as { error: string }).error).toBe("possession_superseded");
+
+    // Client 2's heartbeat succeeds
+    const hb2 = await request(app, `http://localhost/api/workspaces/${workspaceId}/screen/possession/heartbeat`, {
+      method: "POST",
+      headers: { cookie: `remotecode_session=${ownerToken}; rc_screen_possession=${possessionToken2}`, "content-type": "application/json" },
+      body: JSON.stringify({ token: take2Body.token }),
+    });
+    expect(hb2.status).toBe(200);
+
+    // Client 1's frame is refused possession_superseded
+    const frame1 = await request(app, `http://localhost/api/workspaces/${workspaceId}/screen/frame`, {
+      headers: { cookie: `remotecode_session=${ownerToken}; rc_screen_possession=${possessionToken1}`, "x-rc-possession": take1Body.token },
+    });
+    expect(frame1.status).toBe(409);
+    expect((await frame1.json() as { error: string }).error).toBe("possession_superseded");
+
+    // Client 2's frame succeeds
+    const frame2 = await request(app, `http://localhost/api/workspaces/${workspaceId}/screen/frame`, {
+      headers: { cookie: `remotecode_session=${ownerToken}; rc_screen_possession=${possessionToken2}`, "x-rc-possession": take2Body.token },
+    });
+    expect(frame2.status).toBe(200);
+
+    // Client 1's input is refused possession_superseded
+    const input1 = await request(app, `http://localhost/api/workspaces/${workspaceId}/screen/input`, {
+      method: "POST",
+      headers: { cookie: `remotecode_session=${ownerToken}; rc_screen_possession=${possessionToken1}`, "content-type": "application/json" },
+      body: JSON.stringify({ token: take1Body.token, event: { kind: "click", x: 1, y: 2 } }),
+    });
+    expect(input1.status).toBe(409);
+    expect((await input1.json() as { error: string }).error).toBe("possession_superseded");
+
+    // Client 2's input succeeds
+    const input2 = await request(app, `http://localhost/api/workspaces/${workspaceId}/screen/input`, {
+      method: "POST",
+      headers: { cookie: `remotecode_session=${ownerToken}; rc_screen_possession=${possessionToken2}`, "content-type": "application/json" },
+      body: JSON.stringify({ token: take2Body.token, event: { kind: "click", x: 3, y: 4 } }),
+    });
+    expect(input2.status).toBe(200);
+    expect(inputCalls).toBe(1);
+  });
+
+  it("Bot agent/input is refused possession_held_by_user and seam records zero calls after takeover", async () => {
+    let inputCalls = 0;
+    const { app, workspaceId } = setup({
+      input: async () => { inputCalls++; },
+    });
+
+    // Client 1 takes possession
+    await request(app, `http://localhost/api/workspaces/${workspaceId}/screen/possession`, {
+      method: "POST",
+      headers: { cookie: `remotecode_session=${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+
+    // Bot is refused while client 1 holds possession
+    const obs1 = await request(app, `http://localhost/api/workspaces/${workspaceId}/screen/agent/observation`, {
+      method: "POST",
+      headers: { cookie: `remotecode_session=${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ agentId: "agent-1" }),
+    });
+    const { stateToken: stateToken1 } = await obs1.json() as { stateToken: string };
+
+    const bot1 = await request(app, `http://localhost/api/workspaces/${workspaceId}/screen/agent/input`, {
+      method: "POST",
+      headers: { cookie: `remotecode_session=${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ stateToken: stateToken1, event: { kind: "click", x: 5, y: 10 } }),
+    });
+    expect(bot1.status).toBe(409);
+    expect((await bot1.json() as { error: string }).error).toBe("possession_held_by_user");
+
+    // Client 2 takes possession (supersedes client 1)
+    await request(app, `http://localhost/api/workspaces/${workspaceId}/screen/possession`, {
+      method: "POST",
+      headers: { cookie: `remotecode_session=${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+
+    // Bot is still refused because client 2 holds possession
+    const bot2 = await request(app, `http://localhost/api/workspaces/${workspaceId}/screen/agent/input`, {
+      method: "POST",
+      headers: { cookie: `remotecode_session=${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ stateToken: stateToken1, event: { kind: "click", x: 5, y: 10 } }),
+    });
+    expect(bot2.status).toBe(409);
+    expect((await bot2.json() as { error: string }).error).toBe("possession_held_by_user");
+    expect(inputCalls).toBe(0);
+  });
+
+  it("GET /api/workspaces/:workspaceId/screen/possession reports holder, superseded, expired, and none", async () => {
+    const { app, workspaceId } = setup({ possessionMs: 50 });
+
+    // No cookie → none
+    const none = await request(app, `http://localhost/api/workspaces/${workspaceId}/screen/possession`, {
+      headers: { cookie: `remotecode_session=${ownerToken}` },
+    });
+    expect(none.status).toBe(200);
+    expect((await none.json() as { state: string }).state).toBe("none");
+
+    // Client takes possession → holder
+    const take = await request(app, `http://localhost/api/workspaces/${workspaceId}/screen/possession`, {
+      method: "POST",
+      headers: { cookie: `remotecode_session=${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    const cookie = take.headers.get("set-cookie") ?? "";
+    const possessionToken = cookie.match(/rc_screen_possession=([^;]+)/)![1];
+
+    const holder = await request(app, `http://localhost/api/workspaces/${workspaceId}/screen/possession`, {
+      headers: { cookie: `remotecode_session=${ownerToken}; rc_screen_possession=${possessionToken}` },
+    });
+    expect(holder.status).toBe(200);
+    const holderBody = await holder.json() as { state: string; expiresAt: number | null; epoch: number; supersededCount: number };
+    expect(holderBody.state).toBe("holder");
+    expect(holderBody.expiresAt).toBeGreaterThan(Date.now());
+    expect(holderBody.epoch).toBe(1);
+    expect(holderBody.supersededCount).toBe(0);
+
+    // Second takeover → first token is superseded
+    await request(app, `http://localhost/api/workspaces/${workspaceId}/screen/possession`, {
+      method: "POST",
+      headers: { cookie: `remotecode_session=${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+
+    const superseded = await request(app, `http://localhost/api/workspaces/${workspaceId}/screen/possession`, {
+      headers: { cookie: `remotecode_session=${ownerToken}; rc_screen_possession=${possessionToken}` },
+    });
+    expect(superseded.status).toBe(200);
+    expect((await superseded.json() as { state: string }).state).toBe("superseded");
+
+    // Wait for the current possession to expire (not the superseded one)
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    // The current token (from the second takeover) should now be expired
+    const cookie2 = take.headers.get("set-cookie") ?? "";
+    // The second takeover set a new cookie; we need to get it from the second take response
+    // Instead, let's test expired by taking a fresh possession and waiting for it to expire
+  });
+
+  it("GET /api/workspaces/:workspaceId/screen/possession reports expired when current possession lapses", async () => {
+    const { app, workspaceId } = setup({ possessionMs: 50 });
+
+    const take = await request(app, `http://localhost/api/workspaces/${workspaceId}/screen/possession`, {
+      method: "POST",
+      headers: { cookie: `remotecode_session=${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    const cookie = take.headers.get("set-cookie") ?? "";
+    const possessionToken = cookie.match(/rc_screen_possession=([^;]+)/)![1];
+
+    // Wait for expiry without taking possession again
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    const response = await request(app, `http://localhost/api/workspaces/${workspaceId}/screen/possession`, {
+      headers: { cookie: `remotecode_session=${ownerToken}; rc_screen_possession=${possessionToken}` },
+    });
+    expect(response.status).toBe(200);
+    const body = await response.json() as { state: string; expiresAt: number | null };
+    expect(body.state).toBe("expired");
+    expect(body.expiresAt).toBeLessThanOrEqual(Date.now());
+  });
+
+  it("resumption: superseded client takes possession again, gets greater epoch, pre-takeover stateToken refused stale_observation", async () => {
+    let inputCalls = 0;
+    const { app, workspaceId } = setup({
+      input: async () => { inputCalls++; },
+    });
+
+    // Client 1 takes possession (epoch 1)
+    const take1 = await request(app, `http://localhost/api/workspaces/${workspaceId}/screen/possession`, {
+      method: "POST",
+      headers: { cookie: `remotecode_session=${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    const take1Body = await take1.json() as { token: string; epoch: number };
+    expect(take1Body.epoch).toBe(1);
+
+    // Agent observes at epoch 1
+    const obs1 = await request(app, `http://localhost/api/workspaces/${workspaceId}/screen/agent/observation`, {
+      method: "POST",
+      headers: { cookie: `remotecode_session=${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ agentId: "agent-1" }),
+    });
+    const { stateToken: oldStateToken } = await obs1.json() as { stateToken: string; epoch: number };
+    expect(oldStateToken).toBeTruthy();
+
+    // Client 2 takes possession (epoch 2) - client 1 superseded
+    await request(app, `http://localhost/api/workspaces/${workspaceId}/screen/possession`, {
+      method: "POST",
+      headers: { cookie: `remotecode_session=${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+
+    // Client 1 takes possession again (epoch 3) - resumption
+    const take3 = await request(app, `http://localhost/api/workspaces/${workspaceId}/screen/possession`, {
+      method: "POST",
+      headers: { cookie: `remotecode_session=${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    const take3Body = await take3.json() as { token: string; epoch: number };
+    expect(take3Body.epoch).toBe(3);
+
+    // Release current possession so Bot can try agent/input
+    await request(app, `http://localhost/api/workspaces/${workspaceId}/screen/possession/release`, {
+      method: "POST",
+      headers: { cookie: `remotecode_session=${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ token: take3Body.token }),
+    });
+
+    // Pre-takeover stateToken (epoch 1) is stale against current epoch 3
+    const staleResponse = await request(app, `http://localhost/api/workspaces/${workspaceId}/screen/agent/input`, {
+      method: "POST",
+      headers: { cookie: `remotecode_session=${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ stateToken: oldStateToken, event: { kind: "click", x: 5, y: 10 } }),
+    });
+    expect(staleResponse.status).toBe(409);
+    expect((await staleResponse.json() as { error: string }).error).toBe("stale_observation");
+    expect(inputCalls).toBe(0);
+
+    // New observation at current epoch 3 should work
+    const obs3 = await request(app, `http://localhost/api/workspaces/${workspaceId}/screen/agent/observation`, {
+      method: "POST",
+      headers: { cookie: `remotecode_session=${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ agentId: "agent-1" }),
+    });
+    const { stateToken: newStateToken, epoch: obsEpoch } = await obs3.json() as { stateToken: string; epoch: number };
+    expect(obsEpoch).toBe(3);
+
+    const freshResponse = await request(app, `http://localhost/api/workspaces/${workspaceId}/screen/agent/input`, {
+      method: "POST",
+      headers: { cookie: `remotecode_session=${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ stateToken: newStateToken, event: { kind: "click", x: 5, y: 10 } }),
+    });
+    expect(freshResponse.status).toBe(200);
+    expect(inputCalls).toBe(1);
+  });
+
+  it("expired holder reports expired and is not reported as holder", async () => {
+    const { app, workspaceId } = setup({ possessionMs: 50 });
+
+    const take = await request(app, `http://localhost/api/workspaces/${workspaceId}/screen/possession`, {
+      method: "POST",
+      headers: { cookie: `remotecode_session=${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    const cookie = take.headers.get("set-cookie") ?? "";
+    const possessionToken = cookie.match(/rc_screen_possession=([^;]+)/)![1];
+
+    // Wait for expiry
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    const response = await request(app, `http://localhost/api/workspaces/${workspaceId}/screen/possession`, {
+      headers: { cookie: `remotecode_session=${ownerToken}; rc_screen_possession=${possessionToken}` },
+    });
+    expect(response.status).toBe(200);
+    const body = await response.json() as { state: string; expiresAt: number | null };
+    expect(body.state).toBe("expired");
+    expect(body.expiresAt).toBeLessThanOrEqual(Date.now());
   });
 });

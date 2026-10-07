@@ -111,6 +111,18 @@ export function screenFeature(
       expires_at INTEGER NOT NULL,
       created_at TEXT NOT NULL
     )`);
+    const existing = db.query<{ name: string }, []>(
+      "PRAGMA table_info(screen_possessions)",
+    ).all().map((row) => row.name);
+    if (!existing.includes("superseded_count")) {
+      db.exec("ALTER TABLE screen_possessions ADD COLUMN superseded_count INTEGER NOT NULL DEFAULT 0");
+    }
+    if (!existing.includes("superseded_at")) {
+      db.exec("ALTER TABLE screen_possessions ADD COLUMN superseded_at INTEGER");
+    }
+    if (!existing.includes("previous_token_hash")) {
+      db.exec("ALTER TABLE screen_possessions ADD COLUMN previous_token_hash TEXT");
+    }
   }
 
   try {
@@ -148,6 +160,21 @@ export function screenFeature(
     return !!row && row.released_at === null && row.expires_at > Date.now();
   }
 
+  function checkPossessionToken(
+    database: Database,
+    workspaceId: string,
+    hash: string,
+  ): { ok: true } | { ok: false; error: "possession_superseded" | "possession_lost" } {
+    const row = database.query<
+      { token_hash: string; previous_token_hash: string | null; expires_at: number; released_at: number | null },
+      [string]
+    >("SELECT * FROM screen_possessions WHERE workspace_id = ?").get(workspaceId);
+    if (!row) return { ok: false, error: "possession_lost" };
+    if (row.token_hash === hash && row.released_at === null && row.expires_at > Date.now()) return { ok: true };
+    if (row.previous_token_hash === hash) return { ok: false, error: "possession_superseded" };
+    return { ok: false, error: "possession_lost" };
+  }
+
   function botBelongsToUser(botId: string, userId: string): boolean {
     return Boolean(db((database) => database.query<{ id: string }, [string, string]>(
       "SELECT id FROM bots WHERE id = ? AND user_id = ?",
@@ -178,7 +205,7 @@ export function screenFeature(
         const result = db((database) => {
           initializeSchema(database);
           const existing = database.query<
-            { possession_id: string; token_hash: string; epoch: number; expires_at: number },
+            { possession_id: string; token_hash: string; epoch: number; expires_at: number; holder_user_id: string },
             [string]
           >("SELECT * FROM screen_possessions WHERE workspace_id = ?").get(params.workspaceId);
 
@@ -191,13 +218,23 @@ export function screenFeature(
 
           if (existing) {
             database.query(
-              "UPDATE screen_possessions SET possession_id = ?, token_hash = ?, holder_user_id = ?, epoch = ?, expires_at = ?, released_at = NULL, created_at = ? WHERE workspace_id = ?",
-            ).run(possessionId, hash, owner.userId, newEpoch, expiresAt, now, params.workspaceId);
+              "UPDATE screen_possessions SET possession_id = ?, token_hash = ?, previous_token_hash = ?, holder_user_id = ?, epoch = ?, expires_at = ?, superseded_at = ?, superseded_count = superseded_count + 1, released_at = NULL, created_at = ? WHERE workspace_id = ?",
+            ).run(possessionId, hash, existing.token_hash, owner.userId, newEpoch, expiresAt, Date.now(), now, params.workspaceId);
           } else {
             database.query(
-              "INSERT INTO screen_possessions (workspace_id, possession_id, token_hash, holder_user_id, epoch, expires_at, released_at, created_at) VALUES (?, ?, ?, ?, ?, ?, NULL, ?)",
+              "INSERT INTO screen_possessions (workspace_id, possession_id, token_hash, previous_token_hash, holder_user_id, epoch, expires_at, superseded_count, superseded_at, released_at, created_at) VALUES (?, ?, ?, NULL, ?, ?, ?, 0, NULL, NULL, ?)",
             ).run(params.workspaceId, possessionId, hash, owner.userId, newEpoch, expiresAt, now);
           }
+
+          set.cookie = {
+            rc_screen_possession: {
+              value: token,
+              httpOnly: true,
+              sameSite: "strict",
+              maxAge: Math.floor((expiresAt - Date.now()) / 1000),
+              path: "/",
+            },
+          };
 
           return { possessionId, token, epoch: newEpoch, expiresAt };
         });
@@ -219,14 +256,10 @@ export function screenFeature(
 
       try {
         const hash = tokenHash(token);
-        const row = db((database) => database.query<
-          { token_hash: string; expires_at: number; released_at: number | null },
-          [string]
-        >("SELECT * FROM screen_possessions WHERE workspace_id = ?").get(params.workspaceId));
-
-        if (!row || row.token_hash !== hash || row.released_at !== null || row.expires_at <= Date.now()) {
+        const result = db((database) => checkPossessionToken(database, params.workspaceId, hash));
+        if (!result.ok) {
           set.status = 409;
-          return { error: "possession_lost" as const };
+          return { error: result.error };
         }
 
         const newExpiresAt = Date.now() + possessionMs;
@@ -251,14 +284,10 @@ export function screenFeature(
 
       try {
         const hash = tokenHash(token);
-        const row = db((database) => database.query<
-          { token_hash: string; expires_at: number; released_at: number | null },
-          [string]
-        >("SELECT * FROM screen_possessions WHERE workspace_id = ?").get(params.workspaceId));
-
-        if (!row || row.token_hash !== hash || row.released_at !== null || row.expires_at <= Date.now()) {
+        const result = db((database) => checkPossessionToken(database, params.workspaceId, hash));
+        if (!result.ok) {
           set.status = 409;
-          return { error: "possession_lost" as const };
+          return { error: result.error };
         }
 
         const releasedAt = Date.now();
@@ -283,14 +312,10 @@ export function screenFeature(
 
       try {
         const hash = tokenHash(token);
-        const row = db((database) => database.query<
-          { token_hash: string; expires_at: number; released_at: number | null },
-          [string]
-        >("SELECT * FROM screen_possessions WHERE workspace_id = ?").get(params.workspaceId));
-
-        if (!row || row.token_hash !== hash || row.released_at !== null || row.expires_at <= Date.now()) {
+        const result = db((database) => checkPossessionToken(database, params.workspaceId, hash));
+        if (!result.ok) {
           set.status = 409;
-          return { error: "possession_required" as const };
+          return { error: result.error };
         }
 
         const bytes = await captureSeam({ workspaceId: params.workspaceId, botId: "" });
@@ -316,14 +341,10 @@ export function screenFeature(
 
       try {
         const hash = tokenHash(token);
-        const row = db((database) => database.query<
-          { token_hash: string; expires_at: number; released_at: number | null },
-          [string]
-        >("SELECT * FROM screen_possessions WHERE workspace_id = ?").get(params.workspaceId));
-
-        if (!row || row.token_hash !== hash || row.released_at !== null || row.expires_at <= Date.now()) {
+        const result = db((database) => checkPossessionToken(database, params.workspaceId, hash));
+        if (!result.ok) {
           set.status = 409;
-          return { error: "possession_required" as const };
+          return { error: result.error };
         }
 
         const event = body.event;
@@ -378,6 +399,54 @@ export function screenFeature(
         key: t.Optional(t.String()),
       }),
     }) })
+    .get("/api/workspaces/:workspaceId/screen/possession", ({ params, request, set }) => {
+      const owner = resolveOwner(request);
+      if (owner.kind === "anonymous") { set.status = 401; return { error: "unauthorized" as const }; }
+      if (owner.kind === "unavailable") { set.status = 503; return { error: "storage_unavailable" as const }; }
+      if (!canonicalUuid.test(params.workspaceId)) { set.status = 404; return { error: "not_found" as const }; }
+      if (!workspaceExists(params.workspaceId, owner.userId)) { set.status = 404; return { error: "not_found" as const }; }
+
+      try {
+        const result = db((database) => {
+          initializeSchema(database);
+          const cookieToken = request.headers.get("cookie") ?? "";
+          const match = cookieToken.match(/(?:^|;\s*)rc_screen_possession=([^;]+)/);
+          const token = match ? match[1] : "";
+
+          if (!token) {
+            return { state: "none" as const, expiresAt: null as number | null, epoch: 0, supersededCount: 0 };
+          }
+
+          const hash = tokenHash(token);
+          const row = database.query<
+            { token_hash: string; previous_token_hash: string | null; expires_at: number; released_at: number | null; epoch: number; superseded_count: number },
+            [string]
+          >("SELECT * FROM screen_possessions WHERE workspace_id = ?").get(params.workspaceId);
+
+          if (!row) {
+            return { state: "none" as const, expiresAt: null, epoch: 0, supersededCount: 0 };
+          }
+
+          if (row.token_hash === hash && row.released_at === null && row.expires_at > Date.now()) {
+            return { state: "holder" as const, expiresAt: row.expires_at, epoch: row.epoch, supersededCount: row.superseded_count };
+          }
+
+          if (row.previous_token_hash === hash) {
+            return { state: "superseded" as const, expiresAt: null, epoch: row.epoch, supersededCount: row.superseded_count };
+          }
+
+          if (row.token_hash === hash) {
+            return { state: "expired" as const, expiresAt: row.expires_at, epoch: row.epoch, supersededCount: row.superseded_count };
+          }
+
+          return { state: "none" as const, expiresAt: null, epoch: 0, supersededCount: 0 };
+        });
+        return result;
+      } catch {
+        set.status = 503;
+        return { error: "storage_unavailable" as const };
+      }
+    }, { params: t.Object({ workspaceId: uuidSchema }) })
     .post("/api/workspaces/:workspaceId/screen/agent/observation", ({ params, request, set, body }) => {
       const owner = resolveOwner(request);
       if (owner.kind === "anonymous") { set.status = 401; return { error: "unauthorized" as const }; }
@@ -398,7 +467,7 @@ export function screenFeature(
 
           if (!existing) {
             database.query(
-              "INSERT INTO screen_possessions (workspace_id, possession_id, token_hash, holder_user_id, epoch, expires_at, released_at, created_at) VALUES (?, ?, ?, ?, ?, 0, NULL, ?)",
+              "INSERT INTO screen_possessions (workspace_id, possession_id, token_hash, previous_token_hash, holder_user_id, epoch, expires_at, superseded_count, superseded_at, released_at, created_at) VALUES (?, ?, ?, NULL, ?, ?, 0, 0, NULL, NULL, ?)",
             ).run(params.workspaceId, crypto.randomUUID(), "", owner.userId, epoch, now);
           }
 

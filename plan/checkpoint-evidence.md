@@ -1,3 +1,11 @@
+# RC-043 strengthen exclusive screen possession — acceptance — 2026-10-08 (UTC)
+
+- **Status:** Complete. Successive clients can take the screen, the displaced one is told explicitly why it lost control, a dropped connection expires with its own state, and resumption takes a new epoch so the Bot cannot act on a stale observation.
+- **Command:** `RC043_PROOF_DIR=<fresh dir> bun scripts/rc043/run-possession-proof.ts` (real Docker; a real Linux account container with Xvfb + Chromium and the shipped API, journey executed inside the container over loopback).
+- **Observed (two runs, `result: two_clients_never_shared_the_screen_displaced_client_was_told_and_recovered_passed`):** client 1 took possession at **epoch 2** and read a 200 frame; the Bot's click was refused **409 `possession_held_by_user`** with the X pointer position identical before and after; client 2 took possession at **epoch 3** with a different token; client 1's frame, heartbeat and input were then each refused **409 `possession_superseded`** while client 2's frame was a 200 PNG and its input moved the pointer; `GET .../screen/possession` returned `superseded` for client 1 and `holder` for client 2; the Bot was still refused `possession_held_by_user`; after the heartbeats stopped the holder got **409 `possession_lost`** and its state read `expired`; resumption took **epoch 4**, the Bot was refused `possession_held_by_user` while the client held the screen, the pre-takeover observation was then refused **409 `stale_observation`**, and after a fresh observation the Bot acted again (200).
+- **Failure-if check:** no Bot click passed during human control (both client periods returned 409 and the pointer was unchanged on the refused click), and at no point did two tokens both work — the displaced token failed frame, heartbeat and input while the current token succeeded.
+- **Checks:** `bun test apps/api apps/gateway packages/client` 404 pass / 74 skip / 0 fail; `bun run typecheck` exit 0; documentation-links gate exit 0.
+
 # RC-042 strengthen computer preview — acceptance — 2026-10-08 (UTC)
 
 - **Status:** Complete. Each Bot's preview shows that Bot's own screen, survives a reconnect by rotating its token, and is refused outside the workspace and Bot it was opened for; the viewing token never leaves the httpOnly cookie.
