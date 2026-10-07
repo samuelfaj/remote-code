@@ -1,5 +1,12 @@
 # Pivot policy
 
+## RC-063 proven with a second session instead of a second account 2026-10-08 (UTC)
+
+- **Blocker:** RC-063's proof says to try "other account IDs" between two users, but this repository's auth model is one password for one user, so a second real account cannot exist here.
+- **Pivot:** the intruder is a second session for a different user id inserted into the shipped `sessions` table — exactly the fixture the repository's own route tests use — so the shipped ownership boundary is what gets attacked, not a mock. Everything else in the proof is real: two provisioned accounts, a real gateway, real containers and the real account filesystem.
+- **Ceiling:** this proves the ownership boundary and the container boundaries, not two genuinely separate billing identities. Both accounts still belong to one user, so a cross-*user* data path would need a second user in the auth model (a product change, not a proof change).
+- **Found and fixed:** the agent identity could read the service database. The API now sets `umask 077` at startup and re-chmods the database to 0600 on boot, so an unprivileged agent in the same container cannot read session or account secrets.
+
 ## RC-024 proven with the journey inside the account container 2026-10-08 (UTC)
 
 - **Blocker:** the auth boundary refuses plain HTTP from a non-loopback peer, so a proof that runs on the Mac and reaches the container's published port cannot log in, and the container has no X11 forwarding to the host.

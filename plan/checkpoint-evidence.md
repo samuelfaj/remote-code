@@ -1,3 +1,14 @@
+# RC-063 prove isolation and security — acceptance — 2026-10-08 (UTC)
+
+- **Status:** Complete. No path outside an account reads its data or controls its screen, and the agent identity sees no service secret.
+- **Command:** `RC063_PROOF_DIR=<fresh dir> bun scripts/rc063/run-isolation-proof.ts` (real Docker; the account image is built from the tree under test, the control plane runs on the host, the gateway is the shipped one).
+- **Observed (two runs, `result: no_path_read_or_controlled_another_account_and_the_agent_saw_no_secret_passed`):** cross-account read/suspend/update **404** and the account untouched (`ready`); unknown id **404**; revoked token **401** (client and direct); gateway **401** with no token, a forged token, and another account's route; screen frame **409** with no token and with a forged token, intruder preview **404**; agent identity `databaseRead: DENIED` and `pidOneSecrets: DENIED` with no control password and no gateway token in its environment; distinct volumes and an unreadable other-account volume; Beta's data and billing routes answered **401** to Alpha's container.
+- **Failure-if check:** no path read or controlled another account (every attempt was refused and the target account's `ready` state was read back unchanged), and the agent read no service secret (the database and PID 1 environment were both denied after the fix below).
+- **Defect fixed while proving:** the unprivileged agent could read the service database. `apps/api/src/index.ts` now sets `umask 077` at startup and `initializeDatabase` re-chmods the database to `0600`, healing databases created earlier.
+- **Known, recorded exposure:** the unauthenticated readiness probe is reachable from another account on the shared account network. It returns no data and every data route on that connection answered 401; per-account networks are the next hardening step and are not claimed as done.
+- **Pivot:** one user exists under the shipped auth, so the intruder is a second session for a different user id inserted into the shipped `sessions` table, as this repository's own route tests do.
+- **Checks:** `bun test apps/api apps/gateway packages/client` 404 pass / 74 skip / 0 fail; `bun run typecheck` exit 0; documentation-links gate exit 0.
+
 # RC-029 edit workspace files — acceptance — 2026-10-08 (UTC)
 
 - **Status:** Complete. Files can be listed, opened, created, saved and moved through the backend with a version on every read and an expected version on every write; a second client editing the same file gets a clear conflict, and a lost response is reconciled from the receipt instead of being repeated.

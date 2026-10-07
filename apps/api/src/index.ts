@@ -1,3 +1,8 @@
+// The database holds session and account secrets, and in a hosted account the
+// supervising agent runs in the same container as an unprivileged user, so
+// anything this process creates must not be world-readable.
+process.umask(0o077);
+
 import { app, registerTerminalsShutdown, terminalsShutdown } from "./app";
 
 const port = Number(process.env.API_PORT ?? 3000);

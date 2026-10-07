@@ -1,4 +1,5 @@
 import { Database } from "bun:sqlite";
+import { chmodSync } from "node:fs";
 import { Elysia } from "elysia";
 
 const readinessTimeoutMs = 500;
@@ -11,6 +12,8 @@ export function initializeDatabase(databasePath: string) {
   try {
     database = new Database(databasePath);
     database.query("SELECT 1").get();
+    // A database created before the umask above existed is still world-readable.
+    try { chmodSync(databasePath, 0o600); } catch {}
   } catch {
     // Readiness reports unavailable storage without preventing liveness.
   } finally {

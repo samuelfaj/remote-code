@@ -1,4 +1,19 @@
 # Changelog
+## RC-063 accepted — prove isolation and security 2026-10-08T11:30:00Z (UTC)
+
+- **Found and fixed a real defect:** the unprivileged agent identity could read the service database, which holds every session and account secret. `apps/api/src/index.ts` now sets `process.umask(0o077)` before anything is created and `initializeDatabase` re-chmods the database to `0600` on boot, so a database created before the change is healed too. The proof now reports `databaseRead: DENIED` and `pidOneSecrets: DENIED` where it previously read the file.
+- Proof `scripts/rc063/run-isolation-proof.ts` PASS twice with two provisioned accounts on real Docker, a real gateway and an intruder session that owns nothing:
+  - other account's id for read, suspend and update → **404** each time, and the target account stayed `ready`; an id that exists nowhere → 404;
+  - a logged-out token → **401** both through the client helper and a direct request;
+  - the gateway → **401** with no token, with a forged token, and for a route that belongs to another account (the route table only knows the token it was given);
+  - the screen → **409** with no possession token and with a forged one, and an intruder's preview request → 404;
+  - the agent identity → the service database and PID 1's environment both **DENIED**, and its environment contained no control-plane password and no gateway token;
+  - the two accounts mounted **distinct** volumes, the other account's volume was unreadable, and Alpha's container got **401** from Beta's data and billing routes.
+- Recorded rather than hidden: the unauthenticated readiness probe answers 200 to another account on the shared network. It returns no data, and every data route on that same connection answered 401. Per-account networks would close even that, and are noted as the next hardening step rather than claimed as done.
+- Pivot recorded in `PIVOT.md`: the auth model has one user, so the intruder is a second session for another user id created in the shipped `sessions` table — the same fixture the repository's route tests use. Two genuinely separate user identities remain a product change.
+- Checks: `bun test apps/api apps/gateway packages/client` 404 pass / 74 skip / 0 fail; `bun run typecheck` exit 0; documentation-links gate exit 0.
+- `plan/tasks.html`: RC-063 Complete; summary now 49 complete / 0 in progress / 0 blocked / 19 to do.
+
 ## RC-029 accepted — edit workspace files 2026-10-08T10:30:00Z (UTC)
 
 - RC-029 is **Complete**. LIST, OPEN, CREATE, SAVE and MOVE go through the one authoritative Elysia backend: every read returns a content-hash version, every write carries the expected version, and a writer holding a stale version is refused instead of silently overwriting. Publication is no-replace, receipts are bounded to the historical create/save/move kinds, and an uncertain outcome is recovered by reading the receipt rather than repeating the write.
