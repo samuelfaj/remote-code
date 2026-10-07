@@ -18,6 +18,7 @@ import { workspaceFolderSchemaReady, workspaceFoldersFeature } from "./features/
 import { checkDatabase, healthFeature, initializeDatabase, type ReadinessCheck } from "./features/health";
 import { backupFeature } from "./features/backup";
 import { billingFeature } from "./features/billing";
+import { screenFeature } from "./features/screen";
 
 const databasePath = process.env.DATABASE_PATH ?? "/tmp/remotecode.sqlite";
 
@@ -62,6 +63,7 @@ export function createApi(
           agentHome: process.env.REMOTECODE_AGENT_HOME,
         }
       : undefined,
+  screenConfig: Parameters<typeof screenFeature>[1] = undefined,
 ) {
   initializeDatabase(configuredDatabasePath);
   const actions = actionsFeature(configuredDatabasePath, authConfig.webOrigin ?? "http://localhost:5173");
@@ -132,6 +134,7 @@ export function createApi(
     .use(runs.routes)
     .use(schedules.routes)
     .use(billingFeature(configuredDatabasePath))
+    .use(screenFeature(configuredDatabasePath, screenConfig))
     .onStop(() => { terminals.stopAll(); runs.stopAll(); schedules.stop(); });
 }
 

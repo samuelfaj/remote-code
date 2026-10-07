@@ -1,5 +1,12 @@
 # Pivot policy
 
+## RC-024 proven with the journey inside the account container 2026-10-08 (UTC)
+
+- **Blocker:** the auth boundary refuses plain HTTP from a non-loopback peer, so a proof that runs on the Mac and reaches the container's published port cannot log in, and the container has no X11 forwarding to the host.
+- **Pivot:** the proof starts the Linux host (Xvfb + Openbox + Chromium) and the shipped API **inside** the account container and then runs the journey in that same container over loopback — exactly where the real client sits. `import` and `xdotool` are the real binaries; no seam is injected.
+- **Ceiling:** this proves the channel, the exclusivity rules and the epoch semantics, not TLS through the gateway. The web pane that renders the stream is RC-025/RC-026 client work and is not claimed here.
+- **Unblocked:** RC-025 (mobile journey) and RC-026 (reconnect after drops) are now dependency-ready.
+
 ## RC-061 accepted with a test provider instead of a live PSP 2026-10-08 (UTC)
 
 - **Blocker:** RC-061 "Charge and apply managed plan" needs a payment provider, and this host has no payment-provider credential or account of any kind. Waiting for one would halt the run.

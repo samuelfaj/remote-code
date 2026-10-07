@@ -1,3 +1,12 @@
+# RC-024 take over and return the session via web — acceptance — 2026-10-08 (UTC)
+
+- **Status:** Complete. A workspace owner takes exclusive possession of the session's screen, reads it and drives it; the Bot is refused while the human holds it and cannot reuse an observation taken before the takeover.
+- **Command:** `RC024_PROOF_DIR=<fresh dir> bun scripts/rc024/run-takeover-proof.ts` (real Linux container: Xvfb :99 + Openbox + Chromium on a test login page, the shipped API running on that display; the journey itself runs inside the account container over loopback).
+- **Observed (two runs, `result: takeover_held_exclusively_expired_and_returned_with_stale_input_refused_passed`):** the frame was `image/png`, 1024x700, matching the container display; a stolen token got 409; the Bot's click during the takeover got `409 possession_held_by_user` and `xdotool getmouselocation` was byte-identical before and after, so the pointer never moved; the human's click and typing changed the page title and submitting authenticated the page; after the heartbeats stopped the possession expired (frame and input both 409); reconnecting took a new epoch, so the old human token was 409 and the pre-takeover observation was `409 stale_observation`; after release a fresh observation let the Bot click successfully and it read the same authenticated page.
+- **Failure-if check:** clicks did not compete (the pointer was unmoved and the Bot was refused), the frame was the requested session's display, the operator's credential did not enter the server log or the proof record, expired input did not pass, and the Bot did not resume a stale screen — a pre-takeover observation was rejected.
+- **Scope:** the shipped possession channel, protocol and exclusivity rules. The web/mobile panes that render it are RC-025/RC-026 client work.
+- **Checks:** `bun test apps/api apps/gateway packages/client` 368 pass / 74 skip / 0 fail; `bun run typecheck` exit 0; documentation-links gate exit 0.
+
 # RC-061 charge and apply managed plan — acceptance — 2026-10-08 (UTC)
 
 - **Status:** Complete. A confirmed provider event applies exactly one subscription transition, a duplicate or out-of-order event applies none, and a caller that lost the response reconciles through a receipt instead of re-charging.
