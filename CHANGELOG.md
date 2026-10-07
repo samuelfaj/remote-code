@@ -1,4 +1,7 @@
 # Changelog
+## Handoff sync — RC-014 cites fresh proof 2026-10-07T07:00:00Z (UTC)
+
+- tasks.html RC-014 status now cites 117d92f fresh 22 pass. Doc-links clean.
 ## Action suites fresh — 22 pass 2026-10-07T06:30:00Z (UTC)
 
 - `action-requests + recovery + events`: 22 pass / 0 fail on 30c3fd5.
