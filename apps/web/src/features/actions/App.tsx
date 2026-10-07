@@ -3,7 +3,7 @@ import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-
 import { actionReceiptFromResponse, isDefinitiveActionRejection, isUnknownOutcomeError, applyActionEvent, CLIENT_VERSION, createApiClient, emptyActionEventState, retryAllowed, retryDelayMs, workspacePanelUserId } from "@remotecode/client";
 import type { ActionEventState } from "@remotecode/client";
 import { getWebHealth } from "../health/api";
-import { WorkspacePanel } from "../workspaces/WorkspacePanel";
+import { NavigationShell } from "../navigation/NavigationShell";
 
 // Bounded post-timeout receipt reads: two attempts, the second after an
 // increasing, jittered wait, both inside the ten-second window.
@@ -927,7 +927,7 @@ export function App() {
             </View>
           )) : <Text style={styles.empty}>The backend has no receipts yet.</Text>}
         </View>
-        {panelUserId ? <WorkspacePanel key={panelUserId} userId={panelUserId} onUnauthorized={hideSession} /> : null}
+        {panelUserId ? <NavigationShell userId={panelUserId} onUnauthorized={hideSession} /> : null}
       </View>
     </ScrollView>
   );

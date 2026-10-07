@@ -1,5 +1,12 @@
 # Pivot policy
 
+## RC-049: the shell must fit around the existing specs, not beside them 2026-10-08 (UTC)
+
+- **Blocker:** the first version of the navigation shell duplicated affordances the app already had — a "New workspace name" input and a "Sign out" button — so Playwright locators matched two elements and existing specs failed on strict mode. A worker reported those failures as "pre-existing"; measuring the same spec at HEAD showed 16 passing / 3 failing, so they were not.
+- **Pivot:** make the shell **list and selection only**. It renders no input and no sign-out of its own; creation and sign-out stay in the components that own them. Selection is only what the user picks, because auto-selecting the first workspace added panel mounts and changed the create flow's capability probes from one to three.
+- **Method that settled it:** a throwaway spec that counted `/api/version` requests, run against HEAD and against the change, gave 3 during sign-in and 4 after the create with the fix, matching HEAD exactly. Counting requests is cheap and decided all three defects.
+- **Ceiling:** the proof drives the page in Chromium at two viewports; it does not exercise a browser without a keyboard.
+
 ## RC-047 pushes through an HTTP provider stand-in, not APNs or FCM 2026-10-08 (UTC)
 
 - **Blocker:** this host has no APNs certificate, no Firebase project and no registered device, so a real push cannot be delivered here.

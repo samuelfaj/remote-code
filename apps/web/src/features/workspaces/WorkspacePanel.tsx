@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native-web";
 import {
   createApiClient,
+  listBots,
   pendingWorkspaceFromValue,
   workspaceErrorStatus,
   workspaceDeadlineIsOpen,
@@ -9,25 +10,31 @@ import {
   workspaceReceiptFromValue,
   workspaceFromValue,
 } from "@remotecode/client";
-import type { PendingWorkspace, Workspace } from "@remotecode/client";
+import type { Bot, PendingWorkspace, Workspace } from "@remotecode/client";
 import { FilePanel } from "../files/FilePanel";
 import { TerminalPanel } from "../terminals/TerminalPanel";
 
 const deadlineMs = 10_000;
-type Props = { userId: string; onUnauthorized: () => void };
+type Props = { userId: string; onUnauthorized: () => void; selectedWorkspaceId?: string | null };
 
 function storageKey(userId: string) {
   return `remotecode.pending-workspace:${JSON.stringify([window.location.origin, userId])}`;
 }
 
-export function WorkspacePanel({ userId, onUnauthorized }: Props) {
+export function WorkspacePanel({ userId, onUnauthorized, selectedWorkspaceId }: Props) {
   const api = useMemo(() => createApiClient(window.location.origin), []);
   const active = useRef(true);
   const readGeneration = useRef(0);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  // Sync selectedId with parent's selectedWorkspaceId
+  useEffect(() => {
+    if (selectedWorkspaceId) setSelectedId(selectedWorkspaceId);
+  }, [selectedWorkspaceId]);
   const [name, setName] = useState("");
   const [rename, setRename] = useState("");
+  const [botName, setBotName] = useState("");
   const [pending, setPending] = useState<PendingWorkspace | null>(null);
   const [busy, setBusy] = useState(false);
   const [readError, setReadError] = useState("");
@@ -412,6 +419,26 @@ export function WorkspacePanel({ userId, onUnauthorized }: Props) {
     }
   }
 
+  async function createBot() {
+    if (!botName.trim() || !selectedId) return;
+    setBusy(true);
+    try {
+      const result = await api.api.bots.post({
+        name: botName.trim(),
+        instructions: undefined,
+        context: undefined,
+      });
+      if (result.error) throw new Error("Bot creation failed");
+      setBotName("");
+      await refresh(deadlineMs, true);
+    } catch (e) {
+      if (active.current)
+        setMessage(e instanceof Error ? e.message : "Bot creation failed");
+    } finally {
+      if (active.current) setBusy(false);
+    }
+  }
+
   return (
     <View style={styles.card} testID="workspace-panel">
       <Text accessibilityRole="header" style={styles.heading}>
@@ -448,6 +475,24 @@ export function WorkspacePanel({ userId, onUnauthorized }: Props) {
       >
         <Text>Refresh workspaces</Text>
       </Pressable>
+      <View style={styles.createRow}>
+        <TextInput
+          accessibilityLabel="New bot name"
+          placeholder="New bot name"
+          value={botName}
+          onChangeText={setBotName}
+          style={styles.input}
+        />
+        <Pressable
+          accessibilityRole="button"
+          testID="new-bot"
+          onPress={createBot}
+          disabled={busy || !botName.trim() || !selectedId}
+          style={[styles.smallButton, busy && styles.smallButtonDisabled]}
+        >
+          <Text style={styles.smallButtonText}>Create bot</Text>
+        </Pressable>
+      </View>
       {capability === "unsupported" ? (
         <Text testID="workspace-unsupported">
           This host does not support workspace-metadata-v1. Writes are disabled.
@@ -584,6 +629,17 @@ const styles = StyleSheet.create({
   },
   buttonText: { color: "#fff", fontWeight: "700" },
   secondary: { alignItems: "center", justifyContent: "center", minHeight: 40 },
+  createRow: { flexDirection: "row", gap: 8, alignItems: "center" },
+  smallButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: "#126b54",
+    borderRadius: 8,
+    minHeight: 42,
+    justifyContent: "center",
+  },
+  smallButtonDisabled: { opacity: 0.55 },
+  smallButtonText: { color: "#fff", fontSize: 13, fontWeight: "750" },
   row: {
     alignItems: "center",
     borderTopColor: "#e3ebe7",

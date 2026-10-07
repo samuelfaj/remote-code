@@ -1,3 +1,11 @@
+# RC-049 build web and desktop navigation — acceptance — 2026-10-08 (UTC)
+
+- **Status:** Complete. One sidebar lists workspaces, Bots and threads from the backend beside a central content area, reachable and operable with the keyboard, and responsive down to 390 px.
+- **Command:** `bun run test:e2e -- apps/web/e2e/navigation.spec.ts` -> 6 passed; then `bun run test:e2e` -> **111 passed / 3 skipped / 0 failed**.
+- **Observed:** a workspace created through the page appeared in `workspace-list` and was read back from `/api/workspaces`; a Bot created through the page appeared in `bot-list` and in `/api/bots`; selecting another workspace changed `app-content`; at 390x844 the toggle opened the sidebar and `document.scrollingElement.scrollWidth` stayed within the viewport; one switch was performed with Tab and Enter alone and the selection changed; every rendered workspace row corresponded to a backend record.
+- **Failure-if check:** no fictitious local data (each row was compared with the API) and every action reached the backend (the created workspace and Bot were read back).
+- **Regressions found by measurement and fixed:** a duplicate "New workspace name" input (existing spec fell 16 -> 1), a duplicate "Sign out" button (13 logout/auth tests failed on strict mode) and an auto-select that tripled the create flow's capability probes. All three were verified against HEAD's exact numbers before and after.
+
 # RC-048 cover the domain in the shared core — acceptance — 2026-10-08 (UTC)
 
 - **Status:** Complete. One client package provides the services for workspaces, files, Git, terminal, threads, Bots and routines, and both clients are compiled against that one contract.
