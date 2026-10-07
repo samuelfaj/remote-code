@@ -1,7 +1,7 @@
 # Where to resume
 
-Latest confirmed state: the RC-047 checkpoint `876a7ab` on
-`checkpoint/rc002-linux-runtime-evidence`, with the handoff commits on top. Plan status: **55 complete / 0 in progress / 0 blocked / 13 to do**
+Latest confirmed state: the RC-048 checkpoint `13b100c` on
+`checkpoint/rc002-linux-runtime-evidence`, with the handoff commits on top. Plan status: **56 complete / 0 in progress / 0 blocked / 12 to do**
 of the 68 tasks in `plan/tasks.html`.
 
 Read, in this order: `plan/tasks.html` (per-task status), `CHANGELOG.md`
@@ -10,22 +10,25 @@ observed result and the failure-if check for every accepted task), `PIVOT.md`
 (why a route changed) and `plan/capacity.md` / `plan/failure-state-contract.md`
 (measured limits and the per-operation failure table).
 
-Accepted since the previous resume page: RC-046 (a durable Inbox raised by the run
-supervisor, kept across a host restart) and RC-047 (push driven by those items, with
-per-device deduplication and a denied device handled).
+Accepted since the previous resume page: RC-047 (push driven by Inbox items, with
+per-device deduplication and a denied device handled) and RC-048 (one shared client
+core covering every named domain, with the shared contract proven by breaking it).
 
 ## Ready right now
 
 | Task | Why it is ready |
 | --- | --- |
-| **RC-048** | Every dependency landed, most recently RC-026 (and RC-045/RC-038/RC-034 before it). |
-RC-048 is the only ready task. RC-049 onward need it and then RC-050/RC-051, and RC-057 needs
-RC-055/RC-056, so RC-048 is the next step to the remaining 13.
+| **RC-049** | RC-048 just landed, so every dependency is met. |
+| **RC-055** | RC-025 and RC-047 both landed, so this mobile task is unblocked. |
+| **RC-056** | The same, and it needs only RC-025 and RC-047. |
+
+RC-050 and RC-051 need RC-049, and RC-057 needs RC-055 and RC-056, so those three are the
+next steps to the remaining 12.
 
 ## In progress and blocked
 
-Nothing. Every task is either Complete or still To do with an unmet dependency. The 13 tasks
-left are all behind RC-048, the only one whose dependencies are now met.
+Nothing. Every task is either Complete or still To do with an unmet dependency. The 12 tasks
+left are behind RC-049, RC-055 and RC-056, the three whose dependencies are now met.
 
 ## The pattern that produced every recent defect
 
