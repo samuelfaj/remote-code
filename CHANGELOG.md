@@ -1,4 +1,11 @@
 # Changelog
+## RC-037 accepted — threads and messages survive a restart 2026-10-07T15:45:00Z (UTC)
+
+- No product change was needed: the runs table and the history surface already persist. The task's executable proof was missing, so it is now written as `scripts/rc037/run-history-restore-proof.ts`: two threads are created (one completes, one is interrupted), each gets a history message, the container is restarted, and every id, prompt, state, stop reason and history content is compared before and after on the same volume.
+- PASS twice on real Linux: thread A `completed`/`end_turn` and thread B `interrupted`/`cancelled` keep their ids and prompts, both history entries keep their ids, type and content, no entry is lost or duplicated, and the interrupted run does not become completed.
+- Checks: `bun test apps/api/src packages/client/src` 268 pass / 74 skip / 0 fail across two consecutive runs (one earlier run showed the known load-sensitive client test failing once); `bun run typecheck` clean; documentation-links gate clean.
+- `plan/tasks.html`: RC-037 Complete; summary now 31 complete / 4 in progress / 0 blocked / 33 to do.
+
 ## RC-040 accepted — two Bots run their own Distill threads 2026-10-07T15:00:00Z (UTC)
 
 - `runs` gains a nullable `bot_id` column (created and migrated in place) exposed as `botId`, plus `POST /api/bots/:id/run` and `GET /api/bots/:id/runs`. The Bot's `instructions` are prepended to the task (blank line between) and stored as the run's prompt, the run is bound to the Bot, `requestId` keeps the existing idempotency, and the run is interruptible through the existing stop route. Bot runs go through the same `launch`/`startAcpPrompt` path and the same command — no second harness.

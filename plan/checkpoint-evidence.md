@@ -1,3 +1,11 @@
+# RC-037 threads and results reappear after a restart — acceptance — 2026-10-07 (UTC)
+
+- **Status:** Complete. Threads and their messages reappear after a container restart and an interrupted run keeps its own state.
+- **Command:** `RC037_PROOF_DIR=<fresh dir> bun scripts/rc037/run-history-restore-proof.ts` (Docker Linux/arm64, the shipped API on a task-owned volume, a controlled ACP agent).
+- **Observed (two runs, `result: two_threads_and_messages_survived_restart_with_interrupted_state_passed`):** before the restart, thread A was `completed`/`end_turn` (id `05f4f5f7-…`) and thread B was `interrupted`/`cancelled` (id `f34d948d-…`) after a real stop; the workspace history held two entries (`…|thread|message for thread A` and `…|thread|message for thread B`). The container was restarted with `docker restart` and the API restarted on the same volume; after it, both runs returned the identical id, prompt, state and stop reason, and both history entries returned with the identical id, type and content. No entry was lost and no duplicate appeared, and the interrupted run stayed `interrupted`.
+- **Failure-if check:** neither thread disappeared, neither duplicated, and the interrupted run did not become completed.
+- **Checks:** `bun test apps/api/src packages/client/src` 268 pass / 74 skip / 0 fail (two consecutive runs; one earlier run showed the known load-sensitive client test failing once); `bun run typecheck` exit 0; documentation-links gate exit 0.
+
 # RC-040 Bot runs its own Distill thread — acceptance — 2026-10-07 (UTC)
 
 - **Status:** Complete. A configured Bot starts a Distill session with its instructions, its events belong to that Bot's thread, and the run can be interrupted.
