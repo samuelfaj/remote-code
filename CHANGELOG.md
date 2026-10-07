@@ -1,4 +1,7 @@
 # Changelog
+## Terminal suites — 5 skip on macOS 2026-10-07T05:00:00Z (UTC)
+
+- `terminals + lifecycle + restart`: 0 pass / 5 skip / 0 fail on macOS (Linux-gated; covered by shutdown/reconnect proof runners on Linux).
 ## Handoff sync — suites evidence cited 2026-10-07T04:30:00Z (UTC)
 
 - tasks.html now cites 28186ad suites evidence. Doc-links clean.
