@@ -1,8 +1,9 @@
 # Where to resume
 
-Latest confirmed state: the RC-050 checkpoint `cfd2ad3` on
-`checkpoint/rc002-linux-runtime-evidence`, with the handoff commits on top. Plan status: **57 complete / 1 in progress / 0 blocked / 10 to do**
-of the 68 tasks in `plan/tasks.html`.
+Latest confirmed state: the RC-050 checkpoint `756a025` on
+`checkpoint/rc002-linux-runtime-evidence`, pushed. Plan status:
+**58 complete / 0 in progress / 0 blocked / 10 to do** of the 68 tasks in
+`plan/tasks.html`.
 
 Read, in this order: `plan/tasks.html` (per-task status), `CHANGELOG.md`
 (newest-first acceptance log), `plan/checkpoint-evidence.md` (the command, the
@@ -10,43 +11,57 @@ observed result and the failure-if check for every accepted task), `PIVOT.md`
 (why a route changed) and `plan/capacity.md` / `plan/failure-state-contract.md`
 (measured limits and the per-operation failure table).
 
-Accepted since the previous resume page: RC-048 (one shared client core covering
-every named domain, with the shared contract proven by breaking it) and RC-049 (the web
-sidebar and responsive keyboard navigation, proven in a real browser).
+Accepted since the previous resume page: RC-050, whose proof
+(`bash scripts/rc050/run-linux-web-proof.sh <fresh dir>`) runs the workspace work
+view against a containerised Linux API: repository, Git status and diff, a saved
+file-editor edit checked against the host content, and the workspace's layout
+restored after a reload.
 
 ## Ready right now
 
 | Task | Why it is ready |
 | --- | --- |
-| **RC-051** | Every dependency landed, including RC-049. |
+| **RC-051** | Every dependency landed, including RC-049 and now RC-050. |
 | **RC-055** | The iOS app: RC-025, RC-047 and RC-048 all landed. |
 | **RC-056** | The Android app, with the same dependencies. |
 
-RC-052 needs RC-050 and RC-051, and RC-057 needs RC-055 and RC-056.
+RC-052 needs RC-050 and RC-051; RC-053 and RC-054 need RC-050, RC-051 and
+RC-052; RC-057 needs RC-055 and RC-056; RC-065, RC-066 and RC-067 are the
+release and acceptance tasks behind everything else.
 
-## In progress and blocked
+## What RC-051 (display agent, Bots and scheduled tasks) still needs
 
-Nothing. Every task is either Complete or still To do with an unmet dependency. The 10 tasks
-left are behind RC-051, RC-055 and RC-056, and behind finishing RC-050.
+The API and the shared client already cover every named surface. What has **no
+UI at all** yet:
 
-### Finish RC-050
+1. **Run/agent streaming** — the client exposes `readRun`, `readWorkspaceRuns`
+   and `readRunChanges`, and no component renders them.
+2. **Permission requests** — `GET /api/runs/:id/permissions` and
+   `POST /api/runs/:id/permissions/:requestId` exist with no UI.
+3. **Participant/roster list** — no UI and no API route.
+4. **Workspace scheduled tasks** — client has `listSchedules`/`createSchedule`/
+   `setScheduleEnabled`; nothing renders them.
+5. **Bot routines** — same schedules API, no UI.
+6. **"Needs you"** — the Inbox routes exist (`/api/inbox`, `/api/inbox/:id`,
+   `/api/inbox/:id/read`, `/api/inbox/:id/resolve`) with **no client helpers and
+   no UI**; that gap needs a client function too.
 
-A Linux runner now exists — run it with a fresh absolute directory:
+Threads and Bots already render in the sidebar (`NavigationShell.tsx`). The
+proof must compare every displayed state with the API, so drive it through a
+Linux-hosted or local API and read the backend back inside the page.
 
-```bash
-bash scripts/rc050/run-linux-web-proof.sh <fresh absolute dir>
-```
+## What RC-055 and RC-056 still need (mobile)
 
-It builds the repository's own Linux host, serves its API over TLS, and points a local
-Vite at it (`REMOTECODE_WEB_PROXY_TARGET`), which keeps the browser on loopback while the
-API runs on Linux. The folder, file and file-listing steps already pass against it.
-
-**The one remaining cause of failure:** the terminal image. The pinned `oven/bun` image
-has no `git`, so the workspace never becomes a repository and the Git route answers
-`not_a_repository`; setting `RC050_TERMINAL_IMAGE` to the host image instead makes
-`Start Linux terminal` unavailable. A terminal image that both starts under the
-terminal feature and carries `git` closes RC-050: the spec then exercises the edit, the
-Git status, the diff, the second-workspace check and the reload.
+- No navigation library at all: the app is one screen. Workspaces, the file
+  editor and screen possession exist; Bots, threads, Inbox and a main-actions
+  destination do not.
+- No push infrastructure: no `expo-notifications`, no token registration, no
+  tap-to-thread routing, no APNs entitlement, no FCM files, no `eas.json`.
+- Android has **nothing**: no `apps/mobile/android/`, no Gradle files, no
+  emulator script. The one Android artefact is the package id in `app.json`.
+- The only native harness is the XCUITest suite
+  (`apps/mobile/native-tests/RemoteCodeMobileProofUITests.swift`, driven by
+  `scripts/run-mobile-native-test.sh`), which covers the single-screen app.
 
 ## The pattern that produced every recent defect
 
@@ -66,6 +81,10 @@ way, and every one of them had passed the worker's unit tests first:
 7. the unprivileged agent could read the service database (found by the RC-063 isolation proof);
 8. a released screen possession was reported as `expired` instead of `none`;
 9. the mobile client never renewed its possession, so it lost the screen (both found by the RC-025 proof).
+
+RC-050 added two more found the same way: the Git view never reloaded after work
+happened, and the terminal image the proof pinned had no `git` while the host
+image is refused by the terminal contract's environment allowlist.
 
 Also expect a worker to report a failure as "pre-existing" or "unrelated" when
 its own change caused it — check the diff before believing that.
