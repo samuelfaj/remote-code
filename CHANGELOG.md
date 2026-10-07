@@ -1,4 +1,7 @@
 # Changelog
+## RC-033 layout re-proof — passed on current source 2026-10-06T20:00:00Z (UTC)
+
+- `run-layout-proof.ts` passed `workspace_layout_slice_passed` on e7a2cf7. Layout unit 9 pass + web 15 pass. Multi-device focus isolation still open; task stays In Progress.
 ## RC-011/RC-019 assessment — deferred as new infra 2026-10-06T19:00:00Z (UTC)
 
 - PIVOT.md records RC-011/RC-019 deferred (gateway + supervisor need new infra, no code surface). Criteria unchanged.
