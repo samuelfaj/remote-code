@@ -1,7 +1,7 @@
 # Where to resume
 
-Latest confirmed state: the RC-046 checkpoint `5d9ade4` on
-`checkpoint/rc002-linux-runtime-evidence`, with the handoff commits on top. Plan status: **54 complete / 0 in progress / 0 blocked / 14 to do**
+Latest confirmed state: the RC-047 checkpoint `876a7ab` on
+`checkpoint/rc002-linux-runtime-evidence`, with the handoff commits on top. Plan status: **55 complete / 0 in progress / 0 blocked / 13 to do**
 of the 68 tasks in `plan/tasks.html`.
 
 Read, in this order: `plan/tasks.html` (per-task status), `CHANGELOG.md`
@@ -10,23 +10,22 @@ observed result and the failure-if check for every accepted task), `PIVOT.md`
 (why a route changed) and `plan/capacity.md` / `plan/failure-state-contract.md`
 (measured limits and the per-operation failure table).
 
-Accepted since the previous resume page: RC-044 (the sign-in happens on the Bot's
-screen and the credential stays out of argv and the log) and RC-046 (a durable Inbox
-raised by the run supervisor, kept across a host restart).
+Accepted since the previous resume page: RC-046 (a durable Inbox raised by the run
+supervisor, kept across a host restart) and RC-047 (push driven by those items, with
+per-device deduplication and a denied device handled).
 
 ## Ready right now
 
 | Task | Why it is ready |
 | --- | --- |
-| **RC-047** | RC-046 just landed, so every dependency is met. |
 | **RC-048** | Every dependency landed, most recently RC-026 (and RC-045/RC-038/RC-034 before it). |
-RC-047 (every dependency met, since RC-046 just landed) and RC-048 are the ready tasks.
-RC-049 onward need RC-048 and then RC-050/RC-051.
+RC-048 is the only ready task. RC-049 onward need it and then RC-050/RC-051, and RC-057 needs
+RC-055/RC-056, so RC-048 is the next step to the remaining 13.
 
 ## In progress and blocked
 
-Nothing. Every task is either Complete or still To do with an unmet dependency. The 14 tasks
-left are behind RC-047 and RC-048, the two whose dependencies are now met.
+Nothing. Every task is either Complete or still To do with an unmet dependency. The 13 tasks
+left are all behind RC-048, the only one whose dependencies are now met.
 
 ## The pattern that produced every recent defect
 
