@@ -7,12 +7,20 @@ export type { FileKind, FileReceipt, PendingFile, PendingFolder, FileEntry, File
 export { pendingTerminalStartFromValue, terminalReferenceFromValue, terminalReceiptFromValue, terminalPollFromValue, terminalInputAckFromValue, terminalInputRejectionIsDefinitive, terminalRejectionMessage, terminalAttachedReceipt } from "./terminals";
 export { workspaceLayoutFromValue, workspaceLayoutResponseFromValue } from "./layout";
 export type { WorkspaceLayout, LayoutTab, LayoutPane } from "./layout";
+export { workspaceGitStatus, workspaceGitDiff, workspaceGitBranches, commitGit } from "./git";
+export type { GitStatus, GitDiff, GitBranches, GitCommit } from "./git";
+export { createThread, listThreads, postThreadMessage, listThreadMessages, readRunChanges } from "./messages";
+export type { Thread, MessageAttachment, ThreadMessage, ThreadMessagesResult, CreateThreadResult, PostMessageResult } from "./messages";
+export { listBots, createBot, readBot } from "./bots";
+export type { Bot } from "./bots";
+export { listSchedules, createSchedule, setScheduleEnabled } from "./routines";
+export type { Schedule } from "./routines";
 export type { PendingTerminalStart, TerminalReference, TerminalState, TerminalInputState, TerminalReceipt, TerminalPoll, TerminalInputAck } from "./terminals";
 export type { ActionEventState, ActionReceipt } from "./action-events";
 export { retryAllowed, retryDelayMs } from "./retry";
 export type { RetryPlan } from "./retry";
 export { takeScreenPossession, readScreenPossession, heartbeatScreenPossession,
-  releaseScreenPossession, readRun, readRunChanges, readWorkspaceRuns } from "./screen";
+  releaseScreenPossession, readRun, readWorkspaceRuns } from "./screen";
 export type { ScreenPossessionResult, ScreenPossessionState, RunChange, WorkspaceRun } from "./screen";
 export { runMutation } from "./offline";
 export type { MutationOutcome } from "./offline";
