@@ -1,3 +1,12 @@
+# RC-041 several Bots' graphical sessions in one container — acceptance — 2026-10-07 (UTC)
+
+- **Status:** Complete. linux-use and the session surface serve several Bots with window and session identification, separate screens and profiles in one container, and defined persistence.
+- **Command:** `RC041_PROOF_DIR=<fresh dir> bun scripts/rc041/run-bot-sessions-proof.ts` (Docker Linux/arm64 image with Chromium and linux-use, Xvfb `:99` 1900x700 + openbox, the shipped API over TLS, one volume).
+- **Observed (two runs, `result: two_bot_sessions_isolated_and_persistent_passed`):** Bot alpha got window `4194307` (pid 67, title `alpha`) and Bot beta window `14680067` (pid 254, title `beta`) — distinct ids, distinct profiles (`/var/lib/remotecode/bots/<botId>/profile`, each with its own 20480-byte `Default/Cookies`). Exactly one container carried both Bots. The windows were placed side by side and asserted non-overlapping. Driving linux-use against alpha by `target_pid`+`target_window_id` changed alpha's pixels (`0ca81385…` → `6f2ab9e1…`) while beta stayed byte-identical (`c4961920…` both times), and a screenshot naming alpha's pid with beta's window id was refused. After `docker restart` both recorded sessions kept the same window ids, alpha's profile was still present, and relaunching alpha's session returned the same profile directory.
+- **Failure-if check:** no extra container per Bot (one container served both), no window chosen by global focus (every capture named its window id, and a mismatched id was refused), and one Bot's action did not affect the other (beta byte-identical).
+- **Defect fixed while proving:** the `wmctrl -lp` regex in the shipped route expected one field too many, so no window could ever match; the route now parses the real output.
+- **Checks:** `bun test apps/api/src packages/client/src` 280 pass / 74 skip / 0 fail; `bun run typecheck` exit 0; documentation-links gate exit 0.
+
 # RC-035 agent permission gate — acceptance — 2026-10-07 (UTC)
 
 - **Status:** Complete. The backend presents the action, target and effect of a call that requests approval, and only then allows or denies it.

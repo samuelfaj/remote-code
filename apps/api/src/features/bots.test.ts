@@ -654,6 +654,102 @@ describe("Bots routes", () => {
     const body = await response.json() as { error: string };
     expect(body.error).toBe("bot_not_found");
   });
+
+  it("POST /api/bots/:id/session rejects an anonymous request with 401", async () => {
+    const { app } = setup();
+    const botId = await createBot(app);
+    const response = await request(app, `http://localhost/api/bots/${botId}/session`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ url: "https://example.com" }),
+    });
+    expect(response.status).toBe(401);
+  });
+
+  it("POST /api/bots/:id/session returns 404 bot_not_found for an unknown bot", async () => {
+    const { app } = setup();
+    const response = await request(app, "http://localhost/api/bots/00000000-0000-4000-8000-000000000000/session", {
+      method: "POST",
+      headers: { cookie: `remotecode_session=${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ url: "https://example.com" }),
+    });
+    expect(response.status).toBe(404);
+    const body = await response.json() as { error: string };
+    expect(body.error).toBe("bot_not_found");
+  });
+
+  it("POST /api/bots/:id/session returns 400 invalid_session_url for a url with no scheme", async () => {
+    const { app } = setup();
+    const botId = await createBot(app);
+    const response = await request(app, `http://localhost/api/bots/${botId}/session`, {
+      method: "POST",
+      headers: { cookie: `remotecode_session=${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ url: "example.com" }),
+    });
+    expect(response.status).toBe(400);
+    const body = await response.json() as { error: string };
+    expect(body.error).toBe("invalid_session_url");
+  });
+
+  it("POST /api/bots/:id/session returns 400 invalid_session_url for a url with a newline", async () => {
+    const { app } = setup();
+    const botId = await createBot(app);
+    const response = await request(app, `http://localhost/api/bots/${botId}/session`, {
+      method: "POST",
+      headers: { cookie: `remotecode_session=${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ url: "https://example.com\nbad" }),
+    });
+    expect(response.status).toBe(400);
+    const body = await response.json() as { error: string };
+    expect(body.error).toBe("invalid_session_url");
+  });
+
+  it("POST /api/bots/:id/session returns 400 invalid_session_url for an oversized url", async () => {
+    const { app } = setup();
+    const botId = await createBot(app);
+    const response = await request(app, `http://localhost/api/bots/${botId}/session`, {
+      method: "POST",
+      headers: { cookie: `remotecode_session=${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ url: "https://example.com/" + "x".repeat(2030) }),
+    });
+    expect(response.status).toBe(400);
+    const body = await response.json() as { error: string };
+    expect(body.error).toBe("invalid_session_url");
+  });
+
+  it("POST /api/bots/:id/session returns 501 session_require_linux on non-Linux", async () => {
+    const { app } = setup();
+    const botId = await createBot(app);
+    const response = await request(app, `http://localhost/api/bots/${botId}/session`, {
+      method: "POST",
+      headers: { cookie: `remotecode_session=${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ url: "https://example.com" }),
+    });
+    expect(response.status).toBe(501);
+    const body = await response.json() as { error: string };
+    expect(body.error).toBe("session_require_linux");
+  });
+
+  it("GET /api/bots/:id/session returns 404 bot_not_found for an unknown bot", async () => {
+    const { app } = setup();
+    const response = await request(app, "http://localhost/api/bots/00000000-0000-4000-8000-000000000000/session", {
+      headers: { cookie: `remotecode_session=${ownerToken}` },
+    });
+    expect(response.status).toBe(404);
+    const body = await response.json() as { error: string };
+    expect(body.error).toBe("bot_not_found");
+  });
+
+  it("GET /api/bots/:id/session returns { session: null } for a bot with no session", async () => {
+    const { app } = setup();
+    const botId = await createBot(app);
+    const response = await request(app, `http://localhost/api/bots/${botId}/session`, {
+      headers: { cookie: `remotecode_session=${ownerToken}` },
+    });
+    expect(response.status).toBe(200);
+    const body = await response.json() as { session: unknown };
+    expect(body.session).toBeNull();
+  });
 });
 
 async function createBot(app: ReturnType<typeof createApi>) {

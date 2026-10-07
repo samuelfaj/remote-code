@@ -1,5 +1,5 @@
 import { Database, SQLQueryBindings } from "bun:sqlite";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, lstatSync } from "node:fs";
 import { dirname } from "node:path";
 import { Elysia, t } from "elysia";
 import { sessionExpiresAt, sessionTokenHash, sessionUserId } from "./auth";
@@ -93,6 +93,16 @@ export function botsFeature(databasePath: string) {
         created_at TEXT NOT NULL
       )`);
       db.exec("CREATE INDEX IF NOT EXISTS idx_bot_memory_bot ON bot_memory(bot_id)");
+      db.exec(`CREATE TABLE IF NOT EXISTS bot_sessions (
+        bot_id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        window_id INTEGER,
+        pid INTEGER,
+        title TEXT NOT NULL,
+        url TEXT NOT NULL,
+        profile_dir TEXT NOT NULL,
+        started_at TEXT NOT NULL
+      )`);
     });
   } catch {
     // Storage unavailable; readiness reports it and every route fails closed.
@@ -409,6 +419,170 @@ export function botsFeature(databasePath: string) {
 
         if (!result) { set.status = 404; return { error: "bot_not_found" as const }; }
         return result;
+      } catch {
+        set.status = 503;
+        return { error: "storage_unavailable" as const };
+      }
+    })
+    // One container serves every Bot; each Bot has its own window and profile directory.
+    // The window is addressed by its id from this record, never by the globally focused window.
+    .post("/api/bots/:id/session", async ({ body, params, request, set }) => {
+      const owner = resolveOwner(request);
+      if (owner.kind === "anonymous") { set.status = 401; return { error: "unauthorized" as const }; }
+      if (owner.kind === "unavailable") { set.status = 503; return { error: "storage_unavailable" as const }; }
+      const userId = owner.userId;
+
+      if (!canonicalUuid.test(params.id)) { set.status = 404; return { error: "bot_not_found" as const }; }
+
+      const url = typeof body.url === "string" ? body.url : "";
+      if (!url.startsWith("http://") && !url.startsWith("https://")) { set.status = 400; return { error: "invalid_session_url" as const }; }
+      if (url.length > 2048) { set.status = 400; return { error: "invalid_session_url" as const }; }
+      if (url.includes("\n") || url.includes("\0")) { set.status = 400; return { error: "invalid_session_url" as const }; }
+
+      try {
+        const botExists = database(databasePath, (db) => {
+          const row = db.query<{ user_id: string }, [string]>(
+            "SELECT user_id FROM bots WHERE id = ?",
+          ).get(params.id);
+          return row && row.user_id === userId;
+        });
+        if (!botExists) { set.status = 404; return { error: "bot_not_found" as const }; }
+      } catch {
+        set.status = 503;
+        return { error: "storage_unavailable" as const };
+      }
+
+      if (process.platform !== "linux") { set.status = 501; return { error: "session_require_linux" as const }; }
+
+      const display = process.env.REMOTECODE_BOT_DISPLAY;
+      if (!display) { set.status = 503; return { error: "session_unavailable" as const }; }
+
+      const sessionRoot = process.env.REMOTECODE_BOT_SESSION_ROOT ?? "/var/lib/remotecode/bots";
+      const profileDir = `${sessionRoot}/${params.id}/profile`;
+
+      try {
+
+        let existingStats;
+        try {
+          existingStats = lstatSync(profileDir);
+        } catch {
+          // Path does not exist yet, that is fine.
+        }
+        if (existingStats) {
+          if (existingStats.isSymbolicLink() || !existingStats.isDirectory()) {
+            set.status = 503;
+            return { error: "session_unavailable" as const };
+          }
+        }
+        mkdirSync(profileDir, { recursive: true });
+
+        const urlObj = new URL(url);
+        const botMarker = urlObj.searchParams.get("bot");
+        const matchTarget = botMarker ?? urlObj.host;
+
+        const chromiumBin = process.env.REMOTECODE_CHROMIUM_BIN ?? "chromium";
+        const proc = Bun.spawn([chromiumBin, "--no-sandbox", "--disable-dev-shm-usage", `--user-data-dir=${profileDir}`, `--app=${url}`, "--window-size=900,600"], {
+          env: { ...process.env, DISPLAY: display, XDG_SESSION_TYPE: "x11" },
+          stdio: ["ignore", "ignore", "ignore"],
+          detached: true,
+        });
+        const pid = proc.pid;
+
+        const startTime = Date.now();
+        let windowId: number | null = null;
+        let windowPid: number | null = null;
+
+        while (Date.now() - startTime < 20_000) {
+          let output: string | null = null;
+          try {
+            const result = Bun.spawnSync(["wmctrl", "-lp"], {
+              env: { ...process.env, DISPLAY: display },
+              stdout: "pipe",
+              stderr: "pipe",
+            });
+            if (result.exitCode === 0 && result.stdout) {
+              output = new TextDecoder().decode(result.stdout);
+            }
+          } catch {
+            // wmctrl not available, keep polling.
+          }
+
+          if (output) {
+            for (const line of output.split("\n")) {
+              const match = line.match(/^0x([0-9a-f]+)\s+\d+\s+(\d+)\s+\S+\s+(.*)$/);
+              if (match) {
+                const winId = parseInt(match[1], 16);
+                const winPid = parseInt(match[2], 10);
+                const title = match[3];
+                if (title === matchTarget) {
+                  windowId = winId;
+                  windowPid = winPid;
+                  break;
+                }
+              }
+            }
+          }
+
+          if (windowId !== null) break;
+          await Bun.sleep(100);
+        }
+
+        if (windowId === null) {
+          try { process.kill(pid, "SIGKILL"); } catch { /* already dead */ }
+          set.status = 503;
+          return { error: "session_unavailable" as const };
+        }
+
+        const startedAt = new Date().toISOString();
+        const session = database(databasePath, (db) => {
+          db.query("DELETE FROM bot_sessions WHERE bot_id = ?").run(params.id);
+          db.query(
+            "INSERT INTO bot_sessions (bot_id, user_id, window_id, pid, title, url, profile_dir, started_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+          ).run(params.id, userId, windowId, pid, matchTarget, url, profileDir, startedAt);
+          return { botId: params.id, windowId, pid, title: matchTarget, url, profileDir, startedAt };
+        });
+
+        set.status = 201;
+        return session;
+      } catch {
+        set.status = 503;
+        return { error: "storage_unavailable" as const };
+      }
+    }, {
+      body: t.Object({
+        url: t.String(),
+      }),
+    })
+    .get("/api/bots/:id/session", ({ params, request, set }) => {
+      const owner = resolveOwner(request);
+      if (owner.kind === "anonymous") { set.status = 401; return { error: "unauthorized" as const }; }
+      if (owner.kind === "unavailable") { set.status = 503; return { error: "storage_unavailable" as const }; }
+      const userId = owner.userId;
+
+      if (!canonicalUuid.test(params.id)) { set.status = 404; return { error: "bot_not_found" as const }; }
+
+      try {
+        const result = database(databasePath, (db) => {
+          const bot = db.query<{ user_id: string }, [string]>(
+            "SELECT user_id FROM bots WHERE id = ?",
+          ).get(params.id);
+          if (!bot || bot.user_id !== userId) return { found: false, session: null };
+
+          const row = db.query<
+            { bot_id: string; window_id: number | null; pid: number | null; title: string; url: string; profile_dir: string; started_at: string },
+            [string]
+          >(
+            "SELECT bot_id, window_id, pid, title, url, profile_dir, started_at FROM bot_sessions WHERE bot_id = ?",
+          ).get(params.id);
+
+          const session = row
+            ? { botId: row.bot_id, windowId: row.window_id, pid: row.pid, title: row.title, url: row.url, profileDir: row.profile_dir, startedAt: row.started_at }
+            : null;
+          return { found: true, session };
+        });
+
+        if (!result.found) { set.status = 404; return { error: "bot_not_found" as const }; }
+        return { session: result.session };
       } catch {
         set.status = 503;
         return { error: "storage_unavailable" as const };
