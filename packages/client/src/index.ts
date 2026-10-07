@@ -14,6 +14,8 @@ export type { RetryPlan } from "./retry";
 export { takeScreenPossession, readScreenPossession, heartbeatScreenPossession,
   releaseScreenPossession, readRun, readRunChanges, readWorkspaceRuns } from "./screen";
 export type { ScreenPossessionResult, ScreenPossessionState, RunChange, WorkspaceRun } from "./screen";
+export { runMutation } from "./offline";
+export type { MutationOutcome } from "./offline";
 
 import { treaty } from "@elysiajs/eden";
 import type { App } from "@remotecode/api";

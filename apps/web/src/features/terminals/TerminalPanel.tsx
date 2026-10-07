@@ -3,7 +3,8 @@ import "./styles.css";
 import { TerminalScreen, type TerminalScreenHandle } from "./TerminalScreen";
 import {
   createApiClient, fileFolderStateFromValue, terminalAttachedReceipt, terminalInputAckFromValue, terminalInputRejectionIsDefinitive, terminalPollFromValue, terminalRejectionMessage,
-  terminalReceiptFromValue, terminalReferenceFromValue, workspaceErrorStatus, workspaceFromValue,
+  terminalReceiptFromValue, terminalReferenceFromValue, runMutation,
+  workspaceErrorStatus, workspaceFromValue,
   workspaceLayoutFromValue, workspaceLayoutResponseFromValue,
   type TerminalReceipt, type TerminalReference, type Workspace, type WorkspaceLayout,
 } from "@remotecode/client";
@@ -370,8 +371,21 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
       writeReference(value, null);
       if (!current() || Date.now() >= end) { writeReference(null, value); return; }
       sent = true;
-      const result = await client(end).api.workspaces({ workspaceId: workspace.id }).terminals.post({ requestId: value.start.requestId, cols: value.start.cols, rows: value.start.rows });
-      if (!current() || Date.now() >= end) throw new Error("Start outcome unknown");
+      const outcome = await runMutation({
+        send: async () => client(end).api.workspaces({ workspaceId: workspace.id }).terminals.post({ requestId: value.start.requestId, cols: value.start.cols, rows: value.start.rows }),
+        deadlineMs: budgetMs,
+        receipt: async () => {
+          const r = await client(end).api.workspaces({ workspaceId: workspace.id }).terminals.receipts({ requestId: value.start.requestId }).get();
+          if (r.error) return null;
+          const confirmed = terminalReceiptFromValue(r.data, value.start);
+          return confirmed ? { applied: true } : { applied: false };
+        },
+        onLateResult: () => { if (current()) setMessage("Terminal start arrived after the deadline. Outcome remains unknown; check its receipt."); },
+      });
+      if (!current()) return;
+      if (outcome.status === "not_committed") { setMessage("Terminal start was not confirmed. Inspect state before trying again."); return; }
+      if (outcome.status === "unknown") { setMessage("Terminal start outcome is unknown. Original request ID retained; inspect its receipt. No automatic resend."); return; }
+      const result = outcome.result;
       if (workspaceErrorStatus(result.error) === 401) onUnauthorized();
       if (workspaceErrorStatus(result.error) === 404) {
         // Ambiguous: pre-reservation misses (workspace/folder/token) reserve

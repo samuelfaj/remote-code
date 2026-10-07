@@ -1,7 +1,7 @@
 # Where to resume
 
 Pushed checkpoint: `5db66e2` on `checkpoint/rc002-linux-runtime-evidence`
-(matches `origin`). Plan status: **51 complete / 0 in progress / 0 blocked / 17 to do**
+(matches `origin`). Plan status: **51 complete / 1 in progress / 0 blocked / 16 to do**
 of the 68 tasks in `plan/tasks.html`.
 
 Read, in this order: `plan/tasks.html` (per-task status), `CHANGELOG.md`
@@ -10,22 +10,33 @@ observed result and the failure-if check for every accepted task), `PIVOT.md`
 (why a route changed) and `plan/capacity.md` / `plan/failure-state-contract.md`
 (measured limits and the per-operation failure table).
 
-Accepted since the previous resume page: RC-036 (attachments and a run's changed
-files with its diff) and RC-025 (the mobile client takes over and returns the
-screen on a real simulator).
+Accepted since the previous resume page: RC-025 (the mobile client takes over and
+returns the screen on a real simulator). RC-026 is **in progress**: its shared
+offline state machine landed and both clients use it, but its three-point
+network-cut proof has not been run.
 
 ## Ready right now
 
 | Task | Why it is ready |
 | --- | --- |
-| **RC-026** | RC-025 landed, so reconnect after drops can be strengthened on the existing mobile session. |
 | **RC-044** | RC-025 landed and RC-043 landed, so the shared journey can be finished across both clients. |
 Everything else is behind this chain: RC-047 needs RC-026 and RC-046, RC-046 needs RC-044, and
 RC-048 onward need RC-045 and RC-046. RC-026 and RC-044 are the two ready tasks.
 
 ## In progress and blocked
 
-Nothing. Every task is either Complete or still To do with an unmet dependency.
+**RC-026** (reconnect after drops and lost responses). Done: `packages/client/src/offline.ts`
+exposes `runMutation({send, deadlineMs, receipt, onLateResult})`, which always resolves to
+exactly one of `committed`, `not_committed` or `unknown`, never sends twice, and confirms a
+late response through the receipt; the mobile session panel and the web terminal panel both
+use it, and its unit tests cover the three outcomes and the single send.
+
+**The exact remaining gap:** the Executable proof cuts the network before sending, during the
+request and after the commit, then reconnects and compares the UI, the receipt and the file
+with the backend. The harnesses in this repo inject response loss only through the
+test-support file API (`apps/api/test-support/native-file-api.ts`) and Playwright route
+interception; the session routes have neither, so a loss injection for those routes has to
+exist before that proof can run. Nothing else about RC-026 is blocked.
 
 ## The pattern that produced every recent defect
 

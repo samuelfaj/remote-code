@@ -1,3 +1,11 @@
+# RC-026 shared reconnect layer — partial landing, proof not run — 2026-10-08 (UTC)
+
+- **Status:** In progress. The delivery is partly implemented and unit-tested; the Executable proof has not been run and no acceptance is claimed.
+- **Done:** `packages/client/src/offline.ts` (`runMutation`) with `committed` / `not_committed` / `unknown` outcomes, one send, and a late result confirmed by the receipt; adopted by the mobile session panel and the web terminal panel; `packages/client/src/offline.test.ts` covers the three outcomes and the single send.
+- **Not done:** the three-point cut (before sending, during the request, after the commit) with a reconnect that compares the UI, the receipt and the file against the backend. The available loss injections are the test-support file API and Playwright route interception; neither covers the session routes.
+- **Regression check that did run:** `RC_NATIVE_TEST_WORK_DIR=<fresh> RC_NATIVE_TEST_FILES=1 RC_NATIVE_TEST_SESSION=1 RC_NATIVE_TEST_REUSE_IOS_PROJECT=1 bash scripts/run-mobile-native-test.sh` -> exit 0 on this revision, ending `Mobile client took and returned the screen; the Linux database shows the released possession`. RC-025's evidence therefore still holds after its panel adopted the shared layer.
+- **Checks:** `bun test apps/api apps/gateway packages/client` 415 pass / 79 skip / 0 fail; `bun test apps/mobile` 10 pass / 0 fail; `bun run typecheck` clean; documentation-links gate clean.
+
 # RC-025 first journey via mobile — acceptance — 2026-10-08 (UTC)
 
 - **Status:** Complete. The installed iOS app reaches the session for the selected workspace, takes the screen over, returns it, and shows the run result, entirely through the shared client package.

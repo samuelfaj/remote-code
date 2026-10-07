@@ -1,4 +1,14 @@
 # Changelog
+## RC-026 in progress — the shared reconnect layer landed, its proof has not 2026-10-08T18:40:00Z (UTC)
+
+- New `packages/client/src/offline.ts` (exported from the package entry point): `runMutation({ send, deadlineMs, receipt, onLateResult })` always resolves to exactly one of `committed`, `not_committed` or `unknown`; it races the deadline against the write, never leaves a caller pending, never sends the mutation twice, and treats a response that arrives after the deadline as a late result that the receipt confirms rather than a definitive failure.
+- Adopted by `apps/mobile/src/features/session/SessionPanel.tsx`, replacing that panel's private deadline constant and its own receipt consultation, and by `apps/web/src/features/terminals/TerminalPanel.tsx`, so the state machine is shared by both clients rather than mobile-only.
+- `packages/client/src/offline.test.ts` drives the real function: a late response whose receipt says applied resolves `committed`; a receipt that says not applied resolves `not_committed`; an unreadable receipt resolves `unknown`; and the send is called exactly once in every case.
+- **RC-026 is not accepted.** Its Executable proof cuts the network before sending, during the request and after the commit, then reconnects and compares the UI, the receipt and the file with the backend. The existing harnesses inject response loss only through the test-support file API and Playwright route interception, so the session routes need their own loss injection before that proof can run. Recorded as In progress with that exact gap rather than claimed.
+- RC-025's device proof was re-run on this revision because its panel changed: `RC_NATIVE_TEST_SESSION=1` still ends `Mobile client took and returned the screen; the Linux database shows the released possession` (exit 0), so RC-025's evidence holds for the current tree and the shared layer did not regress it.
+- Checks: `bun test apps/api apps/gateway packages/client` 415 pass / 79 skip / 0 fail; `bun test apps/mobile` 10 pass / 0 fail; `bun run typecheck` clean; documentation-links gate clean.
+- `plan/tasks.html`: RC-026 In progress; summary now 51 complete / 1 in progress / 0 blocked / 16 to do.
+
 ## RC-025 accepted — complete the first journey via mobile 2026-10-08T17:30:00Z (UTC)
 
 - RC-025 is **Complete**. The installed iOS app opens the session for the selected workspace, takes the screen over and returns it, and shows the run result — with **no second HTTP layer**: every call goes through new shared helpers in `packages/client/src/screen.ts` (`takeScreenPossession`, `heartbeatScreenPossession`, `readScreenPossession`, `releaseScreenPossession`, `readRun`, `readRunChanges`).

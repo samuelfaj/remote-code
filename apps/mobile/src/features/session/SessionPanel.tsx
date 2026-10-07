@@ -9,6 +9,7 @@ import {
   readRun,
   readRunChanges,
   readWorkspaceRuns,
+  runMutation,
   type ScreenPossessionState,
   type WorkspaceRun,
 } from "@remotecode/client";
@@ -81,16 +82,33 @@ export function SessionPanel({ origin, userId, workspace, blocked, onUnauthorize
   async function handleTakeOver() {
     if (!workspace || working.current) return;
     const current = begin();
-    const end = Date.now() + deadlineMs;
     working.current = true; setBusy(true); setMessage("Taking over screen…");
     try {
-      if (!await session(end, current)) return;
-      const result = await takeScreenPossession(workspace.id, origin);
+      if (!await session(Date.now() + deadlineMs, current)) return;
+      const outcome = await runMutation({
+        send: async () => takeScreenPossession(workspace.id, origin),
+        deadlineMs,
+        receipt: async () => {
+          const state = await readScreenPossession(workspace.id, origin);
+          if (state.state === "holder") return { applied: true };
+          if (state.state === "none") return { applied: false };
+          return null;
+        },
+        onLateResult: () => {
+          if (current()) setMessage("Possession request arrived after the deadline. Outcome remains unknown; check possession state.");
+        },
+      });
       if (!current()) return;
-      if (Date.now() >= end) { setMessage("Possession request arrived after the deadline. Outcome remains unknown; check possession state."); return; }
-      possessionTokenRef.current = result.token;
-      setMessage("Screen possession taken.");
-      await refreshPossession();
+      if (outcome.status === "committed") {
+        possessionTokenRef.current = outcome.result.token;
+        setMessage("Screen possession taken.");
+        await refreshPossession();
+      } else if (outcome.status === "not_committed") {
+        setMessage("Take-over was not confirmed. Check possession state.");
+      } else {
+        setMessage("Take-over outcome is unknown. Checking possession state…");
+        await consultPossessionState();
+      }
     } catch {
       if (current()) {
         setMessage("Take-over outcome is unknown. Checking possession state…");
@@ -102,16 +120,33 @@ export function SessionPanel({ origin, userId, workspace, blocked, onUnauthorize
   async function handleReturnScreen() {
     if (!workspace || working.current || !possessionTokenRef.current) return;
     const current = begin();
-    const end = Date.now() + deadlineMs;
     working.current = true; setBusy(true); setMessage("Returning screen…");
     try {
-      if (!await session(end, current)) return;
-      await releaseScreenPossession(workspace.id, possessionTokenRef.current, origin);
+      if (!await session(Date.now() + deadlineMs, current)) return;
+      const outcome = await runMutation({
+        send: async () => releaseScreenPossession(workspace.id, possessionTokenRef.current!, origin),
+        deadlineMs,
+        receipt: async () => {
+          const state = await readScreenPossession(workspace.id, origin);
+          if (state.state === "none") return { applied: true };
+          if (state.state === "holder") return { applied: false };
+          return null;
+        },
+        onLateResult: () => {
+          if (current()) setMessage("Release request arrived after the deadline. Outcome remains unknown; check possession state.");
+        },
+      });
       if (!current()) return;
-      if (Date.now() >= end) { setMessage("Release request arrived after the deadline. Outcome remains unknown; check possession state."); return; }
-      possessionTokenRef.current = null;
-      setMessage("Screen possession released.");
-      await refreshPossession();
+      if (outcome.status === "committed") {
+        possessionTokenRef.current = null;
+        setMessage("Screen possession released.");
+        await refreshPossession();
+      } else if (outcome.status === "not_committed") {
+        setMessage("Release was not confirmed. Check possession state.");
+      } else {
+        setMessage("Release outcome is unknown. Checking possession state…");
+        await consultPossessionState();
+      }
     } catch {
       if (current()) {
         setMessage("Release outcome is unknown. Checking possession state…");
