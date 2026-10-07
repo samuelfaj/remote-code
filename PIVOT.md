@@ -784,3 +784,10 @@ Keep safe, evidence-backed work moving when a task encounters a blocker. A pivot
 - **Change:** `runs.ts` (scrubbed agent env + `runuser` spawn wrapper), `acp-distill.ts` (ACP `terminal/*`, shell-line tolerance), `prototype/Dockerfile` (unprivileged `rcagent`, `bash`), `scripts/rc015/run-isolation-proof.sh`.
 - **Result:** from the agent side the database, gateway token and backend environ are denied; an authorized API task still completed as uid 1001 and wrote the expected file; no routing token appeared in the agent output.
 - **Next:** RC-019 (detect Docker stuck outside the container) then RC-023 (Bot's first Linux session), both now closer: the image carries the X11 stack (RC-007) and the isolated agent identity (RC-015).
+
+## RC-019 bounded host supervisor implemented — 2026-10-06
+
+- **Decision:** "detect Docker stuck outside the container" is delivered as a shipped supervisor script with hard per-probe deadlines, not as a test-only check; recovery is a bounded container restart, and exhaustion reports a lock rather than a false healthy state.
+- **Change:** `scripts/rc019/host-supervisor.sh`, `scripts/rc019/run-supervisor-proof.sh`, and a stale-X-lock cleanup in `prototype/start.sh` (restart actually recovers Xvfb).
+- **Result:** frozen API and dead GUI each detected and recovered with one restart; a blocked Docker daemon timed out on every probe and reported `locked`/`reported_lock` with the data volume preserved.
+- **Next:** RC-023 (Bot's first Linux session) now has RC-007, RC-015, RC-019 and RC-022; it needs the linux-use observation/input tools for a real first session.

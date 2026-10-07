@@ -1,4 +1,10 @@
 # Changelog
+## RC-019 accepted — bounded host supervisor 2026-10-07T01:40:00Z (UTC)
+
+- New `scripts/rc019/host-supervisor.sh` (hard-deadline probes for daemon/container/API/GUI/Distill, limited restart, reported lock, volume preserved) and `scripts/rc019/run-supervisor-proof.sh`.
+- `prototype/start.sh` clears a stale X lock so a restarted container brings Xvfb back.
+- Proof PASS: frozen API and dead GUI each recovered with one restart; a blocked Docker daemon ended as `reported_lock` in 42s with the volume intact. RC-007/RC-022 image proofs re-run PASS; typecheck clean.
+- `plan/tasks.html`: RC-019 Complete; summary now 19 complete / 9 in progress / 0 blocked / 40 to do.
 ## RC-015 accepted — backend/agent identity isolation 2026-10-07T01:10:00Z (UTC)
 
 - `runs.ts`: agent environment drops `REMOTECODE_*` secrets; every spawn (agent + its terminal commands) is wrapped in the agent identity via `runuser -u` (`REMOTECODE_AGENT_USER`/`REMOTECODE_AGENT_HOME`).

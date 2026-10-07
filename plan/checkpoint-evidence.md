@@ -1,3 +1,11 @@
+# RC-019 detect a stuck host outside the container — acceptance — 2026-10-06 (UTC)
+
+- **Status:** Complete. A progress healthcheck and host supervisor detect an unavailable Docker daemon, container, API, Distill or GUI with bounded probes, recover with a limited staged restart, and report a lock instead of a false healthy state while preserving the data volume.
+- **Implementation:** `scripts/rc019/host-supervisor.sh`. Every probe runs through a hard-deadline `bounded` helper, so a call that never returns cannot block the loop. Probes: `docker info`; `docker inspect` running flag; the API readiness body via `docker exec curl --max-time`; `wmctrl -l` for the GUI window; the Distill binary. Recovery restarts the container at most `RC019_MAX_RESTARTS` times, then writes `state=locked`/`action=reported_lock`/`volume=preserved` and exits 2. `prototype/start.sh` clears a stale X lock so a restarted container can start Xvfb again.
+- **Real proof:** `scripts/rc019/run-supervisor-proof.sh` — (1) healthy pass; (2) API frozen with SIGSTOP → `api:false`, recovered with 1 restart; (3) GUI killed (which stops the container) → `container:false`, recovered with 1 restart; (4) a fake Docker daemon that never answers → every probe timed out, ended `locked`/`reported_lock` in 42s, and the named volume `rc019-data` still existed. Transcript in the goal scratch `rc019-supervisor.txt`.
+- **Failure-if check:** the supervisor never got stuck on one call (all probes bounded), never restarted without limit (restart cap), and never declared the host healthy with a service stuck (unhealthy probes force recovery or a lock).
+- **Regression:** the RC-007 and RC-022 image proofs were re-run after the Dockerfile/start.sh changes and still pass; typecheck clean.
+
 # RC-015 isolate backend and agent identities — acceptance — 2026-10-06 (UTC)
 
 - **Status:** Complete. Elysia (backend) and Distill/terminal run with distinct system identities in the container; the agent cannot read the gateway token, the backend environment or the database, yet an API-authorized task still succeeds.

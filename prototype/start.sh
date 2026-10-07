@@ -8,6 +8,8 @@ CHROME_PID=
 OPENBOX_PID=
 API_PID=
 WEB_PID=
+# A container restart reuses /tmp: clear a stale X lock so Xvfb can start again.
+rm -f "/tmp/.X${DISPLAY#:}-lock" "/tmp/.X11-unix/X${DISPLAY#:}" 2>/dev/null || true
 Xvfb "$DISPLAY" -screen 0 1280x900x24 -ac -nolisten tcp >/var/log/rc003-xvfb.log 2>&1 &
 XVFB_PID=$!
 
