@@ -1,3 +1,12 @@
+# RC-045 schedules — acceptance — 2026-10-07 (UTC)
+
+- **Status:** Complete. A workspace agent task and a Bot routine each support schedule, timezone, pause, history and a key per occurrence, with an explicit daylight-saving policy and no automatic repeat after an ambiguous execution.
+- **Command:** `RC045_PROOF_DIR=<fresh dir> bun scripts/rc045/run-schedule-proof.ts` (Docker Linux/arm64, the shipped API over TLS, one controlled agent that logs every launch).
+- **Observed (two runs, `result: scheduled_task_and_routine_fired_once_with_durable_decisions_and_unknown_after_restart_passed`):** the task schedule and the routine schedule each produced exactly one occurrence with `decision: exact`, a `planned_at` of the scheduled minute and a `runId` equal to its own occurrence id, both `succeeded`; the paused schedule produced `occurrences: 0`; the launch log held exactly the expected lines (no extra run). A third schedule holding a run was `running` when the container restarted; afterwards its occurrence was `unknown` with `decision: requires_verification`, its run was `interrupted`/`host_restart`, the launch count was unchanged and stayed unchanged six seconds later, and the already-fired task and routine still had exactly one occurrence each.
+- **Daylight saving:** `apps/api/src/features/schedules.test.ts` covers real transitions — `02:30` in America/New_York on the spring-forward day returns `shifted_forward` at 03:30 local, `01:30` on the fall-back day returns `deduplicated` and a later call from that instant does not return the second 01:30, and a normal day returns `exact`.
+- **Failure-if check:** neither schedule type depends on an open client (the scheduler is server-side), no trigger ran twice (one occurrence per key, one launch each, and no replay after the restart), and the timezone decision is explicit and recorded per occurrence rather than silently shifting.
+- **Checks:** `bun test apps/api/src apps/gateway/src packages/client/src` 301 pass / 74 skip / 0 fail; `bun run typecheck` exit 0; documentation-links gate exit 0.
+
 # RC-017 command row — evidence (task still In progress) — 2026-10-07 (UTC)
 
 - **Status:** the command operation class is proven at the three failure points; RC-017 as a whole stays In progress because routine and billing have no surface.

@@ -12,6 +12,7 @@ import { sshFeature } from "./features/ssh";
 import { workspaceLayoutFeature } from "./features/workspace-layout";
 import { terminalsFeature } from "./features/terminals";
 import { runsFeature } from "./features/runs";
+import { schedulesFeature } from "./features/schedules";
 import { workspaceFolderSchemaReady, workspaceFoldersFeature } from "./features/workspace-folders";
 import { checkDatabase, healthFeature, initializeDatabase, type ReadinessCheck } from "./features/health";
 
@@ -67,6 +68,7 @@ export function createApi(
     ...(runsConfig ?? {}),
     onUpdate: (run) => actions.broadcast({ type: "run.updated", run }),
   });
+  const schedules = schedulesFeature(configuredDatabasePath, { startRun: runs.startRun });
   if (configuredDatabasePath === databasePath) registerTerminalsShutdown(terminals.shutdown);
   const workspaceFolders = workspaceFoldersFeature(configuredDatabasePath, undefined, terminals.workspaceIdentity);
   let storageUnavailable = corruptAtStartup(configuredDatabasePath) || !workspaceFolders.isReady() ||
@@ -123,7 +125,8 @@ export function createApi(
     .use(workspaceLayoutFeature(configuredDatabasePath).routes)
     .use(terminals.routes)
     .use(runs.routes)
-    .onStop(() => { terminals.stopAll(); runs.stopAll(); });
+    .use(schedules.routes)
+    .onStop(() => { terminals.stopAll(); runs.stopAll(); schedules.stop(); });
 }
 
 let terminalsShutdownHandler: (() => Promise<void>) | null = null;

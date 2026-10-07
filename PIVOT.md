@@ -1,5 +1,11 @@
 # Pivot policy
 
+## RC-045 landed — RC-046 and RC-058 became dependency-ready 2026-10-07 (UTC)
+
+- Completing RC-045 unlocked **RC-046** (durable Inbox) and **RC-058** (verifiable backup and restore), which in turn unblock RC-060/RC-061 (hosted offer and billing) and therefore RC-017's last missing row.
+- RC-017 now lacks only billing: its table is proven for read, local write, login, command and routine.
+
+
 ## Update — RC-045 became dependency-ready 2026-10-07 (UTC)
 
 - **Supersedes the bottleneck note below.** Completing RC-018, RC-027, RC-034 and RC-040 satisfied every dependency of **RC-045** (schedule workspace agent tasks and Bot routines), which is therefore the next task that may be started. It in turn unlocks RC-046 (durable Inbox) and RC-058 (verifiable backup and restore), and its scheduler is what RC-017's `routine` row needs.

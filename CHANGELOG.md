@@ -1,4 +1,14 @@
 # Changelog
+## RC-045 accepted — schedules for workspace tasks and Bot routines 2026-10-07T22:10:00Z (UTC)
+
+- New `apps/api/src/features/schedules.ts` (registered in `app.ts`): create/list/patch/delete schedules for a workspace agent task or a Bot routine with a local time, an IANA timezone, pause, history and a durable per-occurrence key (`UNIQUE(schedule_id, planned_at)`). A 15s tick plans at most one occurrence per key, writes the occurrence row BEFORE starting the run, then starts it through the same supervisor as a thread or Bot run. A pure `nextOccurrence` planner records an explicit daylight-saving decision: `exact`, `shifted_forward` for a spring-forward gap, `deduplicated` for a repeated fall-back time.
+- `runs.ts` now exposes `startRun` (the two run-creating routes share it) and the routes answer 201 only when a run was created and 200 when an existing `requestId` is returned — the refactor had briefly made a repeat look like a creation, which two existing tests caught.
+- Startup recovery was extended: an occurrence whose run did not finish cleanly (interrupted, failed, or reconciled by the supervisor on this boot) becomes `unknown` with decision `requires_verification` and is never restarted, while a cleanly completed run stays `succeeded`.
+- Proof `scripts/rc045/run-schedule-proof.ts` PASS twice on real Linux with a launch-recording agent: one workspace task and one Bot routine each fired exactly once with their decisions and run ids, a paused schedule produced zero occurrences, and a restart during a scheduled run left that occurrence `unknown`/`requires_verification`, its run `interrupted`/`host_restart`, and the launch count unchanged (no replay).
+- `plan/failure-state-contract.md`: the Routine row is rewritten with the real boundary and evidence, so RC-017's table is now proven for read, local write, login, command and routine; only billing remains (no route until RC-060/RC-061).
+- Checks: `bun test apps/api/src apps/gateway/src packages/client/src` 301 pass / 74 skip / 0 fail; `bun run typecheck` clean; documentation-links gate clean.
+- `plan/tasks.html`: RC-045 Complete; summary now 37 complete / 2 in progress / 0 blocked / 29 to do.
+
 ## RC-017 command row proven at all three points 2026-10-07T21:10:00Z (UTC)
 
 - The failure-state contract's Command row was stale ("no command-execution route exists"). A real command surface now exists through the run supervisor, so the row is rewritten with the real boundary, deadlines (stop deadline and the heartbeat watchdog), provider classification, and recovery owner, and the three-point table gains the observed command evidence.
