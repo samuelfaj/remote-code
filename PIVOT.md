@@ -1,5 +1,17 @@
 # Pivot policy
 
+## Handoff — the backlog is at a dependency bottleneck 2026-10-07 (UTC)
+
+- **State:** 34 complete / 4 in progress / 0 blocked / 30 to do. Every remaining **To do** task depends on at least one task that is still To do or In progress, so none is dependency-ready under the plan's own rule.
+- **What that means for the next agent:** the productive work is the four **In progress** tasks, whose remaining clauses are now closer than their status text suggests:
+  - `RC-012` (authorize resources per user): the bot, run, permission and gateway routes now exist, so ownership can be audited across every shipped resource route with two accounts; the gateway proof already shows account isolation at the routing layer.
+  - `RC-017` (failure states and budget): the *command* row is now testable through the run supervisor; *routine* and *billing* still have no surface.
+  - `RC-018` (receipts and limited requests): the remaining piece is the connection-cut journey over the shipped receipts.
+  - `RC-029` (edit workspace files): "actual Distill approval/refusal" is now covered by RC-035's permission gate; Android and the wider native journeys depend on RC-055/056, which are To do.
+- **Recommended order:** RC-012's two-account ownership audit first (bounded, no new surface), then RC-017's command-failure rows, then RC-018's cut journey.
+- **Do not** start a To-do task whose prerequisites are unfinished and present it as progress on the prerequisite; record the gap instead.
+
+
 ## RC-035 permission gate changes the real-Distill flow 2026-10-07 (UTC)
 
 - **What changed:** the supervisor used to auto-allow every `session/request_permission`. RC-035 requires the request to be presented and a denial to actually block, so the agent now waits for a client decision.
