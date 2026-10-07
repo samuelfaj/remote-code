@@ -1,4 +1,7 @@
 # Changelog
+## Full verification at 27ca510 — green 2026-10-07T09:00:00Z (UTC)
+
+- Plan verification: log clean, tree clean, remote matches local 27ca510. TSC clean, full suites 202 pass / 68 skip (Linux-gated) / 0 fail across 26 files. Backlog: RC-030 local + RC-032 host path proven; Distill-gated and new-infra tasks pivoted open per PIVOT.md.
 ## Handoff sync — RC-030 cites authority change 2026-10-07T08:30:00Z (UTC)
 
 - tasks.html RC-030 status now cites 3fc78a6. Doc-links clean.
