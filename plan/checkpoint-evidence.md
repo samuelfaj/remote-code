@@ -1,3 +1,11 @@
+# RC-014 action events with reconnection — acceptance — 2026-10-07 (UTC)
+
+- **Status:** Complete. The backend emits numbered action events, the client applies a snapshot and recovers gaps, and a duplicate is not applied twice.
+- **Command:** `RC014_PROOF_DIR=<fresh dir> bun scripts/rc014/run-events-recovery-proof.ts` (Docker Linux/arm64, repo bind-mounted read-only, TLS API on the shipped entrypoint, a minimal ACP agent so a real run is in flight).
+- **Observed (two runs):** initial snapshot `cursor 0, actions 0`; five real `POST /api/actions` inserts produced `action.created` cursors `[1,2,3,4,5]`. The cursor-3 frame was withheld (dropped), the cursor-4 frame then made the shipped reducer return `requestSnapshot` and set `needsSnapshot`. A `sync` message on the live socket returned a snapshot with `cursor 5` and the state converged with 5 actions; a real reconnect returned a second snapshot that also converged. Replaying the withheld cursor-3 event added no duplicate (`clientActions 5`, unique ids 5). The server's stored actions were 5 and matched the client ids; `PRAGMA quick_check` ok; the run recorded `state=running` with a session id.
+- **Failure-if check:** no event was lost without recovery (the gap forced a snapshot), no event was applied twice (replay ignored, ids unique), and the client state was never left false (`cursor` equalled the server snapshot cursor, `needsSnapshot` false after recovery).
+- **Checks:** `bun test apps/api/src packages/client/src` 197 pass / 74 skip / 0 fail; `bun run typecheck` exit 0.
+
 # RC-030 git fetch/pull/push — acceptance — 2026-10-07 (UTC)
 
 - **Status:** Complete. Status, stage/commit, branch, diff, fetch, pull and push are available through the shipped routes with real results on Linux.

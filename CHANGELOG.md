@@ -1,4 +1,11 @@
 # Changelog
+## RC-014 accepted — action-event recovery over the real socket 2026-10-07T10:20:00Z (UTC)
+
+- New `scripts/rc014/run-events-recovery-proof.ts`. On real Linux, with a real run in flight (`running`, session id recorded), a client on the real `/api/events` WebSocket receives numbered `action.created` events 1..5 from the shipped `POST /api/actions` route. The third frame is dropped (withheld exactly as a lost message), the fourth opens a gap, and the shipped client reducer (`packages/client/src/action-events.ts`, the same module the web UI uses) returns `requestSnapshot` with `needsSnapshot`.
+- Recovery is then proven on the shipped paths: a `sync` request on the live socket (the web client's own recovery action) yields a snapshot with cursor 5, and a real reconnect yields a second snapshot; both converge the state with all five actions. Replaying the stale withheld event adds no duplicate, the client holds each stored action exactly once, and the backend row count and `PRAGMA quick_check` agree. PASS twice.
+- Checks: `bun test apps/api/src packages/client/src` 197 pass / 74 skip / 0 fail; `bun run typecheck` clean.
+- `plan/tasks.html`: RC-014 Complete; summary now 23 complete / 7 in progress / 0 blocked / 38 to do.
+
 ## RC-030 accepted — fetch/pull/push via a local bare remote 2026-10-07T09:40:00Z (UTC)
 
 - `workspace-git.ts` gains the three missing routes, following the existing guarded shape (owner check, Linux-only, fd-guarded folder, `GIT_TERMINAL_PROMPT=0` so a remote cannot hang the request): `POST .../git/fetch` → `{remote, branches}` from the remote-tracking refs; `POST .../git/pull` → `{remote, branch, head, updated}` with `--ff-only` and 409 `pull_not_fast_forward`; `POST .../git/push` → `{remote, branch, head, remoteHead}` verified with `ls-remote`. Unknown remote → 404 `remote_not_found`, invalid names → 400.
