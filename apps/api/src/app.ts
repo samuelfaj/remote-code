@@ -21,6 +21,7 @@ import { backupFeature } from "./features/backup";
 import { updateFeature } from "./features/update";
 import { billingFeature } from "./features/billing";
 import { screenFeature } from "./features/screen";
+import { messagesFeature } from "./features/messages";
 
 const databasePath = process.env.DATABASE_PATH ?? "/tmp/remotecode.sqlite";
 
@@ -137,6 +138,7 @@ export function createApi(
     .use(terminals.routes)
     .use(runs.routes)
     .use(schedules.routes)
+    .use(messagesFeature(configuredDatabasePath))
     .use(billingFeature(configuredDatabasePath))
     .use(screenFeature(configuredDatabasePath, screenConfig))
     .onStop(() => { terminals.stopAll(); runs.stopAll(); schedules.stop(); });

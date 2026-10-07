@@ -7,7 +7,7 @@ import { fsyncSync } from "node:fs";
 
 // Fail closed before spawning git: require a real .git directory through the
 // fd guard (O_DIRECTORY|O_NOFOLLOW), never a path probe.
-function hasGitDir(folderFd: number, openAt: (parentFd: number, name: string, flags: number, mode?: number) => number, close: (fd: number) => void): boolean {
+export function hasGitDir(folderFd: number, openAt: (parentFd: number, name: string, flags: number, mode?: number) => number, close: (fd: number) => void): boolean {
   const gitFd = openAt(folderFd, ".git", constants.O_DIRECTORY | constants.O_NOFOLLOW | 0x80000);
   if (gitFd < 0) return false;
   close(gitFd);
@@ -22,7 +22,7 @@ type GitDiff = { path: string; diff: string; truncated: boolean };
 const canonicalUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const shaPattern = /^[0-9a-f]{40}$/;
 
-function parsePorcelain(output: string): { changed: string[]; untracked: string[] } {
+export function parsePorcelain(output: string): { changed: string[]; untracked: string[] } {
   const changed: string[] = [];
   const untracked: string[] = [];
   for (const line of output.split("\n")) {
@@ -35,6 +35,11 @@ function parsePorcelain(output: string): { changed: string[]; untracked: string[
     else changed.push(path);
   }
   return { changed, untracked };
+}
+
+export function runGit(folderPath: string, args: string[]): { exitCode: number; stdout: string; stderr: string } {
+  const proc = Bun.spawnSync(["git", ...args], { cwd: folderPath, stdout: "pipe", stderr: "pipe", timeout: 10_000, env: { ...process.env, GIT_CONFIG_NOSYSTEM: "1", GIT_TERMINAL_PROMPT: "0" } });
+  return { exitCode: proc.exitCode, stdout: proc.stdout.toString(), stderr: proc.stderr.toString() };
 }
 
 export function gitStatusFeature(databasePath: string, syncDirectory: (fd: number) => void = fsyncSync) {

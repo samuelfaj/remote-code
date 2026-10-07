@@ -49,7 +49,7 @@ type SaveTarget = { device: string; inode: string; mode: number; version: string
 type WriteOperation = { kind: "create"; expectedVersion: null; sourceDevice: null; sourceInode: null; mode: 0o600 } |
   { kind: "save"; expectedVersion: string; sourceDevice: string; sourceInode: string; mode: number };
 
-function relativeComponents(path: string | undefined, required: boolean): string[] | null {
+export function relativeComponents(path: string | undefined, required: boolean): string[] | null {
   if (path === undefined) return required ? null : [];
   if (path.length === 0 || !validText(path) || path.startsWith("/")) return null;
   const components = path.split("/");

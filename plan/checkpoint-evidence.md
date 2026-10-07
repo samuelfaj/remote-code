@@ -1,3 +1,12 @@
+# RC-036 attach files and show changes — acceptance — 2026-10-08 (UTC)
+
+- **Status:** Complete. A message accepts an attachment, and a run result shows the changed files and the diff linked to that run.
+- **Command:** `RC036_PROOF_DIR=<fresh dir> bun scripts/rc036/run-attachment-proof.ts` (real Linux container built from the tree under test; the journey and the restart check run inside the account container over loopback, where auth allows plain HTTP).
+- **Observed (two runs, `result: attachment_stayed_in_its_thread_the_diff_matched_the_workspace_and_both_survived_a_restart_passed`):** the attachment was recorded as `notes.txt` with a sha256 equal to `sha256sum` on disk; thread B held zero messages and the escaped path was **400** while a missing file was **404**; the run reached `completed`; the result message's `changes.files` listed `notes.txt` and the served diff was **byte-identical** to the workspace's own `git diff -- notes.txt`; `GET /api/runs/:id/changes` returned the same diff (200) and an unknown run id returned 404; after an API restart the thread still returned 2 messages with the same attachment digest and size, the file was still readable, the diff still matched, the second thread was still empty, and the run's changes route still answered 200.
+- **Failure-if check:** the attachment did not switch thread (thread B stayed empty and the escaped path was refused), it did not become inaccessible after a restart (digest, size, file and diff all read back unchanged), and the diff did not show the wrong state (it was compared byte-for-byte with the workspace's own `git diff`).
+- **Honest limits:** the agent binary is the repository's own ACP stub (the real Distill needs the RC-002 Linux credential), so the shipped supervisor and the capture are what the proof drives; the changed-files list also contains `.remotecode-workspace`, the folder-guard marker, which is untracked inside the workspace.
+- **Checks:** `bun test apps/api apps/gateway packages/client` 410 pass / 79 skip / 0 fail; `bun run typecheck` exit 0; documentation-links gate exit 0.
+
 # RC-063 prove isolation and security — acceptance — 2026-10-08 (UTC)
 
 - **Status:** Complete. No path outside an account reads its data or controls its screen, and the agent identity sees no service secret.

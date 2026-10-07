@@ -1,4 +1,13 @@
 # Changelog
+## RC-036 accepted — attach files and show changes 2026-10-08T13:00:00Z (UTC)
+
+- New `apps/api/src/features/messages.ts` (registered in `app.ts`): the smallest thread surface a message needs — `POST/GET /api/workspaces/:workspaceId/threads`, `POST/GET /api/threads/:threadId/messages`, and `GET /api/runs/:id/changes`. A message may carry workspace files as attachments; each attachment records its path, sha256 and byte size at write time, and the path goes through the same containment rule as the file editor, so `../escaped.txt` is refused 400 and a missing file 404 rather than being stored.
+- A message that names a run becomes the run's result, and `runs.ts` now captures the workspace's changed files and unified diff **once** when the run reaches a terminal state, through the existing git helpers (`workspace-git.ts` gained an exported `runGit`, `workspace-files.ts` an exported `relativeComponents`). The capture never fails the run: on error it stores nothing and the route reports 404.
+- Proof `scripts/rc036/run-attachment-proof.ts` PASS twice on real Linux: the attachment's recorded sha256 matched the file on disk; the second thread held none of the first thread's attachments; the escaped and missing paths were refused; a run reached `completed`, the changed files listed `notes.txt`, and the served diff was **byte-identical to the workspace's own `git diff`**; the run route answered 200 and an unknown run 404; and after an API restart the attachment record, the file, the diff and the empty second thread were all still there.
+- Recorded honestly: the changed-files list also contains `.remotecode-workspace`, the folder guard's marker file, because it is untracked inside the workspace; and the agent binary is the repository's own ACP stub, because the real Distill needs the Linux credential RC-002 gates.
+- Checks: `bun test apps/api apps/gateway packages/client` 410 pass / 79 skip / 0 fail; `bun run typecheck` exit 0; documentation-links gate exit 0.
+- `plan/tasks.html`: RC-036 Complete; summary now 50 complete / 0 in progress / 0 blocked / 18 to do.
+
 ## RC-063 accepted — prove isolation and security 2026-10-08T11:30:00Z (UTC)
 
 - **Found and fixed a real defect:** the unprivileged agent identity could read the service database, which holds every session and account secret. `apps/api/src/index.ts` now sets `process.umask(0o077)` before anything is created and `initializeDatabase` re-chmods the database to `0600` on boot, so a database created before the change is healed too. The proof now reports `databaseRead: DENIED` and `pidOneSecrets: DENIED` where it previously read the file.

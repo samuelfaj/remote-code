@@ -1,5 +1,11 @@
 # Pivot policy
 
+## RC-036 proven with the repository's own agent stub 2026-10-08 (UTC)
+
+- **Blocker:** RC-036's proof needs a run to reach a terminal state so its changes can be captured, and the real Distill binary cannot start without the Linux credential that RC-002 gates.
+- **Pivot:** the supervisor is pointed at the repository's own ACP stub (`apps/api/src/features/runs-stub-agent.mjs`, the one its run tests use). Everything around it is real: the shipped supervisor, the shipped capture, a real git workspace, real attachments and a real API restart.
+- **Ceiling:** this proves the attachment and the run-changes link, not a Distill-produced edit. When RC-002's credential exists, the only change is `REMOTECODE_DISTILL_BIN`.
+
 ## RC-063 proven with a second session instead of a second account 2026-10-08 (UTC)
 
 - **Blocker:** RC-063's proof says to try "other account IDs" between two users, but this repository's auth model is one password for one user, so a second real account cannot exist here.

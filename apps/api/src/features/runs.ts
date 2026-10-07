@@ -1,9 +1,12 @@
 import { Database } from "bun:sqlite";
+import { readlinkSync } from "node:fs";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { Elysia, t } from "elysia";
 import { sessionExpiresAt, sessionTokenHash, sessionUserId } from "./auth";
 import { startAcpPrompt, type AcpSessionHandle } from "./acp-distill";
+import { withProvisionedWorkspaceFolder } from "./workspace-folders";
+import { hasGitDir, parsePorcelain, runGit } from "./workspace-git";
 
 export type RunState = "starting" | "running" | "completed" | "interrupted" | "failed" | "needs_user";
 
@@ -28,6 +31,7 @@ const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const uuidSchema = t.String({ minLength: 36, maxLength: 36 });
 const TERMINAL_STATES: RunState[] = ["completed", "interrupted", "failed"];
 const STOP_DEADLINE_MS = 10_000;
+const maxDiffBytes = 64 * 1024;
 
 type RunRow = {
   id: string;
@@ -196,6 +200,16 @@ export function runsFeature(
       for (const name of ["session_id", "handoff_reason", "retry_after_seconds"]) {
         if (!columnNames.includes(name)) db.exec(`ALTER TABLE runs ADD COLUMN ${name} INTEGER`);
       }
+      const changeColumns = db.query<{ name: string }, []>("PRAGMA table_info(run_changes)").all();
+      const changeColumnNames = changeColumns.map((column) => column.name);
+      if (changeColumnNames.length === 0) {
+        db.exec(`CREATE TABLE IF NOT EXISTS run_changes (
+          run_id TEXT PRIMARY KEY,
+          workspace_id TEXT NOT NULL,
+          captured_at TEXT NOT NULL,
+          payload TEXT NOT NULL
+        )`);
+      }
       return callback(db);
     } finally {
       db.close();
@@ -225,6 +239,36 @@ export function runsFeature(
     if (!options.onUpdate) return;
     const row = readRow(id);
     if (row) options.onUpdate(view(row));
+  }
+
+  function captureRunChanges(runId: string, workspaceId: string, userId: string): void {
+    try {
+      const result = withProvisionedWorkspaceFolder(databasePath, userId, workspaceId, (folderFd, openAt, close) => {
+        if (!hasGitDir(folderFd, openAt, close)) return { status: 404 as const };
+        const folderPath = readlinkSync(`/proc/self/fd/${folderFd}`);
+        const status = runGit(folderPath, ["status", "--porcelain=v1", "--untracked-files=normal", "--", "."]);
+        if (status.exitCode !== 0) return { status: 503 as const };
+        const lines = status.stdout.split("\n").filter((l) => l.length >= 4);
+        const files = lines.map((line) => ({ path: line.slice(3).trim(), changeKind: line.slice(0, 2) }));
+        const diff = runGit(folderPath, ["diff", "--no-color", "--no-ext-diff", "--"]);
+        if (diff.exitCode !== 0) return { status: 503 as const };
+        const bytes = Buffer.from(diff.stdout, "utf8");
+        const truncated = bytes.length > maxDiffBytes;
+        const payload = JSON.stringify({
+          files,
+          diff: bytes.subarray(0, maxDiffBytes).toString("utf8"),
+          truncated,
+        });
+        return { status: 200 as const, payload };
+      });
+      if (result.kind !== "opened" || result.value.status !== 200) return;
+      database((db) => {
+        db.query("INSERT OR IGNORE INTO run_changes (run_id, workspace_id, captured_at, payload) VALUES (?, ?, ?, ?)")
+          .run(runId, workspaceId, new Date().toISOString(), result.value.payload as string);
+      });
+    } catch {
+      // Never fail the run state machine for a capture error.
+    }
   }
 
   function transition(id: string, patch: Partial<Pick<RunRow, "state" | "heartbeat_at" | "stop_requested_at" | "stop_reason" | "error" | "session_id" | "handoff_reason" | "retry_after_seconds">>) {
@@ -295,6 +339,7 @@ export function runsFeature(
         ...(classified.retryAfterSeconds !== null ? { retry_after_seconds: classified.retryAfterSeconds } : {}),
       });
       emit(id);
+      if (current) captureRunChanges(id, current.workspace_id, current.user_id);
     }).catch((error) => {
       cancelPendingPermissions(id);
       live.delete(id);
