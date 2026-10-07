@@ -1,4 +1,9 @@
 # Changelog
+## RC-007 accepted — Linux image with GUI, Distill and linux-use 2026-10-06T23:50:00Z (UTC)
+
+- `prototype/Dockerfile`: Distill pinned to v2.0.33 with per-arch SHA-256 and build for the builder architecture (native `arm64` here). `prototype/start.sh`: opt-in `REMOTECODE_BACKGROUND=1` ready marker, default foreground behavior unchanged.
+- New `scripts/rc007/run-linux-image-proof.sh`: one-command build + clean-container proof. Observed ready body, X11 Chromium window, `distill mcp doctor linux-use` (15 tools), and a real Distill agent action that used the linux-use `list_windows` tool and wrote the window list to a file on the same host.
+- `plan/tasks.html`: RC-007 Complete; summary now 15 complete / 9 in progress / 0 blocked / 44 to do.
 ## RC-002 accepted — real Distill stdio session inside Linux 2026-10-06T23:20:00Z (UTC)
 
 - Pivot (authorized by /sam-pivot): the timed-out v2.0.14 prompt is not retried; a materially different route proves the ticket. Official Distill v2.0.33 Linux `aarch64` asset (SHA-256 verified) ran `distill agent stdio` natively in a clean Debian 12 Linux guest.

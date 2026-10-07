@@ -1,3 +1,11 @@
+# RC-007 Linux image with GUI — acceptance — 2026-10-06 (UTC)
+
+- **Status:** Complete. One Linux image starts Elysia, Distill, an X11 desktop and linux-use together in the user's container. No service or agent step runs outside the container, and the Distill process needs no macOS session.
+- **Image:** `remotecode/computer:rc007` (arch `arm64`, built natively) from `prototype/Dockerfile`, which now pins official Distill v2.0.33 with per-architecture SHA-256 (`f270e939...`/`b132c32a...`), and `prototype/start.sh` gained an opt-in `REMOTECODE_BACKGROUND=1` ready marker without changing the default foreground behavior.
+- **Reproduction:** `scripts/rc007/run-linux-image-proof.sh <outdir>` builds the image, starts a clean container with auth mounted for the in-container agent, waits for the services-ready marker, then asserts each observation. Transcript in the goal scratch `rc007-image.txt`.
+- **Observed:** API `/api/health/ready` -> `{"status":"ready"}`; `wmctrl -l` -> Chromium window `RemoteCode Linux proof`; `distill mcp doctor linux-use` -> server started, handshake OK, 15 tools; Distill v2.0.33 ACP session `01a11420-af86-7443-8951-4140248576dd` returned `end_turn` and, using the linux-use `list_windows` MCP tool, wrote `/workspace/rc007-agent-windows.txt` = `[{"desktop":"0","geometry":[2,40,1278,875],"pid":97,"title":"RemoteCode Linux proof","window_id":4194306}]`.
+- **Failure-if check:** the GUI, MCP and agent all ran inside the container (no macOS session for the process); the doctor reported real tool discovery, not a stub; the agent action's own file proves it observed the same host's X11 window.
+
 # RC-002 Distill Linux stdio acceptance — 2026-10-06 (UTC)
 
 - **Status:** Complete. The previous block was a timed-out `session/prompt` whose provider effect was unknown. Under the authorized pivot, this run used a materially different route (current Distill v2.0.33 official Linux binary, native aarch64 in a clean Debian 12 guest, and a complete ACP client) instead of repeating the timed-out v2.0.14 attempt.

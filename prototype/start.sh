@@ -77,4 +77,8 @@ distill mcp add --scope user linux-use -- python3 /opt/linux-use/server.py
 distill mcp doctor linux-use
 python3 scripts/linux-use-smoke.py
 
+if [ "${REMOTECODE_BACKGROUND:-0}" = "1" ]; then
+  touch /var/log/remotecode-services-ready
+fi
+
 wait "$CHROME_PID"

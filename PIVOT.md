@@ -756,3 +756,10 @@ Keep safe, evidence-backed work moving when a task encounters a blocker. A pivot
 - **Result:** real file creation, a cancelled (never completed) interrupted run, and durable file + cancelled-turn + `distill usage` receipt after a full host/process restart, all inside Linux with no RemoteCode fork and no macOS runtime for the Distill process.
 - **Capabilities recorded as missing:** full ACP client method coverage is required (permission-only stalls); no built-in headless one-shot prompt (stdio ACP is the interface); `session/set_model` alone can trigger HTTP 400 invalid-reasoning-effort; interrupted turns are absent from `distill usage` (durable state is the session `events.jsonl`).
 - **Next:** RC-002 was blocking RC-007, RC-009, RC-015, RC-022 and the Distill-gated chain. Re-derive which of those are now eligible, then continue the in-progress and remaining tasks.
+
+## Pivot record — RC-007 Linux image built natively with current Distill — 2026-10-06
+
+- **Decision:** RC-007 was re-derivable only after RC-002 cleared. Rather than reuse the slow amd64-emulated v2.0.14 prototype, the image now pins official Distill v2.0.33 with per-architecture SHA-256 and builds for the builder architecture (native `arm64` here), matching the RC-002 route.
+- **Change:** `prototype/Dockerfile` (arch-aware Distill pin) and `prototype/start.sh` (opt-in `REMOTECODE_BACKGROUND=1` ready marker; default foreground behavior preserved). New `scripts/rc007/run-linux-image-proof.sh` builds and proves the image from a clean container.
+- **Result:** inside one container, Elysia `/api/health/ready` -> `ready`, X11 Chromium window present, `distill mcp doctor linux-use` reports 15 tools, and a real Distill agent action used the linux-use `list_windows` MCP tool and wrote the observed window list to a file.
+- **Next:** RC-009 supervision is the keystone for Phase 02; RC-015/RC-019 depend on RC-007 plus identity/isolation work.
