@@ -14,6 +14,7 @@ import {
 } from "@remotecode/client";
 import type { PendingWorkspace, Workspace } from "@remotecode/client";
 import { FilePanel } from "../files/FilePanel";
+import { SessionPanel } from "../session/SessionPanel";
 
 const deadlineMs = 10_000;
 type Props = { origin: string; userId: string; onUnauthorized: () => void };
@@ -783,6 +784,7 @@ export function WorkspacePanel({ origin, userId, onUnauthorized }: Props) {
         </View>
       ) : null}
       <FilePanel origin={origin} userId={userId} workspace={selected} blocked={busy || Boolean(pending) || !storageReady || Boolean(readError)} onUnauthorized={onUnauthorized} />
+      <SessionPanel origin={origin} userId={userId} workspace={selected} blocked={busy || Boolean(pending) || !storageReady || Boolean(readError)} onUnauthorized={onUnauthorized} />
       {pending ? (
         <View style={styles.pending}>
           <Text>

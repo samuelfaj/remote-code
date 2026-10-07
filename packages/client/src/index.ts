@@ -11,6 +11,9 @@ export type { PendingTerminalStart, TerminalReference, TerminalState, TerminalIn
 export type { ActionEventState, ActionReceipt } from "./action-events";
 export { retryAllowed, retryDelayMs } from "./retry";
 export type { RetryPlan } from "./retry";
+export { takeScreenPossession, readScreenPossession, heartbeatScreenPossession,
+  releaseScreenPossession, readRun, readRunChanges, readWorkspaceRuns } from "./screen";
+export type { ScreenPossessionResult, ScreenPossessionState, RunChange, WorkspaceRun } from "./screen";
 
 import { treaty } from "@elysiajs/eden";
 import type { App } from "@remotecode/api";

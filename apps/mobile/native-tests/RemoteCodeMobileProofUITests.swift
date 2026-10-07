@@ -2072,6 +2072,56 @@ final class RemoteCodeMobileProofUITests: XCTestCase {
     }
 
     @MainActor
+    func testInstalledAppTakesOverAndReturnsTheScreenAndRefusesBotInput() async throws {
+        let app = XCUIApplication(bundleIdentifier: "com.remotecode.mobileproof")
+        let observer = URLSession(configuration: .ephemeral)
+        let (api, workspace) = try await fileWorkspace(app, observer: observer, prefix: "Session")
+
+        // The mobile client shows the session for the selected workspace.
+        let possession = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Possession: ")).firstMatch
+        guard possession.waitForExistence(timeout: 15) else {
+            throw NSError(domain: "NativeSessionProof", code: 1, userInfo: [NSLocalizedDescriptionKey: "the session panel is not reachable for the selected workspace"])
+        }
+        XCTAssertTrue(possession.waitForLabelContaining("Possession: none", timeout: 15))
+
+        // The Bot has observed this screen before any human control.
+        let before = try await observer.screenObservation(at: api, workspaceId: workspace.id)
+        XCTAssertEqual(before.status, 200, String(describing: before.body))
+        let beforeToken = try XCTUnwrap(before.body["stateToken"] as? String)
+
+        // The mobile client takes the screen over.
+        try tapFileControl("Take over screen", in: app)
+        guard possession.waitForLabelContaining("Possession: holder", timeout: 20) else {
+            throw NSError(domain: "NativeSessionProof", code: 2, userInfo: [NSLocalizedDescriptionKey: "take-over never reached holder; the panel shows \(possession.label)"])
+        }
+
+        // While the human holds the screen the Bot is refused, and refused for that reason.
+        let blocked = try await observer.screenAgentInput(at: api, workspaceId: workspace.id, stateToken: beforeToken)
+        XCTAssertEqual(blocked.status, 409, String(describing: blocked.body))
+        XCTAssertEqual(blocked.body["error"] as? String, "possession_held_by_user")
+
+        // Returning the screen hands control back.
+        try tapFileControl("Return screen", in: app)
+        guard possession.waitForLabelContaining("Possession: none", timeout: 20) else {
+            throw NSError(domain: "NativeSessionProof", code: 3, userInfo: [NSLocalizedDescriptionKey: "return never released; the panel shows \(possession.label)"])
+        }
+
+        // The observation taken before the take-over is stale, not silently accepted.
+        let stale = try await observer.screenAgentInput(at: api, workspaceId: workspace.id, stateToken: beforeToken)
+        XCTAssertEqual(stale.status, 409, String(describing: stale.body))
+        XCTAssertEqual(stale.body["error"] as? String, "stale_observation")
+
+        // A fresh observation after the return is accepted by the shipped route.
+        let after = try await observer.screenObservation(at: api, workspaceId: workspace.id)
+        XCTAssertEqual(after.status, 200, String(describing: after.body))
+        XCTAssertNotNil(after.body["stateToken"] as? String)
+        XCTAssertGreaterThan(try XCTUnwrap(after.body["epoch"] as? Int), try XCTUnwrap(before.body["epoch"] as? Int))
+
+        // The run result the session shows is on screen, not only in the API.
+        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "session-result").firstMatch.exists)
+    }
+
+    @MainActor
     private func signIn(_ app: XCUIApplication) {
         let input = app.secureTextFields["Host password"]
         XCTAssertTrue(input.waitForExistence(timeout: 15))
@@ -2188,6 +2238,29 @@ private extension URLSession {
         XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
         return try JSONDecoder().decode(AuthReceiptLookup.self, from: data)
     }
+
+    func screenObservation(at baseURL: URL, workspaceId: String) async throws -> (status: Int, body: [String: Any]) {
+        var request = URLRequest(url: URL(string: "/api/workspaces/\(workspaceId)/screen/agent/observation", relativeTo: baseURL)!)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["agentId": "native-proof"])
+        let (data, response) = try await data(for: request)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        let body = ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any]) ?? [:]
+        return (status, body)
+    }
+
+    func screenAgentInput(at baseURL: URL, workspaceId: String, stateToken: String) async throws -> (status: Int, body: [String: Any]) {
+        var request = URLRequest(url: URL(string: "/api/workspaces/\(workspaceId)/screen/agent/input", relativeTo: baseURL)!)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["stateToken": stateToken, "event": ["kind": "key", "key": "Shift"]])
+        let (data, response) = try await data(for: request)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        let body = ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any]) ?? [:]
+        return (status, body)
+    }
+
     func signIn(at baseURL: URL, password: String) async throws {
         var request = URLRequest(url: URL(string: "/api/auth/login", relativeTo: baseURL)!)
         request.httpMethod = "POST"

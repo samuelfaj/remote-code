@@ -436,6 +436,11 @@ export function screenFeature(
           }
 
           if (row.token_hash === hash) {
+            // A holder that returned the screen no longer holds anything; only a
+            // window that ran out without a release is "expired".
+            if (row.released_at !== null) {
+              return { state: "none" as const, expiresAt: null, epoch: 0, supersededCount: 0 };
+            }
             return { state: "expired" as const, expiresAt: row.expires_at, epoch: row.epoch, supersededCount: row.superseded_count };
           }
 

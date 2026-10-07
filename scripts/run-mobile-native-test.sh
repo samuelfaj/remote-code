@@ -349,6 +349,10 @@ if [[ "${RC_NATIVE_TEST_FILES:-0}" == "1" ]]; then
   API_DATABASE_PATH="/var/lib/remotecode/remotecode-native.sqlite"
   TEST_SELECTION="RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testInstalledAppListsOpensSavesLinuxWorkspaceFileAndRejectsStaleClient"
   ONLY_TEST_ARGS=("-only-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testInstalledAppRetainsUnknownCommittedSaveAndRecoversByReceiptWithoutReplay" "-only-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testInstalledAppUsesAuthenticatedSnapshotEventsAndReceipts" "-only-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testInstalledAppCreatesMovesAndRefusesOccupiedStaleAndDirtyFiles" "-only-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testInstalledAppRecoversCommittedCreateAndMoveWithoutReplayingPost")
+  if [[ "${RC_NATIVE_TEST_SESSION:-0}" == "1" ]]; then
+    TEST_SELECTION="RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testInstalledAppTakesOverAndReturnsTheScreenAndRefusesBotInput"
+    ONLY_TEST_ARGS=()
+  fi
   if [[ "${RC_NATIVE_TEST_MOVE_PREFLIGHT:-0}" == "1" ]]; then
     TEST_SELECTION="RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testInstalledAppKeepsDraftChangedDuringMovePreflightWithoutSendingPost"
     ONLY_TEST_ARGS=()
@@ -462,7 +466,7 @@ fi
 
 ready=false
 for _ in $(seq 1 30); do
-  if curl --silent --fail "${CURL_TLS_ARGS[@]}" "$API_ORIGIN/api/health/ready" >/dev/null; then
+  if curl --silent --fail ${CURL_TLS_ARGS[@]+"${CURL_TLS_ARGS[@]}"} "$API_ORIGIN/api/health/ready" >/dev/null; then
     ready=true
     break
   fi
@@ -549,10 +553,27 @@ if [[ "${RC_NATIVE_TEST_FILES:-0}" == "1" && "${RC_NATIVE_TEST_JOINED_WORKSPACE:
   if [[ ! -d "$WORK_DIR/NativeTests.xcresult" ]]; then echo "Installed native tests produced no XCResult; proof unverified." >&2; exit 1; fi
   xcrun xcresulttool get test-results summary --path "$WORK_DIR/NativeTests.xcresult" > "$WORK_DIR/xcresult-summary.json"
   docker exec "$DOCKER_ID" bun -e 'import{Database}from"bun:sqlite";import{readFileSync,lstatSync,existsSync}from"node:fs";import{createHash}from"node:crypto";const d=new Database(process.env.DATABASE_PATH,{readonly:true,create:false});const outcomes=d.query("SELECT request_id,kind,workspace_id,source_path,result_path,result_sha256 FROM file_operation_outcomes ORDER BY completed_at").all();const seen=new Set();const files=outcomes.flatMap(r=>{const key=r.workspace_id+"/"+r.result_path;if(seen.has(key))return[];seen.add(key);const path="/var/lib/remotecode/workspaces/"+key;if(!existsSync(path))return[{workspaceId:r.workspace_id,path:r.result_path,exists:false}];const b=readFileSync(path),st=lstatSync(path,{bigint:true});return[{workspaceId:r.workspace_id,path:r.result_path,exists:true,base64:b.toString("base64"),sha256:createHash("sha256").update(b).digest("hex"),device:st.dev.toString(),inode:st.ino.toString(),mode:Number(st.mode&0o777n)}]});console.log(JSON.stringify({outcomes,files,intents:d.query("select request_id,kind,workspace_id,source_path,destination_path,state,source_device,source_inode from file_operation_intents").all(),workspaces:d.query("select id,name from workspaces").all(),actions:d.query("select id,action from actions").all(),sessions:d.query("select count(*) n from sessions").get().n,folders:d.query("select workspace_id,request_id,state from workspace_folder_requests").all(),quickCheck:d.query("pragma quick_check").all()}));d.close()' > "$WORK_DIR/linux-state.json"
-  python3 - "$WORK_DIR/linux-state.json" "$WORK_DIR/xcresult-summary.json" "${RC_NATIVE_TEST_MOVE_PREFLIGHT:-0}" "${RC_NATIVE_TEST_FOLDER_PREP:-0}" <<'PYFILE'
+  docker exec "$DOCKER_ID" bun -e 'import{Database}from"bun:sqlite";const d=new Database(process.env.DATABASE_PATH,{readonly:true,create:false});console.log(JSON.stringify({possessions:d.query("select workspace_id,epoch,expires_at,released_at,superseded_count from screen_possessions").all(),observations:d.query("select count(*) n from screen_observations").get().n}));d.close()' > "$WORK_DIR/linux-session-state.json"
+  python3 - "$WORK_DIR/linux-state.json" "$WORK_DIR/xcresult-summary.json" "${RC_NATIVE_TEST_MOVE_PREFLIGHT:-0}" "${RC_NATIVE_TEST_FOLDER_PREP:-0}" "${RC_NATIVE_TEST_SESSION:-0}" "$WORK_DIR/linux-session-state.json" <<'PYFILE'
 import base64,json,sys
 j=json.load(open(sys.argv[1]))
 report=json.load(open(sys.argv[2]))
+if sys.argv[5]=="1":
+    # The session proof: one test passed, the mobile client took and returned the
+    # screen in the real Linux database, and no file operation was involved.
+    session=json.load(open(sys.argv[6]))
+    assert report["result"]=="Passed" and report["passedTests"]==1 and report["failedTests"]==report["skippedTests"]==0
+    assert len(j["workspaces"])==1 and j["folders"][0]["state"]=="provisioned"
+    assert not j["actions"] and j["quickCheck"]==[{"quick_check":"ok"}]
+    assert len(j["outcomes"])==0 and len(j["files"])==0
+    assert len(session["possessions"])==1
+    possession=session["possessions"][0]
+    assert possession["workspace_id"]==j["workspaces"][0]["id"]
+    assert possession["released_at"] is not None, "the mobile client never returned the screen"
+    assert possession["epoch"]>=1
+    assert session["observations"]>=2, "the Bot observed before and after the human control"
+    print("Mobile client took and returned the screen; the Linux database shows the released possession")
+    sys.exit(0)
 if sys.argv[4]=="1":
     assert report["result"]=="Passed" and report["passedTests"]==1 and report["failedTests"]==report["skippedTests"]==0
     assert len(j["workspaces"])==len(j["folders"])==len(j["intents"])==len(j["outcomes"])==len(j["files"])==1

@@ -1051,6 +1051,32 @@ describe("Screen routes", () => {
     expect(inputCalls).toBe(0);
   });
 
+  it("a released possession reports none, not expired", async () => {
+    const { app, workspaceId } = setup({ possessionMs: 60_000 });
+
+    const take = await request(app, `http://localhost/api/workspaces/${workspaceId}/screen/possession`, {
+      method: "POST",
+      headers: { cookie: `remotecode_session=${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    const cookie = take.headers.get("set-cookie") ?? "";
+    const token = cookie.match(/rc_screen_possession=([^;]+)/)![1];
+    const holder = { cookie: `remotecode_session=${ownerToken}; rc_screen_possession=${token}` };
+
+    expect((await (await request(app, `http://localhost/api/workspaces/${workspaceId}/screen/possession`, { headers: holder })).json() as { state: string }).state).toBe("holder");
+
+    const released = await request(app, `http://localhost/api/workspaces/${workspaceId}/screen/possession/release`, {
+      method: "POST",
+      headers: { ...holder, "content-type": "application/json" },
+      body: JSON.stringify({ token }),
+    });
+    expect(released.status).toBe(200);
+
+    // The window has not closed, so this must not be reported as an expiry.
+    const after = await request(app, `http://localhost/api/workspaces/${workspaceId}/screen/possession`, { headers: holder });
+    expect((await after.json() as { state: string }).state).toBe("none");
+  });
+
   it("GET /api/workspaces/:workspaceId/screen/possession reports holder, superseded, expired, and none", async () => {
     const { app, workspaceId } = setup({ possessionMs: 50 });
 

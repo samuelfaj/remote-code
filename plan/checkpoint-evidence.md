@@ -1,3 +1,12 @@
+# RC-025 first journey via mobile — acceptance — 2026-10-08 (UTC)
+
+- **Status:** Complete. The installed iOS app reaches the session for the selected workspace, takes the screen over, returns it, and shows the run result, entirely through the shared client package.
+- **Command:** `RC_NATIVE_TEST_WORK_DIR=<fresh absolute dir> RC_NATIVE_TEST_FILES=1 RC_NATIVE_TEST_SESSION=1 RC_NATIVE_TEST_REUSE_IOS_PROJECT=1 bash scripts/run-mobile-native-test.sh` -> **exit 0 on two runs**.
+- **Observed:** on a real simulator the app signed in, created and selected a workspace, and its session panel reported `Possession: holder` after the take-over; the observer's Bot click was refused **409 `possession_held_by_user`**; the app returned the screen and the panel reported `Possession: none`; the observation taken before the take-over was refused **409 `stale_observation`**; a fresh observation then returned 200 with a higher epoch; and the harness's Linux-side check read the real database and required exactly one possession row for that workspace with `released_at` set and at least two Bot observations either side of the human control. The run ended `Mobile client took and returned the screen; the Linux database shows the released possession`.
+- **Failure-if check:** the Bot never acted during human control (both refusals asserted), the mobile app used the shared client rather than a parallel API (`grep` for `fetch`/`axios`/`XMLHttpRequest` under `apps/mobile/src` finds none), the run shown is the selected workspace's own, and an unknown outcome is resolved by reading the possession state rather than being reported as a definitive failure.
+- **Defects fixed while proving:** a released possession was reported as `expired` instead of `none` in `GET .../screen/possession`; the mobile client never renewed its possession and lost the screen; `scripts/run-mobile-native-test.sh` expanded an empty array under `set -u`, breaking every non-TLS mode on macOS bash 3.2; and the Pods carried a 13.4 simulator minimum that current Xcode refuses.
+- **Checks:** `bun test apps/api apps/gateway packages/client` 411 pass / 79 skip / 0 fail; `bun test apps/mobile` 10 pass / 0 fail; `bun run typecheck` clean; documentation-links gate clean.
+
 # RC-036 attach files and show changes — acceptance — 2026-10-08 (UTC)
 
 - **Status:** Complete. A message accepts an attachment, and a run result shows the changed files and the diff linked to that run.
