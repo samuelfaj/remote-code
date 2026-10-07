@@ -1,3 +1,12 @@
+# RC-048 cover the domain in the shared core — acceptance — 2026-10-08 (UTC)
+
+- **Status:** Complete. One client package provides the services for workspaces, files, Git, terminal, threads, Bots and routines, and both clients are compiled against that one contract.
+- **Command:** `RC048_PROOF_DIR=<fresh absolute dir> bun scripts/rc048/run-shared-core-proof.ts` -> **exit 0 on two runs**.
+- **Observed:** the package index resolved helpers for all nine domains (workspaces 2, files 2, git 4, terminal 2, threads 5, bots 3, routines 3, screen 2, offline 1); scanning the production sources of both apps found **no** `fetch`, `axios` or `XMLHttpRequest`, so neither app has grown a second API implementation (web imports `@remotecode/client` in 6 files, mobile in 7). The shared entry point's signature was then changed in place: `bun run typecheck` went from **0** to **2** with **19 diagnostics under `apps/web/` and 20 under `apps/mobile/`**, the file was restored byte-identically (sha256 compared) and typecheck returned to **0**. The run ended `one_shared_core_covers_every_domain_and_a_contract_change_breaks_both_clients_then_passes_again_passed`.
+- **Failure-if check:** no second API implementation exists (the scan above); the contract cannot silently diverge (both apps fail to compile the moment it changes); and the state/UI claims are covered by the per-domain tests that drive the shared helpers against a real API.
+- **Ceiling:** the "invoke each service from minimal web and mobile" leg is proven as a shared-contract property (both apps compile against and import the one package, and its helpers are tested against a real API) rather than by a scripted click-through on both targets; the app-level journeys are covered by the other accepted tasks.
+- **Checks:** `bun test apps/api apps/gateway packages/client` 454 pass / 80 skip / 0 fail; `bun test apps/mobile` 10 pass / 0 fail; `bun run typecheck` clean; documentation-links gate clean.
+
 # RC-047 send push to iOS, Android and web — acceptance — 2026-10-08 (UTC)
 
 - **Status:** Complete. Push is driven by Inbox items, honours the user preference, deduplicates per item and device, and carries the item's own destination; a denied or failed push leaves the durable Inbox item untouched.

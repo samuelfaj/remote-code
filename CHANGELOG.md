@@ -1,4 +1,13 @@
 # Changelog
+## RC-048 accepted — cover the domain in the shared core 2026-10-08T23:59:00Z (UTC)
+
+- RC-048 is **Complete**. One client package now covers the whole named domain. `packages/client` gained `git.ts` (`workspaceGitStatus`, `workspaceGitDiff`, `workspaceGitBranches`, `commitGit`), `messages.ts` (`createThread`, `listThreads`, `postThreadMessage`, `listThreadMessages`, `readRunChanges`), `bots.ts` (`listBots`, `createBot`, `readBot`) and `routines.ts` (`listSchedules`, `createSchedule`, `setScheduleEnabled`), each with typed tests that drive a **real** `createApi` app over `app.handle` rather than a mock. With the existing workspaces, files, terminals, layout, actions, screen and offline modules, all nine areas now resolve through the same package.
+- **The contract is shared, not just re-declared.** The proof changes the shared entry point's signature in place and `tsc` fails with **19 diagnostics from `apps/web` and 20 from `apps/mobile`** — both clients really are typed against the shared package. The file is then restored byte-for-byte (sha256 compared) and typecheck passes again. The proof refuses to run at all when that file has uncommitted changes, so it can never clobber work in progress.
+- **No second API implementation.** Scanning each app's production sources for `fetch`, `axios` or `XMLHttpRequest` finds none (test files, which legitimately intercept routes, are excluded and that exclusion is stated in the proof); the web app imports the shared package in 6 files and the mobile app in 7.
+- Proof `scripts/rc048/run-shared-core-proof.ts` **exit 0 on two runs**, ending `one_shared_core_covers_every_domain_and_a_contract_change_breaks_both_clients_then_passes_again_passed`. Coverage counts recorded per domain: workspaces 2, files 2, git 4, terminal 2, threads 5, bots 3, routines 3, screen 2, offline 1.
+- Checks: `bun test apps/api apps/gateway packages/client` 454 pass / 80 skip / 0 fail; `bun test apps/mobile` 10 pass / 0 fail; `bun run typecheck` clean; documentation-links gate clean.
+- `plan/tasks.html`: RC-048 Complete; summary now 56 complete / 0 in progress / 0 blocked / 12 to do.
+
 ## RC-047 accepted — send push to iOS, Android and web 2026-10-08T23:30:00Z (UTC)
 
 - RC-047 is **Complete**. New `apps/api/src/features/push.ts` (registered in `app.ts`): device registration per user (`ios`/`android`/`web`), a per-user push preference, and a dispatcher that is driven by **Inbox items** and sends the item's own `destination` as the notification's deep link. Tokens are never returned by the device list.
