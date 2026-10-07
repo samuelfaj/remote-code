@@ -1,3 +1,14 @@
+# RC-027 stuck runs end honestly — acceptance — 2026-10-07 (UTC)
+
+- **Status:** Complete. A run whose heartbeat stops making progress ends with an honest state, its agent is stopped, and no external effect is repeated.
+- **Command:** `bash scripts/rc027/run-stuck-run-proof.sh` (Docker `remotecode/computer:rc027`, Linux/aarch64, the shipped API on `API_PORT=3227` and one SQLite database, `REMOTECODE_DISTILL_BIN=/workspace/rc027-blocking-agent`).
+- **Observed (two runs, `scratch/rc027-run.log` and `run2.log`):**
+  - Scenario 1 (kill the host mid-command): run reached `running` with the effect file at one line, then `docker restart` killed the API and the agent; the API restarted on the same database and `GET /api/runs/:id` returned `state=interrupted`, `stopReason=host_restart`; no `/workspace/rc027-blocking-agent` process existed; the effect file still had exactly one line.
+  - Scenario 2 (silent agent, `REMOTECODE_RUN_STALL_MS=3000`): a fresh run reached `running` with one effect line, stayed `running` for 3s, then became `interrupted` with `stopReason=stalled` at ~4s; no agent process remained; the second effect file still had exactly one line.
+- **Failure-if check:** the run never stayed alive indefinitely (stall watchdog ends it and kills the process), never reappeared completed (the host-restart reconcile writes `interrupted`, and nothing replays a prompt), and the external effect appeared exactly once in both scenarios.
+- **Defect found and fixed while building the proof:** an agent that cannot be spawned (missing binary or working directory) crashed the API through the child's unhandled `error` event. `acp-distill.ts` now handles the child error, resolves pending requests and reports `stopReason: spawn_failed` with the detail in the run's `error`; `runs.ts` records it. Covered by `fails a run honestly when the agent cannot be spawned`.
+- **Checks:** `apps/api/src/runs.test.ts` 14 pass / 0 fail; `bun test apps/api/src packages/client/src` 190 pass / 68 skip / 0 fail (a client test about AbortSignal helpers failed once under the full parallel run, passes 5/5 in isolation, untouched by this change); `bun run typecheck` exit 0.
+
 # RC-023 first Linux session — acceptance — 2026-10-07 (UTC)
 
 - **Status:** Complete. Both halves of the contract are proven on real Linux: the linux-use observation/input path, and the run left waiting for the user with its ACP session id persisted.

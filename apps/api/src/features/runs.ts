@@ -216,7 +216,7 @@ export function runsFeature(
     }
     live.set(id, handle);
     const requestedStop = () => readRow(id)?.stop_requested_at ?? null;
-    handle.done.then(({ stopReason }) => {
+    handle.done.then(({ stopReason, error: acpError }) => {
       live.delete(id);
       const current = readRow(id);
       if (current?.state === "needs_user") return;
@@ -224,7 +224,11 @@ export function runsFeature(
       const state: RunState = stopReason === "cancelled" || stopped
         ? "interrupted"
         : stopReason === "end_turn" ? "completed" : "failed";
-      transition(id, { state, stop_reason: stopReason ?? (stopped ? "stop_requested" : "unknown") });
+      transition(id, {
+        state,
+        stop_reason: stopReason ?? (stopped ? "stop_requested" : "unknown"),
+        ...(acpError ? { error: acpError } : {}),
+      });
       emit(id);
     }).catch((error) => {
       live.delete(id);

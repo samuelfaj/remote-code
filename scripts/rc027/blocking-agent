@@ -1,0 +1,55 @@
+#!/usr/bin/env node
+// Minimal ACP stdio agent for RC-027. Answers initialize and session/new,
+// then on the first session/prompt appends one line to RC027_EFFECT_FILE
+// and never responds, leaving the run stalled or mid-command.
+const { openSync, writeSync, closeSync } = require("node:fs");
+
+let buffer = "";
+let firstPrompt = true;
+
+function send(message) {
+  process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...message }) + "\n");
+}
+
+function handle(message) {
+  if (message.method === "initialize") {
+    send({ id: message.id, result: { protocolVersion: 1, agentCapabilities: {} } });
+    return;
+  }
+  if (message.method === "session/new") {
+    const sessionId = message.params?.sessionId || "rc027-session";
+    send({ id: message.id, result: { sessionId } });
+    return;
+  }
+  if (message.method === "session/prompt") {
+    if (firstPrompt) {
+      firstPrompt = false;
+      const effectFile = process.env.RC027_EFFECT_FILE;
+      if (effectFile) {
+        const fd = openSync(effectFile, "a");
+        writeSync(fd, "blocked\n");
+        closeSync(fd);
+      }
+    }
+    // Never answer the prompt — leave the run stalled.
+    return;
+  }
+}
+
+process.stdin.setEncoding("utf8");
+process.stdin.on("data", (chunk) => {
+  buffer += chunk;
+  let index = buffer.indexOf("\n");
+  while (index >= 0) {
+    const line = buffer.slice(0, index).trim();
+    buffer = buffer.slice(index + 1);
+    if (line) {
+      try {
+        handle(JSON.parse(line));
+      } catch {
+        // Ignore malformed input.
+      }
+    }
+    index = buffer.indexOf("\n");
+  }
+});

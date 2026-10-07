@@ -192,6 +192,33 @@ describe("RC-009 run supervision", () => {
     expect(reconciled.stopReason).toBe("host_restart");
   });
 
+  it("fails a run honestly when the agent cannot be spawned", async () => {
+    const path = tempDb("spawn-fail");
+    const app = createApi(path, undefined, { password: testPassword }, undefined, {
+      command: join(tmpdir(), "no-such-remotecode-agent"),
+      args: ["agent", "stdio"],
+      cwd: mkdtempSync(join(tmpdir(), "rc009-cwd-")),
+      stallMs: 0,
+    });
+    const login = await app.handle(new Request("https://localhost/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ password: testPassword }),
+    }));
+    const cookie = login.headers.get("set-cookie")?.split(";")[0];
+    if (!cookie) throw new Error("cookie missing");
+    const workspace = await createWorkspace(app, cookie, "runs");
+    const created = await request(app, cookie, "/api/runs", "POST", { workspaceId: workspace.id, prompt: "quick task" });
+    expect(created.status).toBe(201);
+    const run = (await created.json()) as { id: string };
+
+    // The API must stay up and record a failed run, not die with the spawn error.
+    const failed = await waitForState(app, cookie, run.id, ["failed"], 5_000);
+    expect(failed.state).toBe("failed");
+    expect(failed.stopReason).toBe("spawn_failed");
+    expect((await request(app, cookie, "/api/health/ready")).status).toBe(200);
+  });
+
   it("ends a run whose agent goes silent as interrupted with stopReason stalled", async () => {
     const { app, cookie } = await api(tempDb("stall"), undefined, undefined, 300);
     const workspace = await createWorkspace(app, cookie, "runs");

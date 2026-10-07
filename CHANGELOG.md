@@ -1,4 +1,11 @@
 # Changelog
+## RC-027 accepted — stuck runs end honestly, freeze/kill-host proven 2026-10-07T08:20:00Z (UTC)
+
+- New `scripts/rc027/run-stuck-run-proof.sh` and `scripts/rc027/blocking-agent` (a controlled ACP agent that appends exactly one line to a file, then never answers the prompt). In a real container with the API on one SQLite database: (1) `docker restart` kills the host mid-command → after the API restarts the run is `interrupted` with `stopReason: host_restart`, no agent process remains, and the effect file still has exactly one line; (2) with `REMOTECODE_RUN_STALL_MS=3000`, a silent agent's run becomes `interrupted`/`stalled` in ~4s, its process is gone, and its effect file also has exactly one line. PASS twice.
+- Defect found while building the proof and fixed: an agent that cannot be spawned crashed the whole API (unhandled child `error` event) instead of failing its run. `acp-distill.ts` now listens for the child error, flushes pending requests and reports `stopReason: spawn_failed` with the detail as the run's `error`; `runs.ts` records that error. Regression test added.
+- Checks: `apps/api/src/runs.test.ts` 14 pass; full suite 190 pass / 68 skip / 0 fail (one client test is load-sensitive and failed once under the full parallel run; it passes 5/5 in isolation and is untouched here); typecheck clean.
+- `plan/tasks.html`: RC-027 Complete; summary now 21 complete / 9 in progress / 0 blocked / 38 to do.
+
 ## RC-027 slice — heartbeat stall watchdog 2026-10-07T07:35:00Z (UTC)
 
 - `runs.ts`: a run that stops making progress is now ended honestly. One watchdog interval (`REMOTECODE_RUN_STALL_MS`, default 600_000 ms; `stallMs` option; <= 0 disables it; period `max(250, min(stallMs/2, 5000))`) scans `starting`/`running` runs whose progress (`heartbeat_at`, else `created_at`) is older than the bound, kills the live ACP handle, and records `interrupted` with `stop_reason: stalled`. A `needs_user` run is never touched, and the scan is skipped while no agent process is live, so an idle API does not poll its database. `stopAll()` clears the interval.

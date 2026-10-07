@@ -5,7 +5,7 @@ export type AcpProgress = { kind: string; at: string; detail?: string };
 
 export type AcpSessionHandle = {
   /** Resolves when the prompt finishes (or the process ends). */
-  done: Promise<{ stopReason: string | null; sessionId: string | null }>;
+  done: Promise<{ stopReason: string | null; sessionId: string | null; error?: string | null }>;
   /** Ask the agent to cancel the current prompt (session/cancel). */
   cancel: () => void;
   /** Hard-stop the agent process. */
@@ -53,7 +53,7 @@ export function startAcpPrompt(options: Options): AcpSessionHandle {
   }>();
 
   const send = (message: Record<string, unknown>) => {
-    if (child.stdin.writable) child.stdin.write(JSON.stringify({ jsonrpc: "2.0", ...message }) + "\n");
+    if (child.stdin?.writable) child.stdin.write(JSON.stringify({ jsonrpc: "2.0", ...message }) + "\n");
   };
 
   const respond = (id: unknown, result: unknown) => send({ id, result });
@@ -164,8 +164,24 @@ export function startAcpPrompt(options: Options): AcpSessionHandle {
     }
   });
 
+  // An agent that cannot be spawned (missing binary, missing cwd) reports only
+  // through the child's 'error' event. Fail the run with an honest reason
+  // instead of leaving the request pending or crashing the API.
+  let spawnFailure: string | null = null;
+  child.on("error", (error: Error) => {
+    spawnFailure = String(error);
+    for (const [id, resolve] of pending) {
+      pending.delete(id);
+      resolve({ error: { message: spawnFailure } });
+    }
+  });
+
   const request = (method: string, params: Record<string, unknown>, timeoutMs: number) =>
     new Promise<Record<string, unknown>>((resolve) => {
+      if (spawnFailure) {
+        resolve({ error: { message: spawnFailure } });
+        return;
+      }
       const id = crypto.randomUUID();
       const timer = setTimeout(() => {
         pending.delete(id);
@@ -179,6 +195,7 @@ export function startAcpPrompt(options: Options): AcpSessionHandle {
     });
 
   const done = (async () => {
+    if (spawnFailure) return { stopReason: "spawn_failed" as string | null, sessionId, error: spawnFailure };
     await request("initialize", {
       protocolVersion: 1,
       clientCapabilities: { fs: { readTextFile: true, writeTextFile: true }, terminal: true },
@@ -194,8 +211,8 @@ export function startAcpPrompt(options: Options): AcpSessionHandle {
     }, 30 * 60_000);
     settled = true;
     const promptResult = answer.result as { stopReason?: string } | undefined;
-    return { stopReason: promptResult?.stopReason ?? null, sessionId };
-  })().catch(() => ({ stopReason: null, sessionId }));
+    return { stopReason: spawnFailure ? "spawn_failed" : promptResult?.stopReason ?? null, sessionId, error: spawnFailure };
+  })().catch(() => ({ stopReason: spawnFailure ? "spawn_failed" : null, sessionId, error: spawnFailure }));
 
   child.on("exit", () => {
     if (!settled) settled = true;
