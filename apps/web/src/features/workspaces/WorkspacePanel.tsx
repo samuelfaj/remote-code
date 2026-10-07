@@ -9,10 +9,16 @@ import {
   workspaceListFromValue,
   workspaceReceiptFromValue,
   workspaceFromValue,
+  workspaceGitStatus,
+  workspaceGitDiff,
 } from "@remotecode/client";
-import type { Bot, PendingWorkspace, Workspace } from "@remotecode/client";
+import type { Bot, GitDiff, GitStatus, PendingWorkspace, Workspace } from "@remotecode/client";
 import { FilePanel } from "../files/FilePanel";
 import { TerminalPanel } from "../terminals/TerminalPanel";
+
+function safeTestId(name: string) {
+  return name.replace(/[^a-zA-Z0-9_-]/g, "-").replace(/-+/g, "-").replace(/(^-|-$)/g, "");
+}
 
 const deadlineMs = 10_000;
 type Props = { userId: string; onUnauthorized: () => void; selectedWorkspaceId?: string | null };
@@ -43,6 +49,11 @@ export function WorkspacePanel({ userId, onUnauthorized, selectedWorkspaceId }: 
     "unknown" | "supported" | "unsupported"
   >("unknown");
   const [storageReady, setStorageReady] = useState(false);
+  const [gitStatus, setGitStatus] = useState<GitStatus | null>(null);
+  const [gitDiff, setGitDiff] = useState<GitDiff | null>(null);
+  const [gitSelectedFile, setGitSelectedFile] = useState<string | null>(null);
+  const [gitLoading, setGitLoading] = useState(false);
+  const [gitError, setGitError] = useState("");
   const selected =
     workspaces.find((workspace) => workspace.id === selectedId) ?? null;
 
@@ -207,6 +218,62 @@ export function WorkspacePanel({ userId, onUnauthorized, selectedWorkspaceId }: 
       active.current = false;
     };
   }, [api, userId]);
+
+  useEffect(() => {
+    if (!selected) {
+      setGitStatus(null);
+      setGitDiff(null);
+      setGitSelectedFile(null);
+      setGitError("");
+      return;
+    }
+    const workspaceId = selected.id;
+    let cancelled = false;
+    async function fetchStatus() {
+      try {
+        const status = await workspaceGitStatus(workspaceId, window.location.origin);
+        if (!cancelled) {
+          setGitStatus(status);
+          setGitDiff(null);
+          setGitSelectedFile(null);
+          setGitError("");
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setGitStatus(null);
+          setGitDiff(null);
+          setGitSelectedFile(null);
+          setGitError(
+            error instanceof Error && error.message === "not_a_repository"
+              ? "No git repository in this workspace."
+              : "Git status is unavailable.",
+          );
+        }
+      }
+    }
+    void fetchStatus();
+    return () => {
+      cancelled = true;
+    };
+  }, [selected?.id]);
+
+  async function selectGitFile(path: string) {
+    if (!selected) return;
+    setGitSelectedFile(path);
+    setGitLoading(true);
+    try {
+      const diff = await workspaceGitDiff(selected.id, path, window.location.origin);
+      setGitDiff(diff);
+      setGitError("");
+    } catch (error) {
+      setGitDiff(null);
+      setGitError(
+        error instanceof Error ? error.message : "Could not load diff.",
+      );
+    } finally {
+      setGitLoading(false);
+    }
+  }
 
   async function loadReceipt(
     operation = pending,
@@ -599,6 +666,80 @@ export function WorkspacePanel({ userId, onUnauthorized, selectedWorkspaceId }: 
         blocked={busy || Boolean(pending) || Boolean(readError)}
         onUnauthorized={onUnauthorized}
       />
+      {selected ? (
+        <View style={styles.gitPanel} testID="git-status">
+          <Text accessibilityRole="header" style={styles.subheading}>
+            Git
+          </Text>
+          {gitError ? (
+            <Text>{gitError}</Text>
+          ) : gitStatus ? (
+            <>
+              <Text>
+                Branch: {gitStatus.branch ?? "unknown"}{" "}
+                {gitStatus.clean ? "(clean)" : "(dirty)"}
+              </Text>
+              {gitStatus.changed.length > 0 && (
+                <>
+                  <Text style={styles.gitSectionHeading}>Changed</Text>
+                  {gitStatus.changed.map((path) => (
+                    <Pressable
+                      key={path}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Show diff for ${path}`}
+                      testID={`git-file-${safeTestId(path)}`}
+                      onPress={() => void selectGitFile(path)}
+                      style={[
+                        styles.gitFileRow,
+                        gitSelectedFile === path && styles.gitFileRowSelected,
+                      ]}
+                    >
+                      <Text style={styles.gitFilePath}>{path}</Text>
+                    </Pressable>
+                  ))}
+                </>
+              )}
+              {gitStatus.untracked.length > 0 && (
+                <>
+                  <Text style={styles.gitSectionHeading}>Untracked</Text>
+                  {gitStatus.untracked.map((path) => (
+                    <Pressable
+                      key={path}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Show diff for ${path}`}
+                      testID={`git-file-${safeTestId(path)}`}
+                      onPress={() => void selectGitFile(path)}
+                      style={[
+                        styles.gitFileRow,
+                        gitSelectedFile === path && styles.gitFileRowSelected,
+                      ]}
+                    >
+                      <Text style={styles.gitFilePath}>{path}</Text>
+                    </Pressable>
+                  ))}
+                </>
+              )}
+              {gitStatus.changed.length === 0 && gitStatus.untracked.length === 0 && (
+                <Text>No changed or untracked files.</Text>
+              )}
+              {gitDiff ? (
+                <View style={styles.gitDiff}>
+                  <Text testID="git-diff">{gitDiff.diff}</Text>
+                  {gitDiff.truncated && (
+                    <Text>Diff truncated.</Text>
+                  )}
+                </View>
+              ) : null}
+              {gitSelectedFile && !gitDiff && !gitLoading && !gitError ? (
+                <Text>Select a file to view its diff.</Text>
+              ) : null}
+              {gitLoading ? <Text>Loading diff…</Text> : null}
+            </>
+          ) : (
+            <Text>Loading git status…</Text>
+          )}
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -655,4 +796,27 @@ const styles = StyleSheet.create({
     paddingTop: 12,
   },
   pending: { backgroundColor: "#fff0cf", gap: 8, padding: 12 },
+  gitPanel: {
+    borderTopColor: "#e3ebe7",
+    borderTopWidth: 1,
+    gap: 8,
+    paddingTop: 12,
+  },
+  subheading: { color: "#183337", fontSize: 14, fontWeight: "700" },
+  gitSectionHeading: { color: "#304e4e", fontSize: 12, fontWeight: "800", marginTop: 8 },
+  gitFileRow: {
+    padding: 6,
+    borderRadius: 4,
+    minHeight: 32,
+    justifyContent: "center",
+  },
+  gitFileRowSelected: { backgroundColor: "#e8f0ed" },
+  gitFilePath: { color: "#183337", fontSize: 13, fontFamily: "monospace" },
+  gitDiff: {
+    borderColor: "#d9e5e0",
+    borderWidth: 1,
+    borderRadius: 6,
+    padding: 8,
+    marginTop: 8,
+  },
 });

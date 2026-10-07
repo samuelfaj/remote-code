@@ -1,5 +1,11 @@
 # Pivot policy
 
+## RC-050: a browser proof that needs Linux has to say so 2026-10-08 (UTC)
+
+- **Blocker:** RC-050's proof edits a file through the workspace folder, the file editor and the Linux terminal. Those routes answer 501 off Linux, and this host is macOS. The first draft of the spec wrapped every one of those steps in `if (folderProvisioned)` / `if (terminalAvailable)` guards, so it reported a pass while never exercising the contract, and its "the row matches a backend record" check was a bare `expect(response.ok())`.
+- **Pivot:** replace conditional skipping with one explicit `test.skip(process.platform !== "linux", "<reason>")` for the whole test, so the suite never claims a pass for work it did not do. The proof then has to run against a Linux-hosted API and web origin, which the repository already does for its container proofs (`scripts/run-file-editor-linux-browser-proof.ts` runs Chromium against a containerised API with TLS; `playwright.config.ts` already honours `RC003_WEB_URL` and `RC003_API_URL` for a remote target).
+- **Ceiling:** RC-050 stays **In progress** until that run happens. The Git view itself is implemented, reachable and type-checked, but an unrun proof is not an accepted task.
+
 ## RC-049: the shell must fit around the existing specs, not beside them 2026-10-08 (UTC)
 
 - **Blocker:** the first version of the navigation shell duplicated affordances the app already had — a "New workspace name" input and a "Sign out" button — so Playwright locators matched two elements and existing specs failed on strict mode. A worker reported those failures as "pre-existing"; measuring the same spec at HEAD showed 16 passing / 3 failing, so they were not.

@@ -1,7 +1,7 @@
 # Where to resume
 
-Latest confirmed state: the RC-049 checkpoint `219864a` on
-`checkpoint/rc002-linux-runtime-evidence`, with the handoff commits on top. Plan status: **57 complete / 0 in progress / 0 blocked / 11 to do**
+Latest confirmed state: the RC-050 partial checkpoint `COMMIT` on
+`checkpoint/rc002-linux-runtime-evidence`, with the handoff commits on top. Plan status: **57 complete / 1 in progress / 0 blocked / 10 to do**
 of the 68 tasks in `plan/tasks.html`.
 
 Read, in this order: `plan/tasks.html` (per-task status), `CHANGELOG.md`
@@ -18,8 +18,7 @@ sidebar and responsive keyboard navigation, proven in a real browser).
 
 | Task | Why it is ready |
 | --- | --- |
-| **RC-050** | RC-049 just landed, so every dependency is met. |
-| **RC-051** | The same: all of its dependencies landed. |
+| **RC-051** | Every dependency landed, including RC-049. |
 | **RC-055** | The iOS app: RC-025, RC-047 and RC-048 all landed. |
 | **RC-056** | The Android app, with the same dependencies. |
 
@@ -27,8 +26,23 @@ RC-052 needs RC-050 and RC-051, and RC-057 needs RC-055 and RC-056.
 
 ## In progress and blocked
 
-Nothing. Every task is either Complete or still To do with an unmet dependency. The 11 tasks
-left are behind RC-050, RC-051, RC-055 and RC-056, the four whose dependencies are now met.
+Nothing. Every task is either Complete or still To do with an unmet dependency. The 10 tasks
+left are behind RC-051, RC-055 and RC-056, and behind finishing RC-050.
+
+### Finish RC-050 on a Linux host
+
+Its proof needs a Linux host, because the workspace folder, the file editor and the
+terminal answer 501 elsewhere. `apps/web/e2e/workspace-work.spec.ts` skips with that
+reason on any other platform. Run it against a Linux-hosted API and web origin, which
+`playwright.config.ts` already supports through `RC003_WEB_URL` and `RC003_API_URL`:
+
+```bash
+RC003_API_URL=https://127.0.0.1:37117 RC003_AUTH_PASSWORD=<password> \
+  RC003_WEB_URL=http://127.0.0.1:37118 bun run test:e2e -- apps/web/e2e/workspace-work.spec.ts
+```
+
+The API has to answer over TLS for the browser, which is how the repository's other
+container proofs run it (`scripts/run-file-editor-linux-browser-proof.ts`).
 
 ## The pattern that produced every recent defect
 

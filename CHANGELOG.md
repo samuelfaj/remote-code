@@ -1,4 +1,12 @@
 # Changelog
+## RC-050 in progress — the Git view landed, its Linux-only proof has not run 2026-10-08T22:20:00Z (UTC)
+
+- `apps/web/src/features/workspaces/WorkspacePanel.tsx` now renders the selected workspace's Git view: changed and untracked files as `git-file-<path>` rows and the selected file's unified diff as `git-diff`, read through the shared `workspaceGitStatus` and `workspaceGitDiff` helpers and keyed by the real workspace id, so one workspace can never show another's work.
+- New `apps/web/e2e/workspace-work.spec.ts` drives the whole RC-050 contract through the real page: provision the folder, `git init` and commit through the terminal UI, change a file, see it in `git-status`, open its diff, confirm the backend lists the path, confirm a second workspace shows none of it, then reload and re-select. Every displayed row is compared with a backend record rather than merely being present.
+- **The proof has not run.** That spec needs a Linux host: the workspace folder, the file editor and the terminal answer 501 elsewhere. It therefore carries an explicit `test.skip(process.platform !== "linux", ...)` naming that reason instead of skipping its assertions while reporting a pass — the shape the first draft had, which is why it was rewritten.
+- Measured on this macOS host: `bun run test:e2e` **111 passed / 4 skipped / 0 failed**, unit suite 534 tests / 0 fail, mobile 10 pass, typecheck exit 0, documentation-links gate clean.
+- `plan/tasks.html`: RC-050 is **In progress** with that gap named; the summary is 57 complete / 1 in progress / 0 blocked / 10 to do.
+
 ## RC-049 accepted — build web and desktop navigation 2026-10-08T20:10:00Z (UTC)
 
 - New `apps/web/src/features/navigation/NavigationShell.tsx`: a sidebar listing the signed-in user's workspaces with the selected workspace's Bots and threads, beside a central content area that composes the existing `WorkspacePanel`. Every row comes from the backend through `@remotecode/client`; there is no sample data and no second HTTP layer.

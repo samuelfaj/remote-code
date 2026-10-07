@@ -1,3 +1,10 @@
+# RC-050 display workspace work — in progress, proof not run — 2026-10-08 (UTC)
+
+- **Status:** In progress. The Git/diff view is implemented and reachable; the Executable proof has **not** been run, so no acceptance is claimed.
+- **What was checked instead:** `bun run typecheck` exit 0; `bun run test:e2e` **111 passed / 4 skipped / 0 failed**; `bun test apps/api apps/gateway packages/client` 534 tests / 0 fail; `bun test apps/mobile` 10 pass / 0 fail; documentation-links gate clean.
+- **Why the proof cannot run here:** the folder, the file editor and the terminal routes answer 501 off Linux (`process.platform !== "linux"`), and RC-050's proof is precisely those steps. `apps/web/e2e/workspace-work.spec.ts` therefore skips with that reason named. The first draft of that spec instead wrapped its assertions in `if (folderProvisioned)` / `if (terminalAvailable)` guards and compared a displayed path against the backend with a bare `expect(response.ok())`; it "passed" while skipping the contract, and was rewritten.
+- **Remains unverified:** that a real file edit appears in `git-status`, that its `git-diff` shows the change, that a second workspace shows none of it, and that all of it survives a reload — all on a Linux host.
+
 # RC-049 build web and desktop navigation — acceptance — 2026-10-08 (UTC)
 
 - **Status:** Complete. One sidebar lists workspaces, Bots and threads from the backend beside a central content area, reachable and operable with the keyboard, and responsive down to 390 px.
