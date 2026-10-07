@@ -1,3 +1,14 @@
+# RC-031 PTY terminal — acceptance — 2026-10-07 (UTC)
+
+- **Status:** Complete against its contract. An interactive PTY runs in the container with resize, limited scrollback, flow control and readable termination, and the executable proof's journey passes on real Linux.
+- **Commands:** `RC_TERMINAL_WEB_PROOF_DIR=<fresh dir> bun scripts/run-terminal-linux-browser-proof.ts` and `RC_TERMINAL_SHUTDOWN_PROOF_DIR=<fresh dir> bun scripts/run-terminal-shutdown-proof.ts`.
+- **Observed:**
+  - Browser (real Chromium against the real API in a Docker container, desktop and mobile viewports): `result: web_terminal_disconnect_reconnect_renderer_resize_and_unknown_outcomes_passed`, `sourceUnchanged: true`, cleanup browser/vite/api/volume true. It runs an interactive command that prints 12,000 lines (`browser-overflow-011999` visible), asserts the DOM rows and retained scrollback stay bounded, applies an explicit resize and reads the applied `stty`/row values back, reconciles flow totals on the overflow path, reconnects and confirms `${...}/api/health/ready` is 200 ("Noisy terminal blocked API" is a hard failure), and confirms another login gets 404 for the original terminal's input and state.
+  - Shutdown: `result: terminal_graceful_live_actor_shutdown_passed` — a live actor ended by normal SIGTERM is read back as exited/removed with no container left.
+  - Proof-runner correction: the browser proof asserted a stale lowercase fragment; the shipped panel renders "Start outcome is unknown" inside one of several honest messages, and the assertion now matches that shared fragment.
+- **Failure-if check:** the process does not continue behind a fake UI (graceful shutdown removes the actor and the container), input does not reach another session (foreign login 404 on the original terminal), and the API keeps answering while the terminal floods output.
+- **Scope note:** direct keyboard capture and a native terminal screen were additional slices beyond this task's contract and are not claimed here.
+
 # RC-014 action events with reconnection — acceptance — 2026-10-07 (UTC)
 
 - **Status:** Complete. The backend emits numbered action events, the client applies a snapshot and recovers gaps, and a duplicate is not applied twice.

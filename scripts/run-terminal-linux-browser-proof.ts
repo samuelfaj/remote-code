@@ -542,7 +542,9 @@ try {
     if (await page.evaluate((key) => sessionStorage.getItem(key), storageKey) !== null) throw Error("Confirmed stop did not release original reference");
     dropStart = true;
     await page.getByRole("button", { name: "Start Linux terminal", exact: true }).click();
-    await expect(page.getByTestId("terminal-status")).toContainText("start outcome is unknown");
+    // The shipped UI uses one of several "… Start outcome is unknown …" messages
+    // depending on the failure it observed; assert the shared, honest fragment.
+    await expect(page.getByTestId("terminal-status")).toContainText("Start outcome is unknown");
     const pending = await page.evaluate((key) => JSON.parse(sessionStorage.getItem(key) ?? "null"), storageKey);
     const startCount = starts.length;
     if (startCount !== 2 || pending.start.requestId !== starts[1]) throw Error("Unknown start identity mismatch");

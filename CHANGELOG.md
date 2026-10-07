@@ -1,4 +1,11 @@
 # Changelog
+## RC-031 accepted — PTY terminal contract met on current source 2026-10-07T10:55:00Z (UTC)
+
+- Fixed a stale assertion in `scripts/run-terminal-linux-browser-proof.ts`: it expected the lowercase fragment "start outcome is unknown" while the shipped panel renders "Start outcome is unknown" inside one of several honest messages. The proof now asserts the shared fragment, so it checks the product's own wording instead of a reworded string.
+- With that correction both real Linux proofs pass on the current source: the browser proof (interactive command printing 12,000 lines, bounded scrollback, explicit resize with `stty` read-back, flow-total reconciliation, disconnect/reconnect while the API stays healthy, and another login refused) and the graceful-shutdown proof (normal SIGTERM of a live actor leaves the row exited/removed and no container).
+- These cover the whole RC-031 contract (resize, limited scrollback, flow control, readable termination; the executable proof's interactive command, >scrollback output, disconnect/reconnect without blocking the API or mixing sessions; and both Failure-if conditions). Direct keyboard capture and a native terminal screen were extra slices beyond this contract and remain open.
+- `plan/tasks.html`: RC-031 Complete; summary now 24 complete / 6 in progress / 0 blocked / 38 to do.
+
 ## RC-014 accepted — action-event recovery over the real socket 2026-10-07T10:20:00Z (UTC)
 
 - New `scripts/rc014/run-events-recovery-proof.ts`. On real Linux, with a real run in flight (`running`, session id recorded), a client on the real `/api/events` WebSocket receives numbered `action.created` events 1..5 from the shipped `POST /api/actions` route. The third frame is dropped (withheld exactly as a lost message), the fourth opens a gap, and the shipped client reducer (`packages/client/src/action-events.ts`, the same module the web UI uses) returns `requestSnapshot` with `needsSnapshot`.
