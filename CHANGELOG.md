@@ -1,4 +1,7 @@
 # Changelog
+## Handoff sync — suites evidence cited 2026-10-07T04:30:00Z (UTC)
+
+- tasks.html now cites 28186ad suites evidence. Doc-links clean.
 ## File/folder/identity suites — 13 pass 2026-10-07T04:00:00Z (UTC)
 
 - `file-requests + workspace-folders + workspace-identity`: 13 pass / 16 skip (Linux-gated) / 0 fail on 89cda11.
