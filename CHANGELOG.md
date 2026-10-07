@@ -1,4 +1,7 @@
 # Changelog
+## RC-032 status synced + RC-021 folder re-proof on 9ec922c 2026-10-07T02:30:00Z (UTC)
+
+- tasks.html RC-032 status now cites e38cd98 + 09f8324 re-proof. Folder-prep run2 `folder_ui_and_same_id_recovery_passed` on 9ec922c, source unchanged, cleanup true.
 ## Cleanup — dead mkdirSync removed from git test 2026-10-07T02:00:00Z (UTC)
 
 - workspace-git.test.ts: dropped unused mkdirSync import + void statement left by earlier edit. TSC clean, focused 4 pass/4 skip (Linux-gated skips on macOS).
