@@ -1,3 +1,12 @@
+# RC-062 update without losing work — acceptance — 2026-10-08 (UTC)
+
+- **Status:** Complete. An account moves onto a new image through a verified data copy and a checkpointed swap; a failed or interrupted update rolls back or stops, is never resumed, and never leaves the account advertised as a working host.
+- **Command:** `RC062_PROOF_DIR=<fresh dir> bun scripts/rc062/run-update-proof.ts` (real Docker on this host, the shipped control plane provisioning a real account container).
+- **Observed (two runs, `result: update_migrated_preserved_data_rolled_back_on_failure_and_never_resumed_a_crashed_swap_passed`):** the update returned 200 `ready`, the account container ran the new image and reported its `v2` marker, its published port still answered `/api/health/ready` 200, the seeded workspace, Bot and routine were all still listed, and no copy volume was left behind. An update onto an image whose API cannot serve returned 503 at step `swap`, the row ended `rolled_back`, the account ran the previous image again, its port answered, and the data was intact. A `SIGKILL` of the control plane while the row was `swapping` recovered to `state: failed`, `error: host_restart`, was not resumed after a further 3 s, kept the data, and the account was no longer reported `ready`.
+- **Failure-if check:** no version lost data (workspaces, Bots and routines compared before and after every case), and the crash did not leave the service marking normal operation (the account state was checked after recovery).
+- **Defects fixed while proving:** the copy was killed before it completed; the preserved flags were passed after the image so they became the container command; the rollback could not reuse the account name; and recovery left the account `ready` after an interrupted swap.
+- **Checks:** `bun test apps/api apps/gateway packages/client` 379 pass / 74 skip / 0 fail; `bun run typecheck` exit 0; documentation-links gate exit 0.
+
 # RC-017 define failure states and budget — acceptance — 2026-10-08 (UTC)
 
 - **Status:** Complete. All six operation classes (read, local write, login, command, routine, billing) have a real boundary and a three-point failure proof: before acceptance, durable effect with the response lost, and recovery/re-read after the response.

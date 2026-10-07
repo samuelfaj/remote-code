@@ -17,6 +17,7 @@ import { schedulesFeature } from "./features/schedules";
 import { workspaceFolderSchemaReady, workspaceFoldersFeature } from "./features/workspace-folders";
 import { checkDatabase, healthFeature, initializeDatabase, type ReadinessCheck } from "./features/health";
 import { backupFeature } from "./features/backup";
+import { updateFeature } from "./features/update";
 import { billingFeature } from "./features/billing";
 import { screenFeature } from "./features/screen";
 
@@ -127,6 +128,7 @@ export function createApi(
     .use(gitStatusFeature(configuredDatabasePath))
     .use(sshFeature(configuredDatabasePath))
     .use(hostedFeature(configuredDatabasePath))
+    .use(updateFeature(configuredDatabasePath))
     .use(botsFeature(configuredDatabasePath))
     .use(backupFeature(configuredDatabasePath, { dataRoot: process.env.REMOTECODE_DATA_ROOT ?? "/var/lib/remotecode" }))
     .use(workspaceLayoutFeature(configuredDatabasePath).routes)

@@ -1,4 +1,16 @@
 # Changelog
+## RC-062 accepted — update without losing work 2026-10-08T06:00:00Z (UTC)
+
+- New `apps/api/src/features/update.ts` (registered in `app.ts`): `POST /api/hosted/accounts/:id/update` moves one account onto a new image through **copy → migrate → swap**. The data volume is copied to a throwaway volume, the migration runs on that copy and is verified with `integrity_check` plus row counts of workspaces, Bots and routines, and only then is the live container replaced. A checkpoint row is written to `swapping` **before** the old container is removed, so an interrupted swap is detectable. `GET /api/hosted/accounts/:id/update` reports the latest attempt, and `recoverUpdates()` reconciles on boot.
+- Four real defects were found and fixed only by running it on real Docker:
+  1. the data copy was not awaited — `docker container start` returns immediately, so the following `rm -f` killed the copy partway and the "copy" was silently incomplete (now `docker container wait` and the copy's exit code is checked);
+  2. the preserved `--network`/`-p`/`-e` flags were appended **after** the image name, so Docker treated them as the container's command and the new container exited 1 with no logs (flags now precede the image, and the container port drops its `/tcp` suffix);
+  3. the rollback could not recreate the container because the failed one still held the account's name, so a failed swap left the account on the version that could not serve (the failed container is now removed first);
+  4. a crash mid-swap left the account advertised as `ready` on an image that was never confirmed to serve — exactly the task's "failure leaves service marking normal operation" (recovery now marks such an account `failed`).
+- Proof `scripts/rc062/run-update-proof.ts` PASS twice on real Docker: the update reached `ready` with the new image's marker and the account's published port still answering; the seeded workspace, Bot and routine were all still listed afterwards; the copy volume was cleaned up; a swap onto an image that cannot serve ended `rolled_back` with the previous image running again and the data intact; and a `SIGKILL` during `swapping` recovered to `failed`/`host_restart`, was never resumed, kept the data, and left the account no longer reported as `ready`.
+- Checks: `bun test apps/api apps/gateway packages/client` 379 pass / 74 skip / 0 fail; `bun run typecheck` exit 0; documentation-links gate exit 0.
+- `plan/tasks.html`: RC-062 Complete; summary now 44 complete / 1 in progress / 0 blocked / 23 to do.
+
 ## RC-017 accepted — the six-operation failure-state table is complete 2026-10-08T04:10:00Z (UTC)
 
 - RC-017 (define failure states and budget) is now **Complete**: every operation class has a real boundary and a three-point proof. Read, local write, login and command were proven by `scripts/rc017/run-command-failure-proof.ts`; routine by `scripts/rc045/run-schedule-proof.ts` (a durable per-occurrence key, and `unknown`/`requires_verification` after a restart, never re-run); billing by `scripts/rc061/run-billing-proof.ts` (an unsigned webhook refused before acceptance, an aborted response reconciled through `GET /api/billing/receipt/:eventId` instead of re-charging, and a duplicate or older event applying no second transition).
