@@ -1,4 +1,7 @@
 # Changelog
+## Client files — 24 pass 2026-10-07T03:30:00Z (UTC)
+
+- `files + index client suites`: 24 pass / 1 skip / 0 fail on dd2bf79.
 ## Auth + native recovery — 7 pass 2026-10-07T03:00:00Z (UTC)
 
 - `auth-process + native-recovery-fixture`: 7 pass / 0 fail on 1d79763.
