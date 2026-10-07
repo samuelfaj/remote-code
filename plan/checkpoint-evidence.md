@@ -1,3 +1,12 @@
+# RC-055 push routing for a run — partial proof on Linux — 2026-10-08 (UTC)
+
+- **Command:** `RC055_PROOF_DIR=<fresh absolute dir> bun scripts/rc055/run-push-routing-proof.ts`, twice.
+- **Environment:** macOS arm64 host with Docker Desktop; inside one Linux container built from `prototype/Dockerfile` with the working tree: the shipped API on `127.0.0.1:3000`, `REMOTECODE_DISTILL_BIN` pointing at the repository's own `apps/api/src/features/runs-stub-agent.mjs`, and `REMOTECODE_PUSH_ENDPOINT` pointing at the RC-047 provider stand-in.
+- **Observed result:** `{"result":"verified"}` both runs; the record names the run, its Inbox item and destination, the payload the provider received, the router's destination, and the thread that holds the run.
+- **What was checked:** the Inbox item's destination and the push payload's `deepLink` are identical (`{screen:"run",runId,workspaceId,botId}`); the shipped router maps that to `{screen:"Threads", params:{workspaceId, focusRunId:runId}}`; scanning the workspace's threads with the shipped `listThreads`/`listThreadMessages` finds exactly one thread holding the run, and it is the thread seeded with the run's message rather than the second thread created as a distractor.
+- **Failure-if check:** "loses the Inbox item" — the item is read back from `GET /api/inbox` after the run settled, and the push is driven from it. "requires the client open for routine" — nothing in this leg depends on a client being connected; the dispatch is the host's own. "returns to the wrong thread" — the distractor thread makes a wrong answer detectable, and the assertion requires exactly one holder.
+- **Not covered:** Apple's transport (APNs) and the on-device app journey; the routing decision is proven against the real payload and the real host data, not against a hand-written payload.
+
 # RC-051 display agent, Bots, and scheduled tasks — acceptance — 2026-10-08 (UTC)
 
 - **Task:** RC-051, the panel's surfaces against the host's own answers; dependencies RC-014–RC-016, RC-021–RC-023, RC-032, RC-047 and RC-049 were already accepted.

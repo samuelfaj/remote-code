@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native-web";
 import { createApiClient, listBots, listThreads, type Bot, type Thread, type Workspace } from "@remotecode/client";
 import { AgentPanel } from "../agent/AgentPanel";
+import { ComputerPanel } from "../computer/ComputerPanel";
 import { WorkspacePanel } from "../workspaces/WorkspacePanel";
 
 type Props = { userId: string; onUnauthorized: () => void; eventCursor?: number | null };
@@ -268,6 +269,7 @@ export function NavigationShell({ userId, onUnauthorized, eventCursor }: Props) 
 
         <View style={styles.content} testID="app-content">
           <WorkspacePanel userId={userId} onUnauthorized={onUnauthorized} selectedWorkspaceId={selectedWorkspaceId} />
+          <ComputerPanel userId={userId} selectedWorkspaceId={selectedWorkspaceId} selectedBotId={selectedBotId} />
           <AgentPanel userId={userId} selectedWorkspaceId={selectedWorkspaceId} selectedBotId={selectedBotId} eventCursor={eventCursor} />
         </View>
       </View>
