@@ -1,4 +1,7 @@
 # Changelog
+## History routes focused verification — 4 pass 2026-10-07T02:00:00Z (UTC)
+
+- `app.test.ts -t history`: 4 pass / 0 fail on 9fe2375. History CRUD + receipts + isolation covered; thread/interrupt part of RC-037 stays blocked on Distill chain.
 ## RC-032 status synced + RC-021 folder re-proof on 9ec922c 2026-10-07T02:30:00Z (UTC)
 
 - tasks.html RC-032 status now cites e38cd98 + 09f8324 re-proof. Folder-prep run2 `folder_ui_and_same_id_recovery_passed` on 9ec922c, source unchanged, cleanup true.
