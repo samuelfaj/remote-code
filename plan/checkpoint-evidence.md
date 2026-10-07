@@ -1,3 +1,12 @@
+# RC-009 Distill run supervision — acceptance — 2026-10-06 (UTC)
+
+- **Status:** Complete. The backend starts, observes, stops and reconciles Distill runs; a heartbeat distinguishes a live process from a stalled one, and a host restart never leaves a run "in progress".
+- **Implementation:** `apps/api/src/features/acp-distill.ts` (ACP stdio driver that answers permission/fs/terminal requests and never replays a prompt) and `apps/api/src/features/runs.ts` (durable `runs` table + routes `POST /api/runs`, `GET /api/runs/:id`, `GET /api/workspaces/:id/runs`, `POST /api/runs/:id/stop`). Wired in `apps/api/src/app.ts`.
+- **Behaviour:** a run has a stable id, is owner-scoped to the live session triple, records `state` (`starting`/`running`/`completed`/`interrupted`/`failed`), `heartbeat_at`, `stop_requested_at` and `stop_reason`. On process start every non-terminal run becomes `interrupted` with reason `host_restart`; the prompt is never re-sent. Stop uses `session/cancel` with a bounded 10s deadline then kills the process.
+- **Deterministic integration tests:** `apps/api/src/runs.test.ts` (4 pass) drives the real Elysia routes through the shipped supervisor with a stub ACP agent for start/observe/stop, completion, idempotent `requestId`, owner isolation and restart reconciliation. Full suite 181 pass / 68 skip / 0 fail.
+- **Real proof:** `scripts/rc009/run-runs-proof.sh` — a run against the real Distill binary was observed `running`; the host API process was killed with SIGKILL; after restart on the same database the run read back `interrupted` / `host_restart` with exactly **1** durable row and a frozen effect (10 files, identical content hash before and after, no replay). A second run stopped through the API ended `interrupted`. Transcript in the goal scratch `rc009-runs.txt`.
+- **Failure-if check:** no dead or stuck run remained "in progress" (read back `interrupted`), and the restart did not re-execute the prompt (effect hash unchanged, one row).
+
 # RC-007 Linux image with GUI — acceptance — 2026-10-06 (UTC)
 
 - **Status:** Complete. One Linux image starts Elysia, Distill, an X11 desktop and linux-use together in the user's container. No service or agent step runs outside the container, and the Distill process needs no macOS session.

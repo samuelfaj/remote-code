@@ -9,6 +9,7 @@ import { workspaceFilesFeature } from "./features/workspace-files";
 import { gitStatusFeature } from "./features/workspace-git";
 import { workspaceLayoutFeature } from "./features/workspace-layout";
 import { terminalsFeature } from "./features/terminals";
+import { runsFeature } from "./features/runs";
 import { workspaceFolderSchemaReady, workspaceFoldersFeature } from "./features/workspace-folders";
 import { checkDatabase, healthFeature, initializeDatabase, type ReadinessCheck } from "./features/health";
 
@@ -46,11 +47,16 @@ export function createApi(
     process.env.REMOTECODE_TERMINAL_VOLUME && process.env.REMOTECODE_TERMINAL_IMAGE
       ? { volumeName: process.env.REMOTECODE_TERMINAL_VOLUME, image: process.env.REMOTECODE_TERMINAL_IMAGE }
       : undefined,
+  runsConfig: Parameters<typeof runsFeature>[1] =
+    process.env.REMOTECODE_DISTILL_BIN || process.env.REMOTECODE_RUNS_CWD
+      ? { command: process.env.REMOTECODE_DISTILL_BIN, cwd: process.env.REMOTECODE_RUNS_CWD }
+      : undefined,
 ) {
   initializeDatabase(configuredDatabasePath);
   const actions = actionsFeature(configuredDatabasePath, authConfig.webOrigin ?? "http://localhost:5173");
   const storage = storageFeature(configuredDatabasePath);
   const terminals = terminalsFeature(configuredDatabasePath, terminalConfig);
+  const runs = runsFeature(configuredDatabasePath, runsConfig);
   if (configuredDatabasePath === databasePath) registerTerminalsShutdown(terminals.shutdown);
   const workspaceFolders = workspaceFoldersFeature(configuredDatabasePath, undefined, terminals.workspaceIdentity);
   let storageUnavailable = corruptAtStartup(configuredDatabasePath) || !workspaceFolders.isReady() ||
@@ -104,7 +110,8 @@ export function createApi(
     .use(gitStatusFeature(configuredDatabasePath))
     .use(workspaceLayoutFeature(configuredDatabasePath).routes)
     .use(terminals.routes)
-    .onStop(() => terminals.stopAll());
+    .use(runs.routes)
+    .onStop(() => { terminals.stopAll(); runs.stopAll(); });
 }
 
 let terminalsShutdownHandler: (() => Promise<void>) | null = null;

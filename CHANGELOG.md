@@ -1,4 +1,10 @@
 # Changelog
+## RC-009 accepted — Distill run supervision 2026-10-07T00:20:00Z (UTC)
+
+- New `apps/api/src/features/acp-distill.ts` (full ACP stdio driver) and `apps/api/src/features/runs.ts` (durable run state, heartbeat, stop deadline, restart reconciliation) wired into `apps/api/src/app.ts`.
+- `apps/api/src/runs.test.ts`: 4 deterministic integration tests through the shipped routes (start/stop, completion, idempotency, ownership, restart reconcile). Full suite 181 pass / 68 skip / 0 fail.
+- Real proof `scripts/rc009/run-runs-proof.sh`: real Distill run observed running, host API SIGKILLed, restart read back `interrupted`/`host_restart`, 1 row, frozen effect; second run stopped to `interrupted`.
+- `plan/tasks.html`: RC-009 Complete; summary now 16 complete / 9 in progress / 0 blocked / 43 to do.
 ## RC-007 accepted — Linux image with GUI, Distill and linux-use 2026-10-06T23:50:00Z (UTC)
 
 - `prototype/Dockerfile`: Distill pinned to v2.0.33 with per-arch SHA-256 and build for the builder architecture (native `arm64` here). `prototype/start.sh`: opt-in `REMOTECODE_BACKGROUND=1` ready marker, default foreground behavior unchanged.

@@ -763,3 +763,10 @@ Keep safe, evidence-backed work moving when a task encounters a blocker. A pivot
 - **Change:** `prototype/Dockerfile` (arch-aware Distill pin) and `prototype/start.sh` (opt-in `REMOTECODE_BACKGROUND=1` ready marker; default foreground behavior preserved). New `scripts/rc007/run-linux-image-proof.sh` builds and proves the image from a clean container.
 - **Result:** inside one container, Elysia `/api/health/ready` -> `ready`, X11 Chromium window present, `distill mcp doctor linux-use` reports 15 tools, and a real Distill agent action used the linux-use `list_windows` MCP tool and wrote the observed window list to a file.
 - **Next:** RC-009 supervision is the keystone for Phase 02; RC-015/RC-019 depend on RC-007 plus identity/isolation work.
+
+## RC-009 run supervision implemented on the real Distill ACP interface — 2026-10-06
+
+- **Decision:** RC-009 ("Supervise Distill runs") was eligible once RC-002 and RC-008 were accepted. Supervision is implemented as product code in the Elysia backend, not as a test-only harness: a durable `runs` table plus an ACP stdio driver, so the same path serves the product and the proof.
+- **Change:** `apps/api/src/features/acp-distill.ts` and `apps/api/src/features/runs.ts`; `apps/api/src/app.ts` wiring; `apps/api/src/runs.test.ts`; `apps/api/src/features/runs-stub-agent.mjs` (deterministic test double, explicitly not a Distill substitute); `scripts/rc009/run-runs-proof.sh` (real Distill).
+- **Result:** a killed host process never leaves a run "in progress" (restart reconciles to `interrupted`/`host_restart`), the prompt is never replayed (frozen effect, single durable row), and stop ends a live run as `interrupted` within the bounded deadline.
+- **Next:** Phase 02 keystone RC-022 ("Run Distill on the first thread") now has RC-009; RC-014/RC-018/RC-020/RC-021 are the remaining prerequisites. RC-015 isolation and RC-019 outside-Docker detection extend the supervision work.
