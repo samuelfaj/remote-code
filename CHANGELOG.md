@@ -1,4 +1,7 @@
 # Changelog
+## RC-030 test trim — 404 authority moved to proof runner 2026-10-07T08:00:00Z (UTC)
+
+- workspace-git.test.ts drops the standalone 404 case (env artifact: no volume-backed guard); 404 `not_a_repository` authority is run-git-status-proof.ts (strict body assert, run15/run13 passed). TSC clean, 77-file suites green.
 ## Handoff sync — RC-030 cites fd-guard fix 2026-10-07T07:30:00Z (UTC)
 
 - tasks.html RC-030 status now cites 2383d34 fd-guard + run15. Doc-links clean.
