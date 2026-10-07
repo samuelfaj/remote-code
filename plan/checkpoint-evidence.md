@@ -1,3 +1,12 @@
+# RC-011 gateway routes each account to its container — acceptance — 2026-10-07 (UTC)
+
+- **Status:** Complete. The gateway authenticates a caller and forwards the API and the event socket to the correct container without handing its routing token to the container, and never waits indefinitely for a container.
+- **Command:** `RC011_PROOF_DIR=<fresh dir> bun scripts/rc011/run-gateway-routing-proof.ts` (Docker Linux/arm64: one network, two account containers with their own volumes, TLS and **no published ports**, one gateway container published on the host).
+- **Observed (two runs, `result: gateway_routed_both_accounts_without_leaking_its_token_passed`):** without a token the gateway answered 401, as it did for an unknown token. Account A saw exactly 1 workspace (its own) and account B exactly 1 (its own); B reading A's workspace id returned 404. The `/api/events` WebSocket through the gateway returned a `snapshot`. Neither container's environment contained the routing token or the string `RC011`. A token mapped to a dead host returned 503 `upstream_unavailable` after 618 ms. The account container's internal IP (`192.168.158.2`) was not reachable from the caller (`reachable: false`).
+- **Failure-if check:** A could not read or act on B's host (404 on B reading A, and each account only listed its own resources), the internal port was not reachable directly, and the gateway did not hang waiting for Docker (bounded 503).
+- **Defects fixed while proving:** the WebSocket bridge did not forward the caller's cookie/origin to the container, and the gateway had no way to trust the containers' internal TLS (needed because the API refuses non-loopback plain-HTTP logins).
+- **Checks:** `bun test apps/api/src apps/gateway/src packages/client/src` 285 pass / 74 skip / 0 fail; `bun run typecheck` exit 0; documentation-links gate exit 0.
+
 # RC-041 several Bots' graphical sessions in one container — acceptance — 2026-10-07 (UTC)
 
 - **Status:** Complete. linux-use and the session surface serve several Bots with window and session identification, separate screens and profiles in one container, and defined persistence.
