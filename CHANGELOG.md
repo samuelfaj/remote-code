@@ -1,4 +1,7 @@
 # Changelog
+## Mobile storage observation — 10 pass 2026-10-07T05:30:00Z (UTC)
+
+- `apps/mobile` native storage suite: 10 pass / 0 fail on 71289d9.
 ## Terminal suites — 5 skip on macOS 2026-10-07T05:00:00Z (UTC)
 
 - `terminals + lifecycle + restart`: 0 pass / 5 skip / 0 fail on macOS (Linux-gated; covered by shutdown/reconnect proof runners on Linux).
