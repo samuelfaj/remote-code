@@ -1,3 +1,12 @@
+# RC-064 measure real cost and capacity — acceptance — 2026-10-08 (UTC)
+
+- **Status:** Complete. Per-account cost is measured on this host, the limits are derived from that measurement, and an over-limit request is refused with an explicit state before any resource is created.
+- **Command:** `RC064_PROOF_DIR=<fresh dir> RC064_IMAGE=remotecode/computer:rc024 bun scripts/rc064/run-capacity-proof.ts` (real Docker; two real account containers provisioned by the shipped control plane).
+- **Observed (two runs, `result: four_concurrent_workloads_measured_over_three_samples_and_over_limit_refused_explicitly_passed`):** with `REMOTECODE_HOSTED_MAX_ACCOUNTS=2`, two accounts came up `ready` on distinct published ports. Four concurrent workloads ran in each (a real `bun build` loop, ten real Chromium `--app` sessions on the account's own Xvfb display, the shipped run supervisor, and 300 sustained requests against the account's own API). Three `docker stats` samples recorded a per-account peak of 272.04% of one core and 2.33 GiB (14.9% of host memory); both accounts reported `running: true` and `/api/health/ready` 200 in all three samples; each data volume measured 618,496 bytes. A third account was refused **503 `capacity_exhausted`, reason `account_limit`**, and `GET /api/hosted/capacity` simultaneously reported `acceptingNewAccounts: false`, `accountsProvisioned: 2`.
+- **Failure-if check:** the numbers are measured rather than estimated, and the over-limit case produced an explicit refusal instead of an overcommitted account or a silent failure.
+- **Honest gaps:** `host.freeDiskBytes` and `host.freeMemoryBytes` are `null` on macOS (no Linux `df` command and no `/proc/meminfo`); the real Distill binary was not exercised because it needs the RC-002-gated Linux credential, so the agent path measured is the shipped supervisor driven by the stub agent; and there is no queue — over the limit the request is refused rather than parked.
+- **Checks:** `bun test apps/api apps/gateway packages/client` 388 pass / 74 skip / 0 fail; `bun run typecheck` exit 0; documentation-links gate exit 0.
+
 # RC-062 update without losing work — acceptance — 2026-10-08 (UTC)
 
 - **Status:** Complete. An account moves onto a new image through a verified data copy and a checkpointed swap; a failed or interrupted update rolls back or stops, is never resumed, and never leaves the account advertised as a working host.

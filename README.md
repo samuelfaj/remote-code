@@ -12,6 +12,8 @@ The project is intended to be open source and self-hostable, with paid hosting f
 
 - [Product and architecture](plan/index.html): how the Linux host, clients, GUI, Distill, and recovery paths fit together.
 - [Build tasks](plan/tasks.html): 68 tasks ordered from initial proof through release, each with an observable completion check.
+- [Measured capacity](plan/capacity.md): what one hosted account actually costs under load, and the limits the host enforces from that measurement.
+- [Failure-state contract](plan/failure-state-contract.md): per-operation timeouts, cancellation and the rule for a result that was never confirmed.
 - [Screen mockups](plan/mockups.html): desktop and mobile concepts, including the Bot computer handoff.
 - [Pivot policy](PIVOT.md): how to keep safe, evidence-backed work moving when a task is blocked.
 

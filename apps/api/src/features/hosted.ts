@@ -1,6 +1,7 @@
 import { Database } from "bun:sqlite";
 import { Elysia, t } from "elysia";
 import { sessionExpiresAt, sessionTokenHash, sessionUserId } from "./auth";
+import { capacityAllows } from "./capacity";
 import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { randomBytes } from "node:crypto";
@@ -147,6 +148,9 @@ export function hostedFeature(
 
       const name = typeof body.name === "string" ? body.name : "";
       if (!accountNamePattern.test(name)) { set.status = 400; return { error: "invalid_account_name" as const }; }
+
+      const capacity = db((database) => capacityAllows(database));
+      if (!capacity.allowed) { set.status = 503; return { error: "capacity_exhausted" as const, reason: capacity.reason }; }
 
       const id = crypto.randomUUID();
       const gatewayToken = generateGatewayToken();
