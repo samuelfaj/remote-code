@@ -1,7 +1,7 @@
 # Where to resume
 
-Pushed checkpoint: `54de031` on `checkpoint/rc002-linux-runtime-evidence`
-(matches `origin`). Plan status: **46 complete / 1 in progress / 0 blocked / 21 to do**
+Pushed checkpoint: `b7dd9b6` on `checkpoint/rc002-linux-runtime-evidence`
+(matches `origin`). Plan status: **49 complete / 0 in progress / 0 blocked / 19 to do**
 of the 68 tasks in `plan/tasks.html`.
 
 Read, in this order: `plan/tasks.html` (per-task status), `CHANGELOG.md`
@@ -10,26 +10,28 @@ observed result and the failure-if check for every accepted task), `PIVOT.md`
 (why a route changed) and `plan/capacity.md` / `plan/failure-state-contract.md`
 (measured limits and the per-operation failure table).
 
+Accepted since the previous resume page: RC-024 (web takeover), RC-062 (image
+update), RC-064 (measured capacity), RC-042 (per-Bot preview), RC-043 (two-client
+possession), RC-029 (workspace file editing) and RC-063 (proved isolation).
+
 ## Ready right now
 
 | Task | Why it is ready |
 | --- | --- |
-| **RC-043** | Exclusive possession already exists (RC-024) and the preview landed (RC-042). Extend possession to two clients, disconnection and resumption, then prove a Bot click is refused while the human holds the screen. |
-| **RC-025** | Web takeover landed (RC-024). Build the minimal mobile client on the existing Eden core; the failure-if forbids a parallel API implementation. |
+| **RC-036** | RC-029 landed, so a message can carry an attachment and a run result can show changed files with a diff. No thread/message surface exists yet (`grep` finds none), so this task also has to introduce the smallest one. |
+| **RC-025** | RC-024 landed, so the mobile client can take over and return the session over the existing Eden core. The failure-if forbids a parallel API implementation, so it must reuse `packages/client`. |
 
-Everything else is gated behind one of those two: RC-026 needs RC-025, RC-044
-and RC-046 need RC-043's chain, and RC-036 needs RC-029.
+Everything else is gated behind one of those two: RC-026 and RC-044 need RC-025,
+and RC-046 onward need that chain.
 
-## In progress
+## In progress and blocked
 
-**RC-029** (edit workspace files) — the file APIs and the container-restart proof
-for the last clauses have not been completed. Its remaining work is not blocked;
-the clauses that depend on the mobile tasks (RC-055/RC-056) are the ones to defer.
+Nothing. Every task is either Complete or still To do with an unmet dependency.
 
 ## The pattern that produced every recent defect
 
 Run the task's own proof on real infrastructure before believing the
-implementation. Six real product defects in this stretch were found only that
+implementation. Seven real product defects in this stretch were found only that
 way, and every one of them had passed the worker's unit tests first:
 
 1. the update data copy was killed before it finished (`docker start` returns
@@ -40,7 +42,8 @@ way, and every one of them had passed the worker's unit tests first:
    the version that could not serve;
 4. a crashed swap left the account advertised as `ready`;
 5. `docker stop` raced its own spawn timeout in hosted suspend;
-6. the preview/observation tokens were not scoped to the workspace.
+6. the preview/observation tokens were not scoped to the workspace;
+7. the unprivileged agent could read the service database (found by the RC-063 isolation proof).
 
 Also expect a worker to report a failure as "pre-existing" or "unrelated" when
 its own change caused it — check the diff before believing that.
