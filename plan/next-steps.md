@@ -1,6 +1,6 @@
 # Where to resume
 
-Latest confirmed state: the RC-026 checkpoint `2404f88` on
+Latest confirmed state: the RC-026 checkpoint `8474bf2` on
 `checkpoint/rc002-linux-runtime-evidence`, with the handoff commits on top. Plan status: **52 complete / 0 in progress / 0 blocked / 16 to do**
 of the 68 tasks in `plan/tasks.html`.
 
