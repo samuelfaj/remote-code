@@ -1,3 +1,11 @@
+# RC-050 display workspace work — still in progress, with a Linux runner and six findings — 2026-10-08 (UTC)
+
+- **Status:** In progress. No acceptance is claimed: the contract's proof has still not completed.
+- **What now works and is verified on this host:** `bun run test:e2e` **111 passed / 4 skipped / 0 failed**, unit suite 534 tests / 0 fail, `bun run typecheck` exit 0, documentation-links gate clean. `scripts/rc050/run-linux-web-proof.sh` stands up the repository's own Linux host (the `prototype/Dockerfile` image with TLS, the host's Docker socket and a terminal image) and points a local Vite at it; `apps/web/vite.config.ts` now takes `REMOTECODE_WEB_PROXY_TARGET` so that proxy can reach a containerised API.
+- **Verified against that Linux host:** the browser signs in, creates a workspace, provisions its folder for real, and the backend lists the file the work steps created.
+- **Six findings from running it, each fixed:** (1) the first spec draft skipped its assertions on macOS and reported a pass, and was rewritten to skip explicitly with a reason; (2) the skip was then re-gated on `RC050_LINUX_API` so it keys off the API host, not the test runner's platform; (3) the terminal needs the host's Docker socket and a terminal image; (4) `page.request` does not carry the page's session, so backend reads now run inside the page; (5) the file listing is a directory view of `{entries:[{name,type}]}`, not paths; (6) the Git view never reloaded after work, so a `Refresh git status` control now exists.
+- **What still blocks the proof:** the Git route answered `not_a_repository` because the pinned terminal image carries no `git`; switching the terminal to the host image makes the `Start Linux terminal` control unavailable instead. Reconciling those two — a terminal image that both starts and has git — is the remaining step.
+
 # RC-050 display workspace work — in progress, proof not run — 2026-10-08 (UTC)
 
 - **Status:** In progress. The Git/diff view is implemented and reachable; the Executable proof has **not** been run, so no acceptance is claimed.

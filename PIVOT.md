@@ -1,5 +1,11 @@
 # Pivot policy
 
+## RC-050: the halt was mine to remove, and most of it now is 2026-10-08 (UTC)
+
+- **Blocker:** RC-050 was left In progress because its proof needs a Linux host, which reads as an accepted blocker. It is not: the repository ships the Linux runtime, and `scripts/run-terminal-linux-browser-proof.ts` already showed the shape — a container from `prototype/Dockerfile`, the host's Docker socket, a terminal image, and a browser pointed at it.
+- **Pivot applied:** `scripts/rc050/run-linux-web-proof.sh` builds that host, serves its API over TLS, and runs a Vite on the macOS side whose `/api` proxy now targets it (`REMOTECODE_WEB_PROXY_TARGET`). The browser stays on loopback, which the web app's own login guard requires, while the API runs on Linux where the folder, file and terminal routes work.
+- **What that bought:** the folder provisioning and the workspace file listing now run against real Linux, and the six findings above were found by running it rather than by reading it. The proof still fails at one step — the terminal image has no `git`, and the host image does not make the terminal startable — so RC-050 stays **In progress** with that single remaining cause named, not a platform excuse.
+
 ## RC-050: a browser proof that needs Linux has to say so 2026-10-08 (UTC)
 
 - **Blocker:** RC-050's proof edits a file through the workspace folder, the file editor and the Linux terminal. Those routes answer 501 off Linux, and this host is macOS. The first draft of the spec wrapped every one of those steps in `if (folderProvisioned)` / `if (terminalAvailable)` guards, so it reported a pass while never exercising the contract, and its "the row matches a backend record" check was a bare `expect(response.ok())`.

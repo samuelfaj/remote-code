@@ -39,6 +39,15 @@ export default defineConfig({
     host: "0.0.0.0",
     port: Number(process.env.WEB_PORT ?? 5173),
     strictPort: true,
-    proxy: { "/api": { target: `http://127.0.0.1:${process.env.API_PORT ?? 3000}`, ws: true } },
+    // The browser stays on loopback (the login guard above requires it) while the
+    // API can live elsewhere: a containerised Linux host answers over TLS, so the
+    // target is configurable and its certificate is not verified for this proxy.
+    proxy: {
+      "/api": {
+        target: process.env.REMOTECODE_WEB_PROXY_TARGET ?? `http://127.0.0.1:${process.env.API_PORT ?? 3000}`,
+        ws: true,
+        secure: false,
+      },
+    },
   },
 });

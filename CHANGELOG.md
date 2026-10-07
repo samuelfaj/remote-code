@@ -1,4 +1,12 @@
 # Changelog
+## RC-050 still in progress — a Linux runner exists and six findings are fixed 2026-10-09T01:40:00Z (UTC)
+
+- `scripts/rc050/run-linux-web-proof.sh` stands up the repository's own Linux host (the `prototype/Dockerfile` image over TLS, with the host's Docker socket and a terminal image) and runs the RC-050 spec against it through a local Vite. `apps/web/vite.config.ts` gained `REMOTECODE_WEB_PROXY_TARGET` so that proxy can reach a containerised API while the browser stays on loopback, as the login guard requires.
+- `WorkspacePanel` gained a `Refresh git status` control: the Git view was a snapshot that never reloaded after work happened, which the Linux run exposed.
+- Six findings from running the proof against Linux, each fixed and recorded in `plan/checkpoint-evidence.md` and `PIVOT.md`: a first spec draft that skipped its own assertions and reported a pass; a skip keyed on the runner's platform instead of the API host; the missing Docker socket and terminal image; `page.request` not carrying the page's session; the directory-listing shape; and the stale Git view.
+- **Not accepted.** The proof now runs the folder, file and file-listing steps against real Linux, and fails at one step: the pinned terminal image has no `git`, so the Git route answers `not_a_repository`, while switching the terminal to the host image makes `Start Linux terminal` unavailable. RC-050 stays In progress with that single cause named.
+- Checks on this host: `bun run test:e2e` 111 passed / 4 skipped / 0 failed; unit suite 534 tests / 0 fail; typecheck exit 0; documentation-links gate clean.
+
 ## RC-050 in progress — the Git view landed, its Linux-only proof has not run 2026-10-08T22:20:00Z (UTC)
 
 - `apps/web/src/features/workspaces/WorkspacePanel.tsx` now renders the selected workspace's Git view: changed and untracked files as `git-file-<path>` rows and the selected file's unified diff as `git-diff`, read through the shared `workspaceGitStatus` and `workspaceGitDiff` helpers and keyed by the real workspace id, so one workspace can never show another's work.

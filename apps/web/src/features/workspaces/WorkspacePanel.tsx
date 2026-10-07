@@ -50,6 +50,9 @@ export function WorkspacePanel({ userId, onUnauthorized, selectedWorkspaceId }: 
   >("unknown");
   const [storageReady, setStorageReady] = useState(false);
   const [gitStatus, setGitStatus] = useState<GitStatus | null>(null);
+  // The git view is a snapshot of a folder that work keeps changing, so it
+  // has to be reloadable without reselecting the workspace.
+  const [gitReload, setGitReload] = useState(0);
   const [gitDiff, setGitDiff] = useState<GitDiff | null>(null);
   const [gitSelectedFile, setGitSelectedFile] = useState<string | null>(null);
   const [gitLoading, setGitLoading] = useState(false);
@@ -255,7 +258,7 @@ export function WorkspacePanel({ userId, onUnauthorized, selectedWorkspaceId }: 
     return () => {
       cancelled = true;
     };
-  }, [selected?.id]);
+  }, [selected?.id, gitReload]);
 
   async function selectGitFile(path: string) {
     if (!selected) return;
@@ -671,6 +674,15 @@ export function WorkspacePanel({ userId, onUnauthorized, selectedWorkspaceId }: 
           <Text accessibilityRole="header" style={styles.subheading}>
             Git
           </Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Refresh git status"
+            testID="refresh-git-status"
+            onPress={() => setGitReload((count) => count + 1)}
+            style={styles.gitRefresh}
+          >
+            <Text>Refresh git status</Text>
+          </Pressable>
           {gitError ? (
             <Text>{gitError}</Text>
           ) : gitStatus ? (
@@ -796,6 +808,7 @@ const styles = StyleSheet.create({
     paddingTop: 12,
   },
   pending: { backgroundColor: "#fff0cf", gap: 8, padding: 12 },
+  gitRefresh: { alignSelf: "flex-start", paddingVertical: 6, paddingHorizontal: 10 },
   gitPanel: {
     borderTopColor: "#e3ebe7",
     borderTopWidth: 1,
