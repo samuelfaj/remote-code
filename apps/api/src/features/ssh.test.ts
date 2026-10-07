@@ -72,9 +72,15 @@ describe("SSH credentials routes", () => {
       headers: { cookie: `remotecode_session=${ownerToken}`, "content-type": "application/json" },
       body: JSON.stringify({ name: "validname", privateKey: "-----BEGIN PRIVATE KEY-----\nfoo\n-----END PRIVATE KEY-----\n" }),
     });
-    expect(response.status).toBe(501);
-    const body = await response.json() as { error: string };
-    expect(body.error).toBe("ssh_require_linux");
+    expect(response.status).toBe(process.platform === "linux" ? 201 : 501);
+    if (process.platform === "linux") {
+      const body = await response.json() as { id: string; name: string; fingerprint: string; createdAt: string };
+      expect(body.id).toBeTruthy();
+      expect(body.name).toBe("validname");
+    } else {
+      const body = await response.json() as { error: string };
+      expect(body.error).toBe("ssh_require_linux");
+    }
   });
 
   it("GET /api/ssh/credentials rejects an anonymous request with 401", async () => {
@@ -88,9 +94,14 @@ describe("SSH credentials routes", () => {
     const response = await request(app, "http://localhost/api/ssh/credentials", {
       headers: { cookie: `remotecode_session=${ownerToken}` },
     });
-    expect(response.status).toBe(501);
-    const body = await response.json() as { error: string };
-    expect(body.error).toBe("ssh_require_linux");
+    expect(response.status).toBe(process.platform === "linux" ? 200 : 501);
+    if (process.platform === "linux") {
+      const body = await response.json() as { credentials: unknown[] };
+      expect(body.credentials).toBeInstanceOf(Array);
+    } else {
+      const body = await response.json() as { error: string };
+      expect(body.error).toBe("ssh_require_linux");
+    }
   });
 
   it("DELETE /api/ssh/credentials/:id rejects an anonymous request with 401", async () => {
@@ -107,21 +118,27 @@ describe("SSH credentials routes", () => {
       method: "DELETE",
       headers: { cookie: `remotecode_session=${ownerToken}` },
     });
-    expect(response.status).toBe(501);
-    const body = await response.json() as { error: string };
-    expect(body.error).toBe("ssh_require_linux");
+    expect(response.status).toBe(process.platform === "linux" ? 404 : 501);
+    if (process.platform === "linux") {
+      const body = await response.json() as { error: string };
+      expect(body.error).toBe("credential_not_found");
+    } else {
+      const body = await response.json() as { error: string };
+      expect(body.error).toBe("ssh_require_linux");
+    }
   });
 
-  it("GET /api/ssh/credentials rejects a signed-in non-owner", async () => {
-    const { app, databasePath } = setup();
-    const database = new Database(databasePath);
-    database.query("INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)")
-      .run(createHash("sha256").update("b".repeat(64)).digest("hex"), "bob", Date.now() + 60_000);
-    database.close();
+  it("GET /api/ssh/credentials returns an empty list for an authenticated user with no credentials", async () => {
+    const { app } = setup();
     const response = await request(app, "http://localhost/api/ssh/credentials", {
-      headers: { cookie: `remotecode_session=${"b".repeat(64)}` },
+      headers: { cookie: `remotecode_session=${ownerToken}` },
     });
-    expect(response.status).toBe(process.platform === "linux" ? 401 : 501);
+    expect(response.status).toBe(process.platform === "linux" ? 200 : 501);
+    if (process.platform === "linux") {
+      const body = await response.json() as { credentials: unknown[] };
+      expect(body.credentials).toBeInstanceOf(Array);
+      expect(body.credentials).toHaveLength(0);
+    }
   });
 
   it("DELETE /api/ssh/credentials/:id rejects a signed-in non-owner", async () => {
@@ -134,7 +151,7 @@ describe("SSH credentials routes", () => {
       method: "DELETE",
       headers: { cookie: `remotecode_session=${"b".repeat(64)}` },
     });
-    expect(response.status).toBe(process.platform === "linux" ? 401 : 501);
+    expect(response.status).toBe(process.platform === "linux" ? 404 : 501);
   });
 });
 
@@ -228,9 +245,14 @@ describe("SSH transfer route", () => {
       headers: { cookie: `remotecode_session=${ownerToken}`, "content-type": "application/json" },
       body: JSON.stringify({ credentialId: "00000000-0000-4000-8000-000000000000", direction: "upload", host: "example.com", user: "test", remotePath: "/tmp/file", localPath: "file.txt" }),
     });
-    expect(response.status).toBe(501);
-    const body = await response.json() as { error: string };
-    expect(body.error).toBe("ssh_require_linux");
+    expect(response.status).toBe(process.platform === "linux" ? 404 : 501);
+    if (process.platform === "linux") {
+      const body = await response.json() as { error: string };
+      expect(body.error).toBe("not_found");
+    } else {
+      const body = await response.json() as { error: string };
+      expect(body.error).toBe("ssh_require_linux");
+    }
   });
 
   it("POST /api/workspaces/:workspaceId/ssh/transfer rejects a signed-in non-owner", async () => {
@@ -244,6 +266,6 @@ describe("SSH transfer route", () => {
       headers: { cookie: `remotecode_session=${"b".repeat(64)}`, "content-type": "application/json" },
       body: JSON.stringify({ credentialId: "00000000-0000-4000-8000-000000000000", direction: "upload", host: "example.com", user: "test", remotePath: "/tmp/file", localPath: "file.txt" }),
     });
-    expect(response.status).toBe(process.platform === "linux" ? 401 : 501);
+    expect(response.status).toBe(process.platform === "linux" ? 404 : 501);
   });
 });

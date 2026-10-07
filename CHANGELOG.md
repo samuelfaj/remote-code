@@ -1,4 +1,16 @@
 # Changelog
+## Fix — SSH credential review findings 2026-10-07T12:05:00Z (UTC)
+
+Independent review of the RC-032 surface found nine issues; the security-relevant ones are fixed:
+- A body-schema failure echoed the submitted body (including the private key). The feature now has a scoped error handler that answers 400 `invalid_ssh_request` with no part of the body.
+- A dangling symlink at the download destination bypassed containment, and a rejected path still created directories through a symlinked directory inside the workspace. The local path is now validated before any filesystem mutation: empty/leading-slash/`.`/`..`/trailing-slash segments are rejected, every existing component is checked with `lstat` for symlinks, the parent is only then created, its realpath must stay inside the workspace, and an existing destination must be a regular file.
+- Credential storage trusted a pre-existing directory: a 0777 or symlinked `<root>/<userId>` could redirect the key. The directory is now `lstat`-checked (real directory, not a symlink) and forced to 0700; the temporary key is written with `flag: "wx"` so an existing file or symlink is refused; the stored key and `known_hosts` must be regular files before `scp`; a failure after the row exists rolls the row and file back.
+- Revocation reported success while the key file survived. It now unlinks first and answers 503 `ssh_revoke_incomplete`, leaving the row so cleanup can be retried.
+- Unavailable storage was reported as an invalid session. Owner resolution now distinguishes anonymous (401) from storage failure (503 `ssh_unavailable`).
+- Filesystem errors no longer leak the storage path (they map to 503).
+- The unit tests expected 501 unconditionally, which would have failed on Linux; expectations are now platform-aware. `scripts/run-ssh-proof.ts` sets a failing exit code on an assertion failure and compares container read-backs by sha256 instead of trimmed text.
+- The proof now also exercises two of the review's exploit cases: a symlinked directory inside the workspace is refused and creates nothing outside, and the validation error contains no key material.
+
 ## RC-032 accepted — managed SSH credential API 2026-10-07T11:35:00Z (UTC)
 
 - New `apps/api/src/features/ssh.ts` (registered in `app.ts`) closes the surface the earlier sessions left open: `POST /api/ssh/credentials` stores a private key at `<REMOTECODE_SSH_ROOT>/<userId>/<id>` with mode 0600 in a 0700 directory and returns only `{id, name, fingerprint}` (fingerprint = sha256 of the public key produced by `ssh-keygen -y`, so the key itself is validated and never echoed); `GET /api/ssh/credentials` lists metadata only; `DELETE /api/ssh/credentials/:id` removes the row and the key file; `POST /api/workspaces/:workspaceId/ssh/transfer` uploads or downloads with the stored key.

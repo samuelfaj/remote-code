@@ -133,9 +133,9 @@ console.log('sshd-ok');`;
   if (upload.status !== 200 || upload.body.sha256 !== sha256(payload) || upload.body.bytes !== Buffer.byteLength(payload)) {
     throw Error(`upload_${upload.status}_${JSON.stringify(upload.body)}`);
   }
-  const remoteBytes = command("docker", "exec", id, "cat", `${remoteDir}/uploaded.txt`);
-  if (remoteBytes !== payload.trim()) throw Error(`upload_bytes_${remoteBytes}`);
-  record.upload = upload.body;
+  const remoteHash = command("docker", "exec", id, "sha256sum", `${remoteDir}/uploaded.txt`).split(/\s+/)[0];
+  if (remoteHash !== sha256(payload)) throw Error(`upload_bytes_${remoteHash}`);
+  record.upload = { ...upload.body, remoteSha256: remoteHash };
 
   // 3. Download with the same credential and verify the local bytes.
   const download = await api(`/api/workspaces/${workspaceId}/ssh/transfer`, "POST",
@@ -143,9 +143,9 @@ console.log('sshd-ok');`;
   if (download.status !== 200 || download.body.sha256 !== sha256(payload)) {
     throw Error(`download_${download.status}_${JSON.stringify(download.body)}`);
   }
-  const localBytes = command("docker", "exec", id, "cat", `${workspaceFolder}/downloaded.txt`);
-  if (localBytes !== payload.trim()) throw Error(`download_bytes_${localBytes}`);
-  record.download = download.body;
+  const localHash = command("docker", "exec", id, "sha256sum", `${workspaceFolder}/downloaded.txt`).split(/\s+/)[0];
+  if (localHash !== sha256(payload)) throw Error(`download_bytes_${localHash}`);
+  record.download = { ...download.body, localSha256: localHash };
 
   // 4. Refusals that keep the boundary honest.
   const escape = await api(`/api/workspaces/${workspaceId}/ssh/transfer`, "POST",
@@ -156,7 +156,23 @@ console.log('sshd-ok');`;
   if (deadHost.status !== 502 || !["ssh_unreachable", "ssh_transfer_failed"].includes(deadHost.body.error)) {
     throw Error(`deadhost_${deadHost.status}_${JSON.stringify(deadHost.body)}`);
   }
-  record.refusals = { escape: escape.body, deadHost: deadHost.body };
+  // A symlinked directory inside the workspace must not let a rejected request
+// create anything outside it.
+  command("docker", "exec", id, "ln", "-s", "/tmp/rc032-outside", `${workspaceFolder}/link`);
+  const linkEscape = await api(`/api/workspaces/${workspaceId}/ssh/transfer`, "POST",
+    { credentialId, direction: "download", host: "127.0.0.1", port: 2222, user: "root", remotePath: `${remoteDir}/uploaded.txt`, localPath: "link/newdir/file.txt" }, cookie);
+  if (linkEscape.status !== 400 || linkEscape.body.error !== "invalid_local_path") throw Error(`linkescape_${linkEscape.status}_${JSON.stringify(linkEscape.body)}`);
+  const outside = command("docker", "exec", id, "sh", "-c", "test -e /tmp/rc032-outside/newdir && echo created || echo absent");
+  if (outside !== "absent") throw Error("rejected_request_created_a_directory_outside_the_workspace");
+
+  // A schema failure must not echo the submitted private key.
+  const leak = await api("/api/ssh/credentials", "POST", { name: 123, privateKey }, cookie);
+  if (leak.status !== 400 || leak.body.error !== "invalid_ssh_request") throw Error(`leak_${leak.status}_${JSON.stringify(leak.body)}`);
+  if (leak.text.includes("PRIVATE KEY") || leak.text.includes(privateKey.split("\n")[1] ?? "x")) {
+    throw Error("validation_error_echoed_the_private_key");
+  }
+
+  record.refusals = { escape: escape.body, deadHost: deadHost.body, linkEscape: linkEscape.body, outsideAfterLinkEscape: outside, validationError: leak.body };
 
   // 5. Revoke, then the same transfer must fail.
   const revoked = await api(`/api/ssh/credentials/${credentialId}`, "DELETE", undefined, cookie);
@@ -184,6 +200,8 @@ console.log('sshd-ok');`;
   console.log(JSON.stringify({ result: record.result, credential: record.credential, upload: record.upload, download: record.download, revocation: record.revocation }));
 } catch (error) {
   record.error = error instanceof Error ? error.message : String(error);
+  // Evidence and cleanup still run, but a failed assertion must not look like success.
+  process.exitCode = 1;
   console.log(JSON.stringify({ result: "unverified", error: record.error.slice(0, 300) }));
 } finally {
   writeFileSync(resolve(output, "evidence.json"), JSON.stringify(record, null, 2));

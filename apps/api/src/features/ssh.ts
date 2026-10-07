@@ -1,4 +1,4 @@
-import { readlinkSync, renameSync, chmodSync, statSync, realpathSync } from "node:fs";
+import { existsSync, lstatSync, readlinkSync, renameSync, chmodSync, realpathSync } from "node:fs";
 import { Elysia, t } from "elysia";
 import { sessionExpiresAt, sessionTokenHash, sessionUserId } from "./auth";
 import { withProvisionedWorkspaceFolder } from "./workspace-folders";
@@ -12,6 +12,8 @@ const credentialNamePattern = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 const hostPattern = /^[A-Za-z0-9]([A-Za-z0-9.-]{0,253})$/;
 const userPattern = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
+type Owner = { kind: "anonymous" } | { kind: "unavailable" } | { kind: "ok"; userId: string };
+
 function openDatabase(path: string, isReadonly = false) {
   if (!isReadonly) mkdirSync(dirname(path), { recursive: true });
   return new Database(path, { create: !isReadonly, readonly: isReadonly });
@@ -20,21 +22,24 @@ function openDatabase(path: string, isReadonly = false) {
 export function sshFeature(databasePath: string, options: { root?: string } = {}) {
   const root = options.root ?? process.env.REMOTECODE_SSH_ROOT ?? "/var/lib/remotecode/ssh-credentials";
 
-  function liveUserId(request: Request): string | null {
-    const userId = sessionUserId(databasePath, request);
-    const tokenHash = sessionTokenHash(request);
-    const expiresAt = sessionExpiresAt(databasePath, request);
-    if (!userId || !tokenHash || !expiresAt) return null;
-    const db = openDatabase(databasePath, true);
-    try {
-      const live = db.query<{ expires_at: number }, [string, string]>(
-        "SELECT expires_at FROM sessions WHERE user_id = ? AND token_hash = ?",
-      ).get(userId, tokenHash);
-      if (!live || live.expires_at !== expiresAt || live.expires_at <= Date.now()) return null;
-      return userId;
-    } catch { return null; }
-    finally { db.close(); }
+  function resolveOwner(request: Request): Owner {
+  const userId = sessionUserId(databasePath, request);
+  const tokenHash = sessionTokenHash(request);
+  const expiresAt = sessionExpiresAt(databasePath, request);
+  if (!userId || !tokenHash || !expiresAt) return { kind: "anonymous" };
+  const db = openDatabase(databasePath, true);
+  try {
+    const live = db.query<{ expires_at: number }, [string, string]>(
+      "SELECT expires_at FROM sessions WHERE user_id = ? AND token_hash = ?",
+    ).get(userId, tokenHash);
+    if (!live || live.expires_at !== expiresAt || live.expires_at <= Date.now()) return { kind: "anonymous" };
+    return { kind: "ok", userId };
+  } catch {
+    return { kind: "unavailable" };
+  } finally {
+    db.close();
   }
+}
 
   function credentialRoot(userId: string): string {
     return join(root, userId);
@@ -51,6 +56,11 @@ export function sshFeature(databasePath: string, options: { root?: string } = {}
   function ensureUserDirectory(userId: string): void {
     const dir = credentialRoot(userId);
     mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const dirStat = lstatSync(dir);
+    if (!dirStat.isDirectory() || dirStat.isSymbolicLink()) {
+      throw new Error("ssh_unavailable");
+    }
+    chmodSync(dir, 0o700);
   }
 
   function initializeSchema(db: Database): void {
@@ -74,9 +84,17 @@ export function sshFeature(databasePath: string, options: { root?: string } = {}
   }
 
   return new Elysia()
+    .onError(({ code, set }) => {
+      if (code === "VALIDATION") {
+        set.status = 400;
+        return { error: "invalid_ssh_request" as const };
+      }
+    })
     .post("/api/ssh/credentials", ({ body, request, set }) => {
-      const userId = liveUserId(request);
-      if (!userId) { set.status = 401; return { error: "unauthorized" as const }; }
+      const owner = resolveOwner(request);
+      if (owner.kind === "anonymous") { set.status = 401; return { error: "unauthorized" as const }; }
+      if (owner.kind === "unavailable") { set.status = 503; return { error: "ssh_unavailable" as const }; }
+      const userId = owner.userId;
       const name = typeof body.name === "string" ? body.name : "";
       if (!credentialNamePattern.test(name)) { set.status = 400; return { error: "invalid_credential_name" as const }; }
       const privateKey = typeof body.privateKey === "string" ? body.privateKey : "";
@@ -89,9 +107,12 @@ export function sshFeature(databasePath: string, options: { root?: string } = {}
         initializeSchema(db);
         const id = crypto.randomUUID();
         const userDir = credentialRoot(userId);
-        mkdirSync(userDir, { recursive: true, mode: 0o700 });
+        try { ensureUserDirectory(userId); } catch { set.status = 503; return { error: "ssh_unavailable" as const }; }
         const tmpPath = join(userDir, `.tmp-${id}`);
-        writeFileSync(tmpPath, privateKey, { mode: 0o600 });
+        try { writeFileSync(tmpPath, privateKey, { mode: 0o600, flag: "wx" }); } catch {
+          try { unlinkSync(tmpPath); } catch {}
+          set.status = 503; return { error: "ssh_unavailable" as const };
+        }
         let publicKey = "";
         try {
           const proc = Bun.spawnSync(["ssh-keygen", "-y", "-f", tmpPath], { stdout: "pipe", stderr: "pipe", timeout: 10_000 });
@@ -102,16 +123,40 @@ export function sshFeature(databasePath: string, options: { root?: string } = {}
           publicKey = proc.stdout.toString().trim();
         } catch {
           try { unlinkSync(tmpPath); } catch {}
-          set.status = 400; return { error: "invalid_private_key" as const };
+          set.status = 503; return { error: "ssh_unavailable" as const };
         }
         const fingerprint = createHash("sha256").update(publicKey).digest("hex").toLowerCase();
         const createdAt = new Date().toISOString();
         db.query("INSERT INTO ssh_credentials (id, user_id, name, fingerprint, created_at) VALUES (?, ?, ?, ?, ?)")
           .run(id, userId, name, fingerprint, createdAt);
         const finalPath = keyPath(userId, id);
-        renameSync(tmpPath, finalPath);
-        try { chmodSync(finalPath, 0o600); } catch {}
-        try { mkdirSync(dirname(knownHostsPath(userId)), { recursive: true, mode: 0o700 }); } catch {}
+        try { renameSync(tmpPath, finalPath); } catch {
+          try { unlinkSync(tmpPath); } catch {}
+          set.status = 503; return { error: "ssh_unavailable" as const };
+        }
+        // Anything that fails after the row exists must leave no usable
+        // credential behind, so the client can retry cleanly.
+        const rollback = () => {
+          try { db.query("DELETE FROM ssh_credentials WHERE id = ?").run(id); } catch {}
+          try { unlinkSync(finalPath); } catch {}
+        };
+        try { chmodSync(finalPath, 0o600); } catch {
+          rollback();
+          set.status = 503; return { error: "ssh_unavailable" as const };
+        }
+        try {
+          const knownHosts = knownHostsPath(userId);
+          if (existsSync(knownHosts)) {
+            const khStat = lstatSync(knownHosts);
+            if (!khStat.isFile() || khStat.isSymbolicLink()) {
+              rollback();
+              set.status = 503; return { error: "ssh_unavailable" as const };
+            }
+          }
+        } catch {
+          rollback();
+          set.status = 503; return { error: "ssh_unavailable" as const };
+        }
         set.status = 201;
         return { id, name, fingerprint, createdAt };
       } finally { db.close(); }
@@ -119,8 +164,10 @@ export function sshFeature(databasePath: string, options: { root?: string } = {}
       body: t.Object({ name: t.String(), privateKey: t.String() }),
     })
     .get("/api/ssh/credentials", ({ request, set }) => {
-      const userId = liveUserId(request);
-      if (!userId) { set.status = 401; return { error: "unauthorized" as const }; }
+      const owner = resolveOwner(request);
+      if (owner.kind === "anonymous") { set.status = 401; return { error: "unauthorized" as const }; }
+      if (owner.kind === "unavailable") { set.status = 503; return { error: "ssh_unavailable" as const }; }
+      const userId = owner.userId;
       if (process.platform !== "linux") { set.status = 501; return { error: "ssh_require_linux" as const }; }
       const db = openDatabase(databasePath, true);
       try {
@@ -134,8 +181,10 @@ export function sshFeature(databasePath: string, options: { root?: string } = {}
       } finally { db.close(); }
     })
     .delete("/api/ssh/credentials/:id", ({ params, request, set }) => {
-      const userId = liveUserId(request);
-      if (!userId) { set.status = 401; return { error: "unauthorized" as const }; }
+      const owner = resolveOwner(request);
+      if (owner.kind === "anonymous") { set.status = 401; return { error: "unauthorized" as const }; }
+      if (owner.kind === "unavailable") { set.status = 503; return { error: "ssh_unavailable" as const }; }
+      const userId = owner.userId;
       if (!canonicalUuid.test(params.id)) { set.status = 404; return { error: "credential_not_found" as const }; }
       if (process.platform !== "linux") { set.status = 501; return { error: "ssh_require_linux" as const }; }
       const db = openDatabase(databasePath);
@@ -145,14 +194,21 @@ export function sshFeature(databasePath: string, options: { root?: string } = {}
           "SELECT user_id FROM ssh_credentials WHERE id = ?",
         ).get(params.id);
         if (!row || row.user_id !== userId) { set.status = 404; return { error: "credential_not_found" as const }; }
+        const keyFile = keyPath(userId, params.id);
+        try { unlinkSync(keyFile); } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+            set.status = 503; return { error: "ssh_revoke_incomplete" as const };
+          }
+        }
         db.query("DELETE FROM ssh_credentials WHERE id = ?").run(params.id);
-        try { unlinkSync(keyPath(userId, params.id)); } catch {}
         return { revoked: true };
       } finally { db.close(); }
     })
     .post("/api/workspaces/:workspaceId/ssh/transfer", ({ params, body, request, set }) => {
-      const userId = liveUserId(request);
-      if (!userId) { set.status = 401; return { error: "unauthorized" as const }; }
+      const owner = resolveOwner(request);
+      if (owner.kind === "anonymous") { set.status = 401; return { error: "unauthorized" as const }; }
+      if (owner.kind === "unavailable") { set.status = 503; return { error: "ssh_unavailable" as const }; }
+      const userId = owner.userId;
       const direction = body.direction;
       if (direction !== "upload" && direction !== "download") { set.status = 400; return { error: "invalid_direction" as const }; }
       const host = typeof body.host === "string" ? body.host : "";
@@ -166,7 +222,8 @@ export function sshFeature(databasePath: string, options: { root?: string } = {}
         set.status = 400; return { error: "invalid_remote_path" as const };
       }
       const localPath = typeof body.localPath === "string" ? body.localPath : "";
-      if (localPath.length > 4096 || localPath.startsWith("/") || localPath.includes("..") || localPath.includes("\n") || localPath.includes("\0")) {
+      const localSegments = localPath.split("/");
+      if (localPath.length === 0 || localPath.length > 4096 || localPath.startsWith("/") || localSegments.some(s => s === ".." || s === ".") || localPath.includes("\n") || localPath.includes("\0") || localPath.endsWith("/")) {
         set.status = 400; return { error: "invalid_local_path" as const };
       }
       const credentialId = typeof body.credentialId === "string" ? body.credentialId : "";
@@ -185,20 +242,50 @@ export function sshFeature(databasePath: string, options: { root?: string } = {}
           }
           if (!credential || credential.user_id !== userId) return { status: 404 as const, body: { error: "credential_not_found" as const } };
           const kp = keyPath(userId, credentialId);
-          let keyExists = false;
-          try { keyExists = statSync(kp).isFile(); } catch {}
-          if (!keyExists) return { status: 404 as const, body: { error: "credential_not_found" as const } };
+          try {
+            const keyStat = lstatSync(kp);
+            if (!keyStat.isFile() || keyStat.isSymbolicLink()) {
+              return { status: 503 as const, body: { error: "ssh_unavailable" as const } };
+            }
+            chmodSync(kp, 0o600);
+          } catch {
+            return { status: 503 as const, body: { error: "ssh_unavailable" as const } };
+          }
+          try {
+            const knownHosts = knownHostsPath(userId);
+            if (existsSync(knownHosts)) {
+              const khStat = lstatSync(knownHosts);
+              if (!khStat.isFile() || khStat.isSymbolicLink()) {
+                return { status: 503 as const, body: { error: "ssh_unavailable" as const } };
+              }
+            }
+          } catch {
+            return { status: 503 as const, body: { error: "ssh_unavailable" as const } };
+          }
           const localAbs = join(folderPath, localPath);
+          const segments = localPath.split("/");
+          let checkPath = folderPath;
+          for (let i = 0; i < segments.length; i++) {
+            checkPath = join(checkPath, segments[i]);
+            let exists = false;
+            try { lstatSync(checkPath); exists = true; } catch {}
+            if (exists) {
+              const segStat = lstatSync(checkPath);
+              if (segStat.isSymbolicLink()) {
+                return { status: 400 as const, body: { error: "invalid_local_path" as const } };
+              }
+            }
+          }
           const localParent = dirname(localAbs);
           mkdirSync(localParent, { recursive: true });
           const resolvedFolder = realpathSync(folderPath);
-          let resolvedLocal: string;
-          try {
-            resolvedLocal = realpathSync(localAbs);
-          } catch {
-            resolvedLocal = realpathSync(localParent);
+          const resolvedParent = realpathSync(localParent);
+          if (!resolvedParent.startsWith(resolvedFolder + "/") && resolvedParent !== resolvedFolder) {
+            return { status: 400 as const, body: { error: "invalid_local_path" as const } };
           }
-          if (!resolvedLocal.startsWith(resolvedFolder + "/") && resolvedLocal !== resolvedFolder) {
+          let destStat;
+          try { destStat = lstatSync(localAbs); } catch {}
+          if (destStat && (!destStat.isFile() || destStat.isSymbolicLink())) {
             return { status: 400 as const, body: { error: "invalid_local_path" as const } };
           }
           const knownHosts = knownHostsPath(userId);
