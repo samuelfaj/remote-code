@@ -1,3 +1,13 @@
+# RC-044 strengthen login and return to Bot — acceptance — 2026-10-08 (UTC)
+
+- **Status:** Complete. Signing in happens on the Bot's own screen through the takeover channel, the Bot cannot act while the human types, and the credential never reaches a command line or the server log.
+- **Command:** `RC044_PROOF_DIR=<fresh absolute dir> bun scripts/rc044/run-login-proof.ts` -> **exit 0 on two runs**.
+- **Observed:** in a real Linux account container with its own Xvfb display and the shipped API, the Bot's `agent/input` was refused **409 `possession_held_by_user`** while the human held the screen; a site password and a one-time code were typed through the shipped `POST .../screen/input` route (200 each) and the page received them; **857 samples of every `/proc/<pid>/cmdline` in the container**, taken on a 120 ms loop for six seconds while the credential was typed, contained the credential in none of them; the credential was absent from `/var/log/rc044-api.log`; the browser profile sat on the data root and after a **real `docker restart`** was still present with its entries intact (3,890,204 -> 3,890,270 bytes) and the account database still present; after the return a fresh observation returned 200 so the pre-takeover token could not be reused.
+- **Failure-if check:** the password/code never appeared in a transcript or a command line; the Bot did not act during typing (refused for the entire sign-in, asserted before the typing began and re-asserted by the possession state); and it did not resume the old page — the return required a new observation before any Bot input was accepted.
+- **Defect fixed:** the shipped input seam passed the typed text in `xdotool`'s argv, readable from `/proc/<pid>/cmdline` by the agent in the same container. It now goes in on stdin.
+- **Ceiling:** the sign-in page is a local test page rather than a real identity provider; the MFA leg proves the second typed secret travels the same protected channel, not that a named provider's challenge was answered.
+- **Checks:** `bun test apps/api apps/gateway packages/client` 415 pass / 79 skip / 0 fail; `bun test apps/mobile` 10 pass / 0 fail; `bun run typecheck` clean; documentation-links gate clean.
+
 # RC-026 reconnect after drops and lost responses — acceptance — 2026-10-08 (UTC)
 
 - **Status:** Complete. One offline state machine is shared by both clients and a committed-but-lost write resolves from the receipt without replaying or reporting failure.

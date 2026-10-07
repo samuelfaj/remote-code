@@ -54,16 +54,23 @@ export function screenFeature(
   });
 
   const inputSeam = options?.input ?? (async (_workspaceId: string, event: ScreenInput) => {
-    let args: string[];
-    switch (event.kind) {
-      case "click": args = ["mousemove", "--sync", String(event.x), String(event.y), "click", "1"]; break;
-      case "type": args = ["type", "--clearmodifiers", "--delay", "12", event.text]; break;
-      case "key": args = ["key", "--clearmodifiers", event.key]; break;
+    const env = { ...process.env, DISPLAY: process.env.REMOTECODE_DISPLAY ?? ":99" };
+    if (event.kind === "type") {
+      // What is typed here is usually a site password or a one-time code. In the
+      // child's argv it would be readable from /proc/<pid>/cmdline by every
+      // process in the container, the agent included, so it goes in on stdin.
+      const typed = Bun.spawnSync(["xdotool", "type", "--clearmodifiers", "--delay", "12", "--file", "-"], {
+        env,
+        stdin: Buffer.from(event.text, "utf8"),
+        timeout: 10_000,
+      });
+      if (typed.exitCode !== 0) throw new ScreenError(503, "input_failed");
+      return;
     }
-    Bun.spawnSync(["xdotool", ...args], {
-      env: { ...process.env, DISPLAY: process.env.REMOTECODE_DISPLAY ?? ":99" },
-      timeout: 10_000,
-    });
+    const args = event.kind === "click"
+      ? ["mousemove", "--sync", String(event.x), String(event.y), "click", "1"]
+      : ["key", "--clearmodifiers", event.key];
+    Bun.spawnSync(["xdotool", ...args], { env, timeout: 10_000 });
   });
 
   function resolveOwner(request: Request): Owner {
@@ -384,7 +391,7 @@ export function screenFeature(
       } catch (error) {
         if (error instanceof ScreenError && error.status === 503) {
           set.status = 503;
-          return { error: "capture_failed" as const };
+          return { error: error.message === "input_failed" ? ("input_failed" as const) : ("capture_failed" as const) };
         }
         set.status = 503;
         return { error: "storage_unavailable" as const };

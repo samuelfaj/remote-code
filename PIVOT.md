@@ -1,5 +1,11 @@
 # Pivot policy
 
+## RC-044 proven against a local sign-in page rather than a named provider 2026-10-08 (UTC)
+
+- **Blocker:** the task names MFA, and there is no identity provider this host can reach or authenticate to.
+- **Pivot:** the proof runs a local sign-in page whose window title records what it received, so the second typed secret (the one-time code) can be shown to travel the same protected channel and to reach the page, and the Bot refused throughout.
+- **Ceiling:** this proves the channel and the hold-off, not that a specific provider's MFA challenge was answered. Credential durability across a restart is proven at the browser-profile level.
+
 ## RC-026 proven through the commit-then-lose-the-response boundary 2026-10-08 (UTC)
 
 - **Blocker:** the task asks for the network to be cut at three points, and there is no way to take the iOS simulator offline from the test harness.
