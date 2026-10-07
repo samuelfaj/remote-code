@@ -1,3 +1,4 @@
+import * as Notifications from "expo-notifications";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -6,6 +7,12 @@ import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { actionReceiptFromResponse, isDefinitiveActionRejection, applyActionEvent, CLIENT_VERSION, createApiClient, emptyActionEventState, type ActionEventState, workspacePanelUserId } from "@remotecode/client";
 import { getMobileHealth } from "./src/features/health/api";
 import { WorkspacePanel } from "./src/features/workspaces/WorkspacePanel";
+import { BotsScreen } from "./src/screens/BotsScreen";
+import { InboxScreen } from "./src/screens/InboxScreen";
+import { ActionsScreen } from "./src/screens/ActionsScreen";
+import { ThreadsScreen, ThreadMessagesScreen } from "./src/screens/ThreadsScreen";
+import { useNavigation } from "./src/navigation/useNavigation";
+import { handleNotificationTap, registerForPushNotifications } from "./src/features/push/PushRegistration";
 
 const apiOrigin = process.env.EXPO_PUBLIC_API_ORIGIN ?? "http://127.0.0.1:3000";
 const clientOrigin = process.env.EXPO_PUBLIC_CLIENT_ORIGIN ?? "http://localhost:5173";
@@ -63,6 +70,7 @@ function HostReadiness() {
 }
 
 export default function App() {
+  const navigation = useNavigation();
   const [pendingAuth, setPendingAuth] = useState<PendingAuth | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [authMessage, setAuthMessage] = useState("");
@@ -825,15 +833,51 @@ export default function App() {
     });
   }
 
+  useEffect(() => {
+    if (connection === "connected" && sessionUserId) {
+      void registerForPushNotifications(apiOrigin);
+    }
+  }, [connection, sessionUserId]);
+
+  useEffect(() => {
+    const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
+      const dest = handleNotificationTap(response.notification);
+      if (dest) navigation.navigate(dest.screen, dest.params);
+    });
+    return () => { subscription.remove(); };
+  }, [navigation, connection]);
+
   const panelUserId = workspacePanelUserId(
     sessionUserId,
     connection !== "signed_out" && connection !== "incompatible",
   );
 
+  const tabs: Array<{ screen: "Workspaces" | "Bots" | "Inbox" | "Actions"; label: string; testID: string }> = [
+    { screen: "Workspaces", label: "Workspaces", testID: "tab-workspaces" },
+    { screen: "Bots", label: "Bots", testID: "tab-bots" },
+    { screen: "Inbox", label: "Inbox", testID: "tab-inbox" },
+    { screen: "Actions", label: "Actions", testID: "tab-actions" },
+  ];
+
   return (
     <SafeAreaProvider>
       <SafeAreaView style={styles.safeArea}>
+        <View style={styles.tabBar}>
+          {tabs.map((tab) => (
+            <Pressable
+              key={tab.screen}
+              accessibilityRole="button"
+              accessibilityLabel={tab.label}
+              testID={tab.testID}
+              onPress={() => navigation.navigate(tab.screen)}
+              style={[styles.tabItem, navigation.currentScreen === tab.screen && styles.tabActive]}
+            >
+              <Text style={[styles.tabText, navigation.currentScreen === tab.screen && styles.tabTextActive]}>{tab.label}</Text>
+            </Pressable>
+          ))}
+        </View>
         <ScrollView automaticallyAdjustKeyboardInsets contentContainerStyle={styles.page}>
+          {navigation.currentScreen === "Workspaces" ? <>
           <Text accessibilityRole="header" style={styles.title}>RemoteCode mobile</Text>
           <Text style={styles.endpoint}>Host: {apiOrigin}</Text>
           <HostReadiness />
@@ -883,6 +927,29 @@ export default function App() {
             ))}
           </View> : null}
           {panelUserId ? <WorkspacePanel key={panelUserId} origin={apiOrigin} userId={panelUserId} onUnauthorized={expireWorkspaceSession} /> : null}
+          </> : null}
+          {navigation.currentScreen === "Bots" ? <BotsScreen origin={apiOrigin} /> : null}
+          {navigation.currentScreen === "Threads" ? (
+            <ThreadsScreen
+              origin={apiOrigin}
+              workspaceId={(navigation.currentParams as { workspaceId?: string })?.workspaceId ?? ""}
+              workspaceName={(navigation.currentParams as { workspaceName?: string })?.workspaceName ?? ""}
+              focusRunId={(navigation.currentParams as { focusRunId?: string })?.focusRunId}
+              onBack={() => navigation.goBack()}
+              onSelectThread={(thread) => navigation.navigate("ThreadMessages", { workspaceId: (navigation.currentParams as { workspaceId?: string })?.workspaceId ?? "", threadId: thread.id, threadTitle: thread.title })}
+            />
+          ) : null}
+          {navigation.currentScreen === "ThreadMessages" ? (
+            <ThreadMessagesScreen
+              origin={apiOrigin}
+              workspaceId={(navigation.currentParams as { workspaceId?: string })?.workspaceId ?? ""}
+              threadId={(navigation.currentParams as { threadId?: string })?.threadId ?? ""}
+              threadTitle={(navigation.currentParams as { threadTitle?: string })?.threadTitle ?? ""}
+              onBack={() => navigation.goBack()}
+            />
+          ) : null}
+          {navigation.currentScreen === "Inbox" ? <InboxScreen origin={apiOrigin} /> : null}
+          {navigation.currentScreen === "Actions" ? <ActionsScreen events={events} /> : null}
         </ScrollView>
       </SafeAreaView>
     </SafeAreaProvider>
@@ -908,4 +975,9 @@ const styles = StyleSheet.create({
   muted: { color: "#50696b", fontSize: 12 },
   receipt: { borderTopColor: "#e3ebe7", borderTopWidth: 1, gap: 5, paddingTop: 12 },
   actionText: { color: "#183337", fontSize: 15, fontWeight: "600" },
+  tabBar: { flexDirection: "row", backgroundColor: "#fff", borderBottomColor: "#d9e5e0", borderBottomWidth: 1, gap: 4, paddingHorizontal: 8, paddingVertical: 6 },
+  tabItem: { flex: 1, alignItems: "center", paddingVertical: 8, borderRadius: 8 },
+  tabActive: { backgroundColor: "#e1f0ed" },
+  tabText: { color: "#50696b", fontSize: 12, fontWeight: "600" },
+  tabTextActive: { color: "#126b54" },
 });
