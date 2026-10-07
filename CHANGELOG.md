@@ -1,4 +1,7 @@
 # Changelog
+## RC-012 file-routes re-proof — passed on current source 2026-10-06T21:00:00Z (UTC)
+
+- `run-files-proof.ts` passed `file_routes_session_bound_passed` on d039fe2, cleanup api+volume true.
 ## RC-033 layout re-proof — passed on current source 2026-10-06T20:00:00Z (UTC)
 
 - `run-layout-proof.ts` passed `workspace_layout_slice_passed` on e7a2cf7. Layout unit 9 pass + web 15 pass. Multi-device focus isolation still open; task stays In Progress.
