@@ -1,6 +1,6 @@
 # Where to resume
 
-Latest confirmed state: the RC-050 partial checkpoint `00beb87` on
+Latest confirmed state: the RC-050 checkpoint `cfd2ad3` on
 `checkpoint/rc002-linux-runtime-evidence`, with the handoff commits on top. Plan status: **57 complete / 1 in progress / 0 blocked / 10 to do**
 of the 68 tasks in `plan/tasks.html`.
 
@@ -29,20 +29,24 @@ RC-052 needs RC-050 and RC-051, and RC-057 needs RC-055 and RC-056.
 Nothing. Every task is either Complete or still To do with an unmet dependency. The 10 tasks
 left are behind RC-051, RC-055 and RC-056, and behind finishing RC-050.
 
-### Finish RC-050 on a Linux host
+### Finish RC-050
 
-Its proof needs a Linux host, because the workspace folder, the file editor and the
-terminal answer 501 elsewhere. `apps/web/e2e/workspace-work.spec.ts` skips with that
-reason on any other platform. Run it against a Linux-hosted API and web origin, which
-`playwright.config.ts` already supports through `RC003_WEB_URL` and `RC003_API_URL`:
+A Linux runner now exists — run it with a fresh absolute directory:
 
 ```bash
-RC003_API_URL=https://127.0.0.1:37117 RC003_AUTH_PASSWORD=<password> \
-  RC003_WEB_URL=http://127.0.0.1:37118 bun run test:e2e -- apps/web/e2e/workspace-work.spec.ts
+bash scripts/rc050/run-linux-web-proof.sh <fresh absolute dir>
 ```
 
-The API has to answer over TLS for the browser, which is how the repository's other
-container proofs run it (`scripts/run-file-editor-linux-browser-proof.ts`).
+It builds the repository's own Linux host, serves its API over TLS, and points a local
+Vite at it (`REMOTECODE_WEB_PROXY_TARGET`), which keeps the browser on loopback while the
+API runs on Linux. The folder, file and file-listing steps already pass against it.
+
+**The one remaining cause of failure:** the terminal image. The pinned `oven/bun` image
+has no `git`, so the workspace never becomes a repository and the Git route answers
+`not_a_repository`; setting `RC050_TERMINAL_IMAGE` to the host image instead makes
+`Start Linux terminal` unavailable. A terminal image that both starts under the
+terminal feature and carries `git` closes RC-050: the spec then exercises the edit, the
+Git status, the diff, the second-workspace check and the reload.
 
 ## The pattern that produced every recent defect
 
