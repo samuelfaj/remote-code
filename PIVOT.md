@@ -1,5 +1,11 @@
 # Pivot policy
 
+## RC-026 proven through the commit-then-lose-the-response boundary 2026-10-08 (UTC)
+
+- **Blocker:** the task asks for the network to be cut at three points, and there is no way to take the iOS simulator offline from the test harness.
+- **Pivot:** the harness injects the loss on the server side instead — a test-support gate commits the release and withholds the response — which exercises the same client path (deadline, receipt query, resume) as a real dropped connection for the boundary the task's failure-if names.
+- **Ceiling:** reads may repeat, writes never do; the "before sending" cut is a unit-level result only.
+
 ## RC-036 proven with the repository's own agent stub 2026-10-08 (UTC)
 
 - **Blocker:** RC-036's proof needs a run to reach a terminal state so its changes can be captured, and the real Distill binary cannot start without the Linux credential that RC-002 gates.

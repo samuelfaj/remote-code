@@ -2072,6 +2072,50 @@ final class RemoteCodeMobileProofUITests: XCTestCase {
     }
 
     @MainActor
+    func testInstalledAppResolvesACommittedButLostPossessionReleaseByReceipt() async throws {
+        let app = XCUIApplication(bundleIdentifier: "com.remotecode.mobileproof")
+        let observer = URLSession(configuration: .ephemeral)
+        let (api, workspace) = try await fileWorkspace(app, observer: observer, prefix: "Lost")
+
+        let possession = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Possession: ")).firstMatch
+        guard possession.waitForExistence(timeout: 15) else {
+            throw NSError(domain: "NativeSessionProof", code: 10, userInfo: [NSLocalizedDescriptionKey: "session panel is not reachable"])
+        }
+        try tapFileControl("Take over screen", in: app)
+        guard possession.waitForLabelContaining("Possession: holder", timeout: 20) else {
+            throw NSError(domain: "NativeSessionProof", code: 11, userInfo: [NSLocalizedDescriptionKey: "take-over never reached holder"])
+        }
+
+        // From here the server commits the release and then withholds the response.
+        try await observer.armScreenLoss(at: api, workspaceId: workspace.id)
+        try tapFileControl("Return screen", in: app)
+
+        // The panel must settle instead of loading forever, must not claim a
+        // definitive failure for a release that committed, and must end up
+        // agreeing with the backend that the screen is free.
+        let settled = app.staticTexts["session-status"]
+        guard possession.waitForLabelContaining("Possession: none", timeout: 30) else {
+            throw NSError(domain: "NativeSessionProof", code: 12, userInfo: [NSLocalizedDescriptionKey: "the panel never resolved the lost release: \(possession.label) / \(settled.label)"])
+        }
+        guard settled.waitForLabelContaining("No possession held", timeout: 10) else {
+            throw NSError(domain: "NativeSessionProof", code: 14, userInfo: [NSLocalizedDescriptionKey: "the panel did not settle on the receipt: \(settled.label)"])
+        }
+        XCTAssertFalse(settled.label.localizedCaseInsensitiveContains("failed"))
+        XCTAssertFalse(settled.label.localizedCaseInsensitiveContains("error"))
+        XCTAssertFalse(settled.label.localizedCaseInsensitiveContains("too slow"))
+
+        let diagnostics = try await observer.screenLossDiagnostics(at: api)
+        XCTAssertEqual(diagnostics["releasePosts"] as? Int, 1, "the release must reach the server exactly once")
+
+        // Let the withheld response arrive late. It says the release committed, so
+        // it may confirm the client's state but it may not write a second time.
+        try await observer.releaseScreenLoss(at: api)
+        let after = try await observer.screenLossDiagnostics(at: api)
+        XCTAssertEqual(after["releasePosts"] as? Int, 1, "the late response must not replay the release")
+        XCTAssertEqual(after["held"] as? Bool, false, "the withheld response was never delivered")
+    }
+
+    @MainActor
     func testInstalledAppTakesOverAndReturnsTheScreenAndRefusesBotInput() async throws {
         let app = XCUIApplication(bundleIdentifier: "com.remotecode.mobileproof")
         let observer = URLSession(configuration: .ephemeral)
@@ -2237,6 +2281,28 @@ private extension URLSession {
         let (data, response) = try await self.data(for: request)
         XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
         return try JSONDecoder().decode(AuthReceiptLookup.self, from: data)
+    }
+
+    func armScreenLoss(at baseURL: URL, workspaceId: String) async throws {
+        var request = URLRequest(url: URL(string: "/__test__/screen-loss-arm", relativeTo: baseURL)!)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["workspaceId": workspaceId])
+        let (data, response) = try await self.data(for: request)
+        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200, String(describing: String(data: data, encoding: .utf8)))
+    }
+
+    func screenLossDiagnostics(at baseURL: URL) async throws -> [String: Any] {
+        let (data, response) = try await self.data(from: URL(string: "/__test__/screen-loss-diagnostics", relativeTo: baseURL)!)
+        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
+        return (try JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+    }
+
+    func releaseScreenLoss(at baseURL: URL) async throws {
+        var request = URLRequest(url: URL(string: "/__test__/screen-loss-release", relativeTo: baseURL)!)
+        request.httpMethod = "POST"
+        let (data, response) = try await self.data(for: request)
+        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200, String(describing: String(data: data, encoding: .utf8)))
     }
 
     func screenObservation(at baseURL: URL, workspaceId: String) async throws -> (status: Int, body: [String: Any]) {

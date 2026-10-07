@@ -18,9 +18,38 @@ for (const path of [certPath, keyPath]) {
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 type Gate = { userId: string; nonce: string; workspaceId: string; kind: "create" | "save" | "move"; phase: "mutation" | "preflight"; preflightGets: number; path: string; sourcePath: string | null; requestId: string | null; mutationPosts: number; savePosts: number; receiptGets: number; release: (() => void) | null; held: boolean };
 let gate: Gate | null = null;
+// RC-026: the same response-loss shape for the possession route, so the
+// session client can be shown to resolve a committed-but-lost release.
+type ScreenGate = { userId: string; workspaceId: string; releasePosts: number; held: boolean; release: (() => void) | null };
+let screenGate: ScreenGate | null = null;
 const api = createApi(databasePath, undefined, { password, webOrigin: process.env.REMOTECODE_WEB_ORIGIN ?? "https://localhost" });
 api.wrap(handler => async (request: Request) => {
     const url = new URL(request.url);
+    if (url.pathname.startsWith("/__test__/screen-loss-")) {
+      const userId = sessionUserId(databasePath, request);
+      if (!userId) return Response.json({ error: "unauthorized" }, { status: 401 });
+      if (url.pathname === "/__test__/screen-loss-arm" && request.method === "POST") {
+        if (screenGate?.held) return Response.json({ error: "gate_busy" }, { status: 409 });
+        const body = await request.json() as Record<string, unknown>;
+        const workspaceId = typeof body.workspaceId === "string" ? body.workspaceId : "";
+        if (!uuid.test(workspaceId) || Object.keys(body).sort().join(",") !== "workspaceId") return Response.json({ error: "invalid_gate" }, { status: 400 });
+        const database = new Database(databasePath, { readonly: true, create: false });
+        try {
+          if (!database.query("SELECT id FROM workspaces WHERE id = ? AND user_id = ?").get(workspaceId, userId)) return Response.json({ error: "not_found" }, { status: 404 });
+        } finally { database.close(); }
+        screenGate = { userId, workspaceId, releasePosts: 0, held: false, release: null };
+        return Response.json({ armed: true });
+      }
+      if (url.pathname === "/__test__/screen-loss-diagnostics" && request.method === "GET") {
+        return Response.json({ releasePosts: screenGate?.releasePosts ?? 0, held: screenGate?.held ?? false });
+      }
+      if (url.pathname === "/__test__/screen-loss-release" && request.method === "POST") {
+        if (!screenGate?.release) return Response.json({ error: "gate_not_held" }, { status: 409 });
+        screenGate.release();
+        return Response.json({ released: true, releasePosts: screenGate.releasePosts });
+      }
+      return Response.json({ error: "not_found" }, { status: 404 });
+    }
     if (url.pathname.startsWith("/__test__/file-save-loss-")) {
       const userId = sessionUserId(databasePath, request);
       if (!userId) return Response.json({ error: "unauthorized" }, { status: 401 });
@@ -73,6 +102,15 @@ api.wrap(handler => async (request: Request) => {
     const response = await handler(request);
     const preflight = currentGate?.phase === "preflight" && request.method === "GET" && url.pathname === `/api/workspaces/${currentGate.workspaceId}/folder` && sessionUserId(databasePath, request) === currentGate.userId && currentGate.preflightGets === 0;
     const committed = currentGate?.phase === "mutation" && mutationInput && response instanceof Response && response.status === 201 && currentGate.requestId === null;
+    const screenRelease = screenGate && request.method === "POST" && url.pathname === `/api/workspaces/${screenGate.workspaceId}/screen/possession/release` && sessionUserId(databasePath, request) === screenGate.userId;
+    if (screenRelease) screenGate!.releasePosts++;
+    if (screenGate && screenRelease && response instanceof Response && response.status === 200) {
+      screenGate.held = true;
+      await new Promise<void>(resolve => {
+        const timer = setTimeout(() => { screenGate!.release = null; screenGate!.held = false; resolve(); }, 35_000);
+        screenGate!.release = () => { clearTimeout(timer); screenGate!.release = null; screenGate!.held = false; resolve(); };
+      });
+    }
     if (currentGate && response instanceof Response && (committed || preflight && response.status === 200)) {
       if (preflight) currentGate.preflightGets++;
       const value = await response.clone().json() as Record<string, unknown>;
@@ -92,4 +130,4 @@ api.wrap(handler => async (request: Request) => {
 });
 api.listen({ hostname: "0.0.0.0", port, tls: { cert: Bun.file(certPath), key: Bun.file(keyPath) } });
 console.log(`Native file proof API process ${process.pid} listening on ${port} with TLS`);
-process.once("SIGTERM", () => { gate?.release?.(); void api.stop(true).then(() => process.exit(0), () => process.exit(1)); });
+process.once("SIGTERM", () => { gate?.release?.(); screenGate?.release?.(); void api.stop(true).then(() => process.exit(0), () => process.exit(1)); });

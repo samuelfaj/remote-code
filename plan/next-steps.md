@@ -1,7 +1,7 @@
 # Where to resume
 
 Latest confirmed state: the RC-026 checkpoint `2404f88` on
-`checkpoint/rc002-linux-runtime-evidence`, with the handoff commits on top. Plan status: **51 complete / 1 in progress / 0 blocked / 16 to do**
+`checkpoint/rc002-linux-runtime-evidence`, with the handoff commits on top. Plan status: **52 complete / 0 in progress / 0 blocked / 16 to do**
 of the 68 tasks in `plan/tasks.html`.
 
 Read, in this order: `plan/tasks.html` (per-task status), `CHANGELOG.md`
@@ -11,32 +11,22 @@ observed result and the failure-if check for every accepted task), `PIVOT.md`
 (measured limits and the per-operation failure table).
 
 Accepted since the previous resume page: RC-025 (the mobile client takes over and
-returns the screen on a real simulator). RC-026 is **in progress**: its shared
-offline state machine landed and both clients use it, but its three-point
-network-cut proof has not been run.
+returns the screen on a real simulator) and RC-026 (one shared offline state
+machine, proven on a committed-but-lost release).
 
 ## Ready right now
 
 | Task | Why it is ready |
 | --- | --- |
 | **RC-044** | RC-025 landed and RC-043 landed, so the shared journey can be finished across both clients. |
-Everything else is behind this chain: RC-047 needs RC-026 and RC-046, RC-046 needs RC-044, and
-RC-048 onward need RC-045 and RC-046. RC-026 and RC-044 are the two ready tasks.
+| **RC-048** | Every dependency landed, most recently RC-026 (and RC-045/RC-038/RC-034 before it). |
+RC-044 and RC-048 are the two ready tasks. Everything else is behind this chain: RC-046 needs
+RC-044, RC-047 needs RC-046, and RC-049 onward need RC-048 and then RC-050/RC-051.
 
 ## In progress and blocked
 
-**RC-026** (reconnect after drops and lost responses). Done: `packages/client/src/offline.ts`
-exposes `runMutation({send, deadlineMs, receipt, onLateResult})`, which always resolves to
-exactly one of `committed`, `not_committed` or `unknown`, never sends twice, and confirms a
-late response through the receipt; the mobile session panel and the web terminal panel both
-use it, and its unit tests cover the three outcomes and the single send.
-
-**The exact remaining gap:** the Executable proof cuts the network before sending, during the
-request and after the commit, then reconnects and compares the UI, the receipt and the file
-with the backend. The harnesses in this repo inject response loss only through the
-test-support file API (`apps/api/test-support/native-file-api.ts`) and Playwright route
-interception; the session routes have neither, so a loss injection for those routes has to
-exist before that proof can run. Nothing else about RC-026 is blocked.
+Nothing. Every task is either Complete or still To do with an unmet dependency. The 16 tasks
+left are all behind RC-044 and RC-048, the only two whose dependencies are now met.
 
 ## The pattern that produced every recent defect
 

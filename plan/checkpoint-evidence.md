@@ -1,3 +1,12 @@
+# RC-026 reconnect after drops and lost responses — acceptance — 2026-10-08 (UTC)
+
+- **Status:** Complete. One offline state machine is shared by both clients and a committed-but-lost write resolves from the receipt without replaying or reporting failure.
+- **Command:** `RC_NATIVE_TEST_WORK_DIR=<fresh absolute dir> RC_NATIVE_TEST_FILES=1 RC_NATIVE_TEST_SCREEN_LOSS=1 RC_NATIVE_TEST_REUSE_IOS_PROJECT=1 bash scripts/run-mobile-native-test.sh` -> **exit 0 on two runs**.
+- **Observed:** on a real simulator the app took the screen, the test-support API then committed the release and withheld its response for 35 s, the client's own 10 s deadline fired, and the panel settled on `Possession: none` with the status `No possession held` — not an endless spinner and not a definitive failure. The gate's diagnostics reported `releasePosts: 1`, so the release reached the server exactly once; delivering the withheld response late left `releasePosts` at 1, so the late commit produced no second write. The harness's Linux-side check read the real database and required exactly one possession row for that workspace with `released_at` set and `superseded_count` 0. The run ended `A committed-but-lost release resolved by receipt, applied exactly once`.
+- **Failure-if check:** the UI did not keep loading forever (the panel settled inside the wait window), the mutation was not duplicated (one release, verified in the database and by the gate counter), and no definitive error was shown for a commit that happened (the status carries no failure wording and agrees with the backend that the screen is free).
+- **Unverified, stated:** the "cut the network before sending" point. The simulator harness has no offline toggle, so that path is proven only at the unit level in `packages/client/src/offline.test.ts` (the deadline fires, the write is never sent, the outcome is `not_committed`) and not on the device.
+- **Checks:** `bun test apps/api apps/gateway packages/client` 415 pass / 79 skip / 0 fail; `bun test apps/mobile` 10 pass / 0 fail; `bun run typecheck` clean; documentation-links gate clean.
+
 # RC-026 shared reconnect layer — partial landing, proof not run — 2026-10-08 (UTC)
 
 - **Status:** In progress. The delivery is partly implemented and unit-tested; the Executable proof has not been run and no acceptance is claimed.
