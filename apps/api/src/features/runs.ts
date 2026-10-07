@@ -115,6 +115,25 @@ export function runsFeature(
       })
     : undefined);
   const live = new Map<string, AcpSessionHandle>();
+  const pendingPermissions = new Map<string, {
+    runId: string;
+    requestId: string;
+    title: string;
+    kind: string | null;
+    options: Array<{ optionId: string; kind: string; name: string | null }>;
+    toolCall: unknown;
+    requestedAt: string;
+    resolve: (result: { optionId?: string; cancelled?: boolean }) => void;
+  }>();
+
+  function cancelPendingPermissions(runId: string) {
+    for (const [requestId, pending] of pendingPermissions) {
+      if (pending.runId === runId) {
+        pending.resolve({ cancelled: true });
+        pendingPermissions.delete(requestId);
+      }
+    }
+  }
 
   const stallMs = options.stallMs ?? Number(process.env.REMOTECODE_RUN_STALL_MS ?? 600_000);
   let watchdogInterval: ReturnType<typeof setInterval> | undefined;
@@ -227,6 +246,16 @@ export function runsFeature(
         prompt,
         env: agentEnv,
         wrapSpawn,
+        onPermissionRequest: (request) => {
+          return new Promise((resolve) => {
+            pendingPermissions.set(request.requestId, {
+              ...request,
+              runId: id,
+              requestedAt: new Date().toISOString(),
+              resolve,
+            });
+          });
+        },
         onSessionId: (sessionId) => {
           // A handoff can arrive while the agent is still creating its session;
           // record the id without pulling the run back out of needs_user.
@@ -248,6 +277,7 @@ export function runsFeature(
     live.set(id, handle);
     const requestedStop = () => readRow(id)?.stop_requested_at ?? null;
     handle.done.then(({ stopReason, error: acpError }) => {
+      cancelPendingPermissions(id);
       live.delete(id);
       const current = readRow(id);
       // A handoff or an earlier honest ending (stop deadline, stall watchdog)
@@ -266,6 +296,7 @@ export function runsFeature(
       });
       emit(id);
     }).catch((error) => {
+      cancelPendingPermissions(id);
       live.delete(id);
       transition(id, { state: "failed", stop_reason: "client_error", error: String(error) });
       emit(id);
@@ -451,10 +482,62 @@ export function runsFeature(
       if (!row) { set.status = 404; return { error: "not_found" as const }; }
       if (TERMINAL_STATES.includes(row.state)) { set.status = 409; return { error: "run_finished" as const }; }
       if (row.state === "needs_user") return view(row);
+      cancelPendingPermissions(row.id);
       transition(row.id, { state: "needs_user", handoff_reason: body.reason });
       emit(row.id);
       return view(readRow(row.id)!);
-    }, { params: t.Object({ id: uuidSchema }), body: t.Object({ reason: t.String({ minLength: 1, maxLength: 500 }) }) });
+    }, { params: t.Object({ id: uuidSchema }), body: t.Object({ reason: t.String({ minLength: 1, maxLength: 500 }) }) })
+    .get("/api/runs/:id/permissions", ({ params, request, set }) => {
+      const owner = identity(request);
+      if (!owner || !uuid.test(params.id)) { set.status = owner ? 404 : 401; return { error: owner ? "not_found" : "unauthorized" }; }
+      try { assertSession(owner); } catch { set.status = 401; return { error: "unauthorized" as const }; }
+      const row = database((db) => db.query<RunRow, [string, string]>(
+        "SELECT * FROM runs WHERE id = ? AND user_id = ?",
+      ).get(params.id, owner.userId) ?? null);
+      if (!row) { set.status = 404; return { error: "not_found" as const }; }
+      const permissions = Array.from(pendingPermissions.values())
+        .filter((pending) => pending.runId === row.id)
+        .map((pending) => ({
+          requestId: pending.requestId,
+          title: pending.title,
+          kind: pending.kind,
+          options: pending.options,
+          toolCall: pending.toolCall,
+          requestedAt: pending.requestedAt,
+        }));
+      return { permissions };
+    }, { params: t.Object({ id: uuidSchema }) })
+    .post("/api/runs/:id/permissions/:requestId", ({ params, body, request, set }) => {
+      const owner = identity(request);
+      if (!owner || !uuid.test(params.id)) { set.status = owner ? 404 : 401; return { error: owner ? "not_found" : "unauthorized" }; }
+      try { assertSession(owner); } catch { set.status = 401; return { error: "unauthorized" as const }; }
+      const row = database((db) => db.query<RunRow, [string, string]>(
+        "SELECT * FROM runs WHERE id = ? AND user_id = ?",
+      ).get(params.id, owner.userId) ?? null);
+      if (!row) { set.status = 404; return { error: "not_found" as const }; }
+      const pending = pendingPermissions.get(params.requestId);
+      if (!pending || pending.runId !== row.id) { set.status = 404; return { error: "permission_not_found" as const }; }
+      const decision = body.decision as string;
+      if (decision === "allow") {
+        const allowOption = pending.options.find(
+          (option) => option.kind === "allow_once" || option.kind === "allow_always" ||
+            option.optionId.includes("allow") || option.kind.includes("allow"),
+        );
+        if (!allowOption) { set.status = 409; return { error: "permission_not_available" as const }; }
+        pending.resolve({ optionId: allowOption.optionId });
+        pendingPermissions.delete(params.requestId);
+        return { decision: "allow", optionId: allowOption.optionId };
+      }
+      const denyOption = pending.options.find(
+        (option) => option.optionId.includes("deny") || option.optionId.includes("reject") || option.optionId.includes("abort") ||
+          option.kind.includes("deny") || option.kind.includes("reject") || option.kind.includes("abort"),
+      );
+      pending.resolve(denyOption ? { optionId: denyOption.optionId } : { cancelled: true });
+      pendingPermissions.delete(params.requestId);
+      return { decision: "deny", optionId: denyOption?.optionId };
+    }, { params: t.Object({ id: uuidSchema, requestId: t.String({ minLength: 1 }) }), body: t.Object({
+      decision: t.Union([t.Literal("allow"), t.Literal("deny")]),
+    }) });
 
   return { routes, stopAll: () => { if (watchdogInterval !== undefined) clearInterval(watchdogInterval); for (const handle of live.values()) handle.kill(); live.clear(); } };
 }

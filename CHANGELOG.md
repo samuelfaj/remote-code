@@ -1,4 +1,12 @@
 # Changelog
+## RC-035 accepted — agent permission gate (deny blocks, allow runs once) 2026-10-07T16:40:00Z (UTC)
+
+- The supervisor no longer auto-selects an allow option for `session/request_permission`. `acp-distill.ts` takes an `onPermissionRequest` handler (the old auto-pick remains only as a fallback when no handler is supplied), and `runs.ts` registers each request in a pending map exposed by `GET /api/runs/:id/permissions` with the action title, kind, options and tool call, and answers the agent only from `POST /api/runs/:id/permissions/:requestId` (`allow` picks `allow_once`/`allow_always`/any allow option, `deny` picks a reject option or cancels; 404 once decided or for another user; 409 when an allow was requested but no allow option exists). Pending requests are cancelled when the run ends, is killed or is handed off.
+- Proof `scripts/rc035/run-permission-gate-proof.ts` PASS twice on real Linux with an agent that asks before writing a file: the request is visible with its action and target while the file does not exist yet; `deny` leaves the file absent with zero logged writes and ends the run `interrupted`; `allow` writes the file exactly once and ends `completed`; a second decision returns 404.
+- Consequence recorded in PIVOT.md: the real Distill run asks for permission, so `scripts/rc022/run-thread-proof.sh` now approves each pending request through the shipped route before continuing. That re-run PASSes and is real evidence that a live Distill agent's request is presented and only proceeds after approval.
+- Checks: `bun test apps/api/src packages/client/src` 272 pass / 74 skip / 0 fail across three consecutive runs (one earlier run showed the known load-sensitive client test failing once); `bun run typecheck` clean; documentation-links gate clean.
+- `plan/tasks.html`: RC-035 Complete; summary now 32 complete / 4 in progress / 0 blocked / 32 to do.
+
 ## RC-037 accepted — threads and messages survive a restart 2026-10-07T15:45:00Z (UTC)
 
 - No product change was needed: the runs table and the history surface already persist. The task's executable proof was missing, so it is now written as `scripts/rc037/run-history-restore-proof.ts`: two threads are created (one completes, one is interrupted), each gets a history message, the container is restarted, and every id, prompt, state, stop reason and history content is compared before and after on the same volume.

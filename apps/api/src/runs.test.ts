@@ -1,6 +1,6 @@
 import { Database } from "bun:sqlite";
 import { createHash, randomBytes } from "node:crypto";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "bun:test";
@@ -548,5 +548,148 @@ describe("RC-040 bot runs", () => {
     const finished = await waitForState(app, cookie, run.id, ["interrupted", "failed"]);
     expect(finished.state).toBe("interrupted");
     expect(finished.stopReason).toBe("cancelled");
+  });
+});
+
+describe("RC-035 permission requests", () => {
+  async function waitForPermission(app: ReturnType<typeof createApi>, cookie: string, runId: string, timeoutMs = 5_000) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const response = await request(app, cookie, `/api/runs/${runId}/permissions`);
+      const body = (await response.json()) as { permissions: unknown[] };
+      if (body.permissions.length > 0) return body.permissions as Array<{ requestId: string; title: string; kind: string | null; options: Array<{ optionId: string; kind: string; name: string | null }>; toolCall: unknown; requestedAt: string }>;
+      await Bun.sleep(25);
+    }
+    throw new Error(`permission request for run ${runId} never appeared`);
+  }
+
+  it("returns the pending permission request while the client has not decided", async () => {
+    const writeLog = join(mkdtempSync(join(tmpdir(), "rc035-write-")), "write.log");
+    const tmpFile = join(mkdtempSync(join(tmpdir(), "rc035-file-")), "output.txt");
+    const { app, cookie } = await api(tempDb("perm-pending"), mkdtempSync(join(tmpdir(), "rc035-cwd-")), {
+      ...process.env,
+      STUB_WRITE_LOG: writeLog,
+    });
+    const workspace = await createWorkspace(app, cookie, "runs");
+
+    const created = await request(app, cookie, "/api/runs", "POST", {
+      workspaceId: workspace.id,
+      prompt: `PERMISSION_WRITE ${tmpFile}`,
+    });
+    expect(created.status).toBe(201);
+    const run = (await created.json()) as { id: string };
+
+    const permissions = await waitForPermission(app, cookie, run.id);
+    expect(permissions.length).toBe(1);
+    expect(permissions[0].title).toBe("Write file " + tmpFile);
+    expect(permissions[0].options).toHaveLength(2);
+    expect(permissions[0].options[0].optionId).toBe("allow-once");
+    expect(permissions[0].options[1].optionId).toBe("deny-once");
+    expect(existsSync(tmpFile)).toBe(false);
+  });
+
+  it("deny leaves the file absent and the run ends without a write", async () => {
+    const writeLog = join(mkdtempSync(join(tmpdir(), "rc035-deny-log-")), "write.log");
+    const tmpFile = join(mkdtempSync(join(tmpdir(), "rc035-deny-file-")), "output.txt");
+    const { app, cookie } = await api(tempDb("perm-deny"), mkdtempSync(join(tmpdir(), "rc035-cwd-")), {
+      ...process.env,
+      STUB_WRITE_LOG: writeLog,
+    });
+    const workspace = await createWorkspace(app, cookie, "runs");
+
+    const created = await request(app, cookie, "/api/runs", "POST", {
+      workspaceId: workspace.id,
+      prompt: `PERMISSION_WRITE ${tmpFile}`,
+    });
+    expect(created.status).toBe(201);
+    const run = (await created.json()) as { id: string };
+
+    const permissions = await waitForPermission(app, cookie, run.id);
+    const decision = await request(app, cookie, `/api/runs/${run.id}/permissions/${permissions[0].requestId}`, "POST", {
+      decision: "deny",
+    });
+    expect(decision.status).toBe(200);
+
+    await waitForState(app, cookie, run.id, ["completed", "failed", "interrupted"]);
+    expect(existsSync(tmpFile)).toBe(false);
+    const logContent = existsSync(writeLog) ? readFileSync(writeLog, "utf8") : "";
+    expect(logContent.trim()).toBe("");
+  });
+
+  it("allow writes exactly once and the file exists", async () => {
+    const writeLog = join(mkdtempSync(join(tmpdir(), "rc035-allow-log-")), "write.log");
+    const tmpFile = join(mkdtempSync(join(tmpdir(), "rc035-allow-file-")), "output.txt");
+    const { app, cookie } = await api(tempDb("perm-allow"), mkdtempSync(join(tmpdir(), "rc035-cwd-")), {
+      ...process.env,
+      STUB_WRITE_LOG: writeLog,
+    });
+    const workspace = await createWorkspace(app, cookie, "runs");
+
+    const created = await request(app, cookie, "/api/runs", "POST", {
+      workspaceId: workspace.id,
+      prompt: `PERMISSION_WRITE ${tmpFile}`,
+    });
+    expect(created.status).toBe(201);
+    const run = (await created.json()) as { id: string };
+
+    const permissions = await waitForPermission(app, cookie, run.id);
+    const decision = await request(app, cookie, `/api/runs/${run.id}/permissions/${permissions[0].requestId}`, "POST", {
+      decision: "allow",
+    });
+    expect(decision.status).toBe(200);
+
+    await waitForState(app, cookie, run.id, ["completed", "failed", "interrupted"]);
+    expect(existsSync(tmpFile)).toBe(true);
+    const logContent = readFileSync(writeLog, "utf8");
+    const lines = logContent.trim().split("\n").filter((line) => line.length > 0);
+    expect(lines.length).toBe(1);
+    expect(lines[0]).toBe(tmpFile);
+  });
+
+  it("foreign or unknown run or requestId returns 404, anonymous decision returns 401, deciding twice returns 404", async () => {
+    const dbPath = tempDb("perm-foreign");
+    const writeLog = join(mkdtempSync(join(tmpdir(), "rc035-foreign-log-")), "write.log");
+    const tmpFile = join(mkdtempSync(join(tmpdir(), "rc035-foreign-file-")), "output.txt");
+    const { app, cookie } = await api(dbPath, mkdtempSync(join(tmpdir(), "rc035-cwd-")), {
+      ...process.env,
+      STUB_WRITE_LOG: writeLog,
+    });
+    const workspace = await createWorkspace(app, cookie, "runs");
+
+    const created = await request(app, cookie, "/api/runs", "POST", {
+      workspaceId: workspace.id,
+      prompt: `PERMISSION_WRITE ${tmpFile}`,
+    });
+    expect(created.status).toBe(201);
+    const run = (await created.json()) as { id: string };
+    const permissions = await waitForPermission(app, cookie, run.id);
+    const requestId = permissions[0].requestId;
+
+    // Unknown runId → 404
+    expect((await request(app, cookie, `/api/runs/00000000-0000-4000-8000-000000000000/permissions/${requestId}`, "POST", { decision: "allow" })).status).toBe(404);
+
+    // Unknown requestId → 404
+    expect((await request(app, cookie, `/api/runs/${run.id}/permissions/00000000-0000-4000-8000-000000000000`, "POST", { decision: "allow" })).status).toBe(404);
+
+    // Foreign run → 404
+    const db = new Database(dbPath, { create: true });
+    let foreignCookie: string;
+    try {
+      const otherToken = randomBytes(32).toString("hex");
+      db.query("INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)")
+        .run(createHash("sha256").update(otherToken).digest("hex"), "other-user", Date.now() + 60_000);
+      foreignCookie = `remotecode_session=${otherToken}`;
+    } finally {
+      db.close();
+    }
+    expect((await request(app, foreignCookie, `/api/runs/${run.id}/permissions/${requestId}`, "POST", { decision: "allow" })).status).toBe(404);
+
+    // Anonymous decision → 401
+    expect((await request(app, "", `/api/runs/${run.id}/permissions/${requestId}`, "POST", { decision: "allow" })).status).toBe(401);
+
+    // Deciding twice → second returns 404
+    const firstDecision = await request(app, cookie, `/api/runs/${run.id}/permissions/${requestId}`, "POST", { decision: "allow" });
+    expect(firstDecision.status).toBe(200);
+    expect((await request(app, cookie, `/api/runs/${run.id}/permissions/${requestId}`, "POST", { decision: "allow" })).status).toBe(404);
   });
 });

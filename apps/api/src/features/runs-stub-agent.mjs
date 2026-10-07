@@ -9,9 +9,18 @@ let buffer = "";
 let sessionId = "stub-session";
 let promptId = null;
 let cancelled = false;
+const pendingRequests = new Map();
 
 function send(message) {
   process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...message }) + "\n");
+}
+
+function sendRequest(method, params) {
+  return new Promise((resolve) => {
+    const id = crypto.randomUUID();
+    pendingRequests.set(id, resolve);
+    send({ id, method, params });
+  });
 }
 
 function logPrompt() {
@@ -19,7 +28,7 @@ function logPrompt() {
   if (logFile) appendFileSync(logFile, process.argv.join(" ") + "\n");
 }
 
-function handle(message) {
+async function handle(message) {
   if (message.method === "initialize") {
     send({ id: message.id, result: { protocolVersion: 1, agentCapabilities: {} } });
     return;
@@ -57,6 +66,30 @@ function handle(message) {
       setTimeout(() => send({ id: promptId, result: { stopReason: "end_turn" } }), Number(process.env.STUB_LATE_MS ?? 1500));
       return;
     }
+    if (text.includes("PERMISSION_WRITE")) {
+      const path = text.replace("PERMISSION_WRITE ", "").trim();
+      const permissionResult = await sendRequest("session/request_permission", {
+        title: "Write file " + path,
+        kind: "edit",
+        options: [
+          { optionId: "allow-once", kind: "allow_once", name: "Allow once" },
+          { optionId: "deny-once", kind: "reject_once", name: "Deny" },
+        ],
+        toolCall: { title: "Write file " + path, kind: "edit" },
+      });
+      const outcome = permissionResult.result?.outcome;
+      if (outcome?.outcome === "selected" && outcome.optionId === "allow-once") {
+        const logFile = process.env.STUB_WRITE_LOG;
+        if (logFile) appendFileSync(logFile, path + "\n");
+        writeFileSync(path, "written by stub\n");
+        send({ id: promptId, result: { stopReason: "end_turn" } });
+      } else if (outcome?.outcome === "cancelled") {
+        send({ id: promptId, result: { stopReason: "end_turn" } });
+      } else {
+        send({ id: promptId, result: { stopReason: "cancelled" } });
+      }
+      return;
+    }
     setTimeout(() => send({ id: promptId, result: { stopReason: "end_turn" } }), 60);
     return;
   }
@@ -76,7 +109,14 @@ process.stdin.on("data", (chunk) => {
     buffer = buffer.slice(index + 1);
     if (line) {
       try {
-        handle(JSON.parse(line));
+        const message = JSON.parse(line);
+        if (message.id !== undefined && pendingRequests.has(String(message.id))) {
+          const resolve = pendingRequests.get(String(message.id));
+          pendingRequests.delete(String(message.id));
+          resolve(message);
+        } else {
+          handle(message);
+        }
       } catch {
         // Ignore malformed input.
       }

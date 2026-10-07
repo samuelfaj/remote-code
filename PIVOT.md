@@ -1,5 +1,12 @@
 # Pivot policy
 
+## RC-035 permission gate changes the real-Distill flow 2026-10-07 (UTC)
+
+- **What changed:** the supervisor used to auto-allow every `session/request_permission`. RC-035 requires the request to be presented and a denial to actually block, so the agent now waits for a client decision.
+- **Consequence found by re-running the accepted RC-022 proof:** a real Distill run stops at the approval gate, so the RC-022 proof failed with the run stuck `running`. Re-running it after the change confirmed the gate is real, not theoretical.
+- **Route taken:** `scripts/rc022/run-thread-proof.sh` now polls `GET /api/runs/:id/permissions` and approves each pending request through `POST /api/runs/:id/permissions/:requestId`, exactly as a client would, and PASSes again. The failure and the fix are recorded here rather than weakening the gate.
+
+
 ## RC-033 device focus — proven with two real clients 2026-10-07 (UTC)
 
 - **Was open by:** the earlier stance that the "switching tab on mobile does not change focus on desktop" clause was vacuous, because the product had no mobile tab surface to exercise.

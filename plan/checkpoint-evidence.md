@@ -1,3 +1,12 @@
+# RC-035 agent permission gate — acceptance — 2026-10-07 (UTC)
+
+- **Status:** Complete. The backend presents the action, target and effect of a call that requests approval, and only then allows or denies it.
+- **Command:** `RC035_PROOF_DIR=<fresh dir> bun scripts/rc035/run-permission-gate-proof.ts` (Docker Linux/arm64, the shipped API, an agent that asks before writing a file).
+- **Observed (two runs, `result: permission_gate_denies_before_action_and_allows_once_passed`):** the pending request was visible as `title: "Write file /var/lib/remotecode/rc035-denied.txt"`, `kind: "edit"`, options `[{allow-once, allow_once, Allow once}, {deny-once, reject_once, Deny}]`, and the target file did not exist at that moment. Deciding `deny` ended the run `interrupted`/`cancelled` with the file still absent and zero logged writes. Deciding `allow` (option `allow-once`) ended the run `completed`/`end_turn` with the file present and exactly one logged write. A second decision on the same request returned 404; the API stayed healthy.
+- **Real-agent evidence:** `scripts/rc022/run-thread-proof.sh` was re-run after the change. Its first run failed with the real Distill run stuck at `running` (the gate working as intended); with the proof approving the pending request through the shipped route it PASSes again, with the log line `approving permission request a5e0a4c3-…` before the run completed and the file was created.
+- **Failure-if check:** no tool executed before approval (the file was absent while the request was pending), and a denial prevented the action (zero writes, file absent).
+- **Checks:** `bun test apps/api/src packages/client/src` 272 pass / 74 skip / 0 fail (three consecutive runs; one earlier run showed the known load-sensitive client test failing once); `bun run typecheck` exit 0; documentation-links gate exit 0.
+
 # RC-037 threads and results reappear after a restart — acceptance — 2026-10-07 (UTC)
 
 - **Status:** Complete. Threads and their messages reappear after a container restart and an interrupted run keeps its own state.

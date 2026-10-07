@@ -23,6 +23,13 @@ type Options = {
   wrapSpawn?: (command: string, args: string[]) => { command: string; args: string[] };
   onProgress?: (progress: AcpProgress) => void;
   onSessionId?: (sessionId: string) => void;
+  onPermissionRequest?: (request: {
+    requestId: string;
+    title: string;
+    kind: string | null;
+    options: Array<{ optionId: string; kind: string; name: string | null }>;
+    toolCall: unknown;
+  }) => Promise<{ optionId?: string; cancelled?: boolean }>;
 };
 
 /**
@@ -74,11 +81,45 @@ export function startAcpPrompt(options: Options): AcpSessionHandle {
     if (method && message.id !== undefined) {
       const params = (message.params ?? {}) as Record<string, unknown>;
       if (method === "session/request_permission") {
-        const choices = (params.options as Array<{ optionId?: string; kind?: string }> | undefined) ?? [];
-        const chosen = choices.find((option) => option.kind === "allow_always") ??
-          choices.find((option) => option.kind === "allow_once") ??
-          choices.find((option) => (option.optionId ?? "").includes("allow")) ?? choices[0];
-        respond(message.id, chosen ? { outcome: { outcome: "selected", optionId: chosen.optionId } } : { outcome: { outcome: "cancelled" } });
+        const toolCall =
+          typeof params.toolCall === "object" && params.toolCall !== null
+            ? params.toolCall
+            : null;
+        const title =
+          (toolCall as { title?: string } | null)?.title ??
+          (params.title as string | undefined) ??
+          "tool call";
+        const kind = (toolCall as { kind?: string } | null)?.kind ?? null;
+        const rawOptions = (params.options as Array<{ optionId?: string; kind?: string; name?: string }> | undefined) ?? [];
+        const permissionOptions = rawOptions.map((option) => ({
+          optionId: option.optionId ?? "",
+          kind: option.kind ?? "",
+          name: option.name ?? null,
+        }));
+        const requestId = crypto.randomUUID();
+        if (options.onPermissionRequest) {
+          options.onPermissionRequest({
+            requestId,
+            title,
+            kind,
+            options: permissionOptions,
+            toolCall,
+          }).then((decision) => {
+            if (decision.cancelled || !decision.optionId) {
+              respond(message.id, { outcome: { outcome: "cancelled" } });
+            } else {
+              respond(message.id, { outcome: { outcome: "selected", optionId: decision.optionId } });
+            }
+          }).catch(() => {
+            respond(message.id, { outcome: { outcome: "cancelled" } });
+          });
+        } else {
+          const choices = rawOptions;
+          const chosen = choices.find((option) => option.kind === "allow_always") ??
+            choices.find((option) => option.kind === "allow_once") ??
+            choices.find((option) => (option.optionId ?? "").includes("allow")) ?? choices[0];
+          respond(message.id, chosen ? { outcome: { outcome: "selected", optionId: chosen.optionId } } : { outcome: { outcome: "cancelled" } });
+        }
       } else if (method === "fs/read_text_file") {
         try {
           respond(message.id, { content: readFileSync(String(params.path), "utf8") });

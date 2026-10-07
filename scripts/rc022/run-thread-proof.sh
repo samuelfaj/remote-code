@@ -57,6 +57,22 @@ say "-- client B: a separate session reads the same run by receipt --"
 docker exec "$NAME" bash -lc "curl -fsS -c /workspace/cookies-b.txt -X POST http://127.0.0.1:3222/api/auth/login -H 'content-type: application/json' -d '{\"password\":\"$PASSWORD\"}' >/dev/null"
 STATE=""
 for _ in $(seq 1 240); do
+  # RC-035: the agent's approval requests are presented to a client and are
+  # never auto-allowed, so this client approves each pending request exactly
+  # as the web client does.
+  PENDING=$(docker exec "$NAME" curl -fsS -b /workspace/cookies-b.txt "http://127.0.0.1:3222/api/runs/$RUN/permissions" || true)
+  for REQUEST in $(printf '%s' "$PENDING" | python3 -c 'import sys,json
+try:
+  data = json.load(sys.stdin)
+except Exception:
+  raise SystemExit
+for entry in data.get("permissions", []):
+  print(entry["requestId"])' 2>/dev/null); do
+    say "approving permission request $REQUEST"
+    docker exec "$NAME" curl -fsS -b /workspace/cookies-b.txt -X POST \
+      -H 'content-type: application/json' -d '{"decision":"allow"}' \
+      "http://127.0.0.1:3222/api/runs/$RUN/permissions/$REQUEST" >/dev/null || true
+  done
   STATE=$(docker exec "$NAME" curl -fsS -b /workspace/cookies-b.txt "http://127.0.0.1:3222/api/runs/$RUN" | python3 -c 'import sys,json;print(json.load(sys.stdin)["state"])')
   if [ "$STATE" = "completed" ] || [ "$STATE" = "failed" ] || [ "$STATE" = "interrupted" ]; then break; fi
   sleep 1
