@@ -1,4 +1,7 @@
 # Changelog
+## File/folder/identity suites — 13 pass 2026-10-07T04:00:00Z (UTC)
+
+- `file-requests + workspace-folders + workspace-identity`: 13 pass / 16 skip (Linux-gated) / 0 fail on 89cda11.
 ## Client files — 24 pass 2026-10-07T03:30:00Z (UTC)
 
 - `files + index client suites`: 24 pass / 1 skip / 0 fail on dd2bf79.
