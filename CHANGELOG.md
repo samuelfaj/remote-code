@@ -1,4 +1,7 @@
 # Changelog
+## RC-011/RC-019 assessment — deferred as new infra 2026-10-06T19:00:00Z (UTC)
+
+- PIVOT.md records RC-011/RC-019 deferred (gateway + supervisor need new infra, no code surface). Criteria unchanged.
 ## RC-032 SSH transfer slice — passed on Linux 2026-10-06T18:00:00Z (UTC)
 
 - `run-ssh-proof.ts` passed `ssh_transfer_slice_passed`: sshd in proof container, scp upload + download byte-equal, key removal enforces failure. Host-initiated path proven; managed credential API remains open.

@@ -1,5 +1,9 @@
 # Pivot policy
 
+## RC-011/RC-019 assessment — new infra, deferred 2026-10-06 (UTC)
+
+- **Decision:** RC-011 (gateway + two-account routing) and RC-019 (host supervisor + stuck detection) stay To Do unchanged. Both need new infrastructure (gateway, supervisor, hosted provisioning) with no existing code surface — multi-slice builds, not single-round work. No partial claim.
+
 ## RC-032 SSH update — host path proven, managed API open 2026-10-06 (UTC)
 
 - **Update:** Host-initiated scp transfer + byte equality + revocation failure proven on Linux (checkpoint `e38cd98`). Managed SSH-credential API (storage/revocation surface) remains open with original criteria unchanged.
