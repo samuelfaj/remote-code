@@ -1,5 +1,13 @@
 # Pivot policy
 
+## RC-023 first Linux session — linux-use observation/input unblocked 2026-10-07 (UTC)
+
+- **Was meant to achieve:** the Bot observes and controls the first X11 session through linux-use (identify the window by PID, capture real state, click/type with target validation), Distill uses the same local tools, and the obsolete-target check refuses.
+- **Why the first route failed:** linux-use's state token is a hash of the PNG screenshot bytes, and every input action re-verifies it. Three environment defects made that hash or the state change between the screenshot and the action: ImageMagick 7 writes a current-time `tIME` chunk into PNG output; Chromium repaints the text input on pointer hover and `left_click` warps the pointer onto it before its last check; and `xdotool mousemove --sync --window` blocks forever when the pointer is already at the destination.
+- **Route taken (all inside this repository, no linux-use fork):** pin `SOURCE_DATE_EPOCH=0` in the image so PNG bytes depend only on pixels; make the test page's input not repaint on hover/focus; park the pointer before each input and require several identical observations before acting. The upstream linux-use commit `ee0231c` is used unchanged.
+- **Result:** `scripts/rc023/run-first-session-proof.sh` PASS twice on current source — capture, click, type with token validation, stale-token refusal, login page left open, and the main Distill project listing the X11 windows through the same MCP.
+- **Still open:** the clause "Needs you" and the persisted session id. `runs` has five states and stores no ACP session id; the handoff state shown in `plan/index.html` is not modelled yet. This is the next slice, not a claim of completion.
+
 ## RC-007 GUI image — exists, Distill integration open 2026-10-07 (UTC)
 
 - **Finding:** `remotecode/computer:local` ships Xvfb + fluxbox + x11vnc + websockify + Chromium (start.sh verified). Missing: Elysia + Distill + linux-use in same container. RC-007 stays To Do; image is a GUI slice, not the full contract.

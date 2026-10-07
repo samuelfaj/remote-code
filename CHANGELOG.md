@@ -1,4 +1,12 @@
 # Changelog
+## RC-023 slice — first Linux session via linux-use proven 2026-10-07T05:15:00Z (UTC)
+
+- New `scripts/rc023/run-first-session-proof.sh` and `scripts/rc023/linux-use-session.py`. Real container: Xvfb + openbox + Chromium over a local test login page. linux-use `doctor` reports the native tools, `list_windows` finds the target window, `screenshot` returns real pixels with a state token, `left_click` focuses the field, `type` writes a harmless marker (the window pixels change), the pre-typing token is refused afterwards, and the login page is left open. The main Distill project then uses the same local linux-use MCP: it listed the X11 windows and wrote them to `/workspace/rc023-agent-windows.json` with the `RC023 login` window, `stopReason: end_turn`. Two consecutive full runs PASS (`scratch/rc023-session/run.log`, `run2.log`).
+- Three environment root causes made the state tokens unstable and are fixed: (1) ImageMagick embeds the current time in PNG output, so the same window hashed differently on every capture — `SOURCE_DATE_EPOCH=0` in `prototype/Dockerfile` makes the bytes depend only on the pixels; (2) the test page must not repaint on pointer hover/focus, because linux-use warps the pointer onto the target before its final token check; (3) `xdotool mousemove --sync --window` blocks forever when the pointer is already at the destination, so the driver parks the pointer first.
+- `prototype/Dockerfile`: `LINUX_USE_COMMIT` at `ee0231c`, adds `imagemagick` and `x11-apps`. `.gitignore`: `/scratch/` (local proof transcripts).
+- Open on RC-023: the proof clause "leave the login page open with 'Needs you' and session ID persisted" is not delivered — `runs` has no `needs_user` state and does not persist the ACP session id. RC-023 stays In progress; no failure-if condition was observed.
+- `plan/tasks.html`: RC-023 In progress; summary now 19 complete / 10 in progress / 0 blocked / 39 to do.
+
 ## RC-019 accepted — bounded host supervisor 2026-10-07T01:40:00Z (UTC)
 
 - New `scripts/rc019/host-supervisor.sh` (hard-deadline probes for daemon/container/API/GUI/Distill, limited restart, reported lock, volume preserved) and `scripts/rc019/run-supervisor-proof.sh`.
