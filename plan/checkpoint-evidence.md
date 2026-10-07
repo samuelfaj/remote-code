@@ -1,3 +1,11 @@
+# RC-039 Bot skills and memory — acceptance — 2026-10-07 (UTC)
+
+- **Status:** Complete. Enabled skills and Bot memory survive a restart and have a documented scope.
+- **Command:** `RC039_MEMORY_PROOF_DIR=<fresh dir> bun scripts/rc039/run-bot-memory-proof.ts` (Docker Linux/arm64, the shipped API over TLS on a task-owned volume).
+- **Observed (two runs, `result: bot_skills_and_memory_persist_and_stay_private_passed`):** Alpha was given skills `["code-review","summarize"]` and facts "Alpha prefers terse answers." / "Alpha reviews pull requests."; Beta got `["release-notes"]` and "Beta ships on Fridays." / "Beta drafts release notes.". Each `GET /api/bots/:id/memory` returned exactly its own facts in order and each Bot view carried only its own skills; neither body contained the other Bot's facts. Another login got 404 on memory and skills and an anonymous request got 401. After `docker restart` on the same volume, both Bots returned the same skills and the same facts, unchanged.
+- **Failure-if check:** no memory disappears (both Bots return their facts after the restart) and no Bot sees another Bot's private memory or skills.
+- **Checks:** `bun test apps/api/src packages/client/src` 258 pass / 74 skip / 0 fail; `bun run typecheck` exit 0; documentation-links gate exit 0.
+
 # RC-038 Bots — acceptance — 2026-10-07 (UTC)
 
 - **Status:** Complete. Bots can be created, edited, hidden and listed with persistent identity, instructions and context.

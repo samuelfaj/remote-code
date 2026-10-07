@@ -1,4 +1,12 @@
 # Changelog
+## RC-039 accepted — Bot skills and memory persist and stay private 2026-10-07T13:40:00Z (UTC)
+
+- `bots` gains a `skills` JSON column (with a guarded `PRAGMA table_info` + `ALTER TABLE` migration for existing volumes) and every bot view now carries `skills: string[]`, parsed defensively. New `bot_memory` rows are keyed by both `bot_id` and `user_id`.
+- New routes: `PUT /api/bots/:id/skills` replaces the enabled skills (at most 32, `/^[a-z0-9][a-z0-9-]{0,63}$/`, no duplicates → 400 `invalid_bot_skills`); `POST /api/bots/:id/memory` appends one fact (non-empty, ≤2000 chars, no NUL → 400 `invalid_bot_memory`, 201); `GET /api/bots/:id/memory` returns that Bot's facts oldest first. Every route is owner-scoped and answers 404 `bot_not_found` for an unknown or foreign Bot. A scope comment records that skills are per Bot and memory is private to one Bot and its owner.
+- Proof `scripts/rc039/run-bot-memory-proof.ts` PASS twice on real Linux: two Bots with different skills (`code-review`/`summarize` vs `release-notes`) and different facts read back only their own content, neither contains the other's facts, both survive a real `docker restart` on the same volume unchanged, and another login gets 404 on memory and skills while an anonymous caller gets 401.
+- Checks: `bun test apps/api/src packages/client/src` 258 pass / 74 skip / 0 fail; `bun run typecheck` clean; documentation-links gate clean.
+- `plan/tasks.html`: RC-039 Complete; summary now 28 complete / 4 in progress / 0 blocked / 36 to do.
+
 ## RC-038 accepted — create, edit, hide and list Bots 2026-10-07T13:10:00Z (UTC)
 
 - New `apps/api/src/features/bots.ts` (registered in `app.ts`): `POST /api/bots` creates a Bot with persistent identity, instructions and context; `GET /api/bots` lists the owner's Bots newest first (hidden ones included with their flag); `GET /api/bots/:id` reads one; `PATCH /api/bots/:id` edits any subset of `{name, instructions, context, hidden}`. Rows are keyed by id and `user_id`, so editing one Bot can never touch another, and another login, an unknown id or an anonymous caller is refused (404/401). Validation is the same shape as the other features, including a scoped `onError` that answers a schema failure with 400 `invalid_bot_request` and no echoed body.
