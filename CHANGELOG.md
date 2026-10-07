@@ -1,4 +1,11 @@
 # Changelog
+## RC-017 command row proven at all three points 2026-10-07T21:10:00Z (UTC)
+
+- The failure-state contract's Command row was stale ("no command-execution route exists"). A real command surface now exists through the run supervisor, so the row is rewritten with the real boundary, deadlines (stop deadline and the heartbeat watchdog), provider classification, and recovery owner, and the three-point table gains the observed command evidence.
+- New `scripts/rc017/run-command-failure-proof.ts` PASS twice on real Linux with a controlled agent that logs every launch: an invalid command is 422 with **zero** launches; a cut response after acceptance leaves the run row committed and repeating the SAME request id returns that run with exactly **one** launch (no second command); a mid-command host restart leaves `interrupted`/`host_restart`, one launch for that command and **zero** launches after the restart.
+- RC-017 stays **In progress**: read, local write, login and command are proven at three points, but routine and billing have no route in this repository, and the plan's own contract forbids recording a missing route as passed. PIVOT.md records that RC-045 (schedules and Bot routines) is now dependency-ready and is the route to the routine row.
+- Checks: `bun test apps/api/src apps/gateway/src packages/client/src` 289 pass / 74 skip / 0 fail; `bun run typecheck` clean; documentation-links gate clean.
+
 ## RC-018 accepted — a cut connection is never a rollback 2026-10-07T20:20:00Z (UTC)
 
 - New `scripts/rc018/run-connection-cut-proof.ts` puts a fault injector in front of the shipped API and cuts the connection at the three points the task names: before the mutation is forwarded, after it commits but before the response, and mid-response. In each case the client is left uncertain; the receipt is then consulted and repeating the SAME request id produces one effect and the canonical receipt (`201` after a pre-acceptance cut, `200` with the same receipt id after a commit cut, and `409` when the payload differs while the stored row stays single). PASS twice on real Linux with one effect per marker.

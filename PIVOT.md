@@ -1,5 +1,12 @@
 # Pivot policy
 
+## Update — RC-045 became dependency-ready 2026-10-07 (UTC)
+
+- **Supersedes the bottleneck note below.** Completing RC-018, RC-027, RC-034 and RC-040 satisfied every dependency of **RC-045** (schedule workspace agent tasks and Bot routines), which is therefore the next task that may be started. It in turn unlocks RC-046 (durable Inbox) and RC-058 (verifiable backup and restore), and its scheduler is what RC-017's `routine` row needs.
+- **RC-017 stays In progress:** read, local write, login and command are proven at the three points; routine needs RC-045 and billing needs RC-060/RC-061. Recording a missing route as passed is forbidden by the plan's own failure-state contract.
+- **RC-029 stays In progress:** its `actual Distill approval/refusal` clause is now covered by RC-035; the remaining Android and wider native journeys depend on RC-055/RC-056.
+
+
 ## Handoff — the backlog is at a dependency bottleneck 2026-10-07 (UTC)
 
 - **State:** 34 complete / 4 in progress / 0 blocked / 30 to do. Every remaining **To do** task depends on at least one task that is still To do or In progress, so none is dependency-ready under the plan's own rule.

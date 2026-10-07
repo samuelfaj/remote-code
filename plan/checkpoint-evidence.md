@@ -1,3 +1,12 @@
+# RC-017 command row — evidence (task still In progress) — 2026-10-07 (UTC)
+
+- **Status:** the command operation class is proven at the three failure points; RC-017 as a whole stays In progress because routine and billing have no surface.
+- **Command:** `RC017_PROOF_DIR=<fresh dir> bun scripts/rc017/run-command-failure-proof.ts` (Docker Linux/arm64, the shipped API over TLS, a fault injector, a controlled ACP agent that appends one line to a launch log per prompt).
+- **Observed (two runs, `result: command_row_before_acceptance_commit_without_response_and_unknown_result_passed`):** (1) before acceptance an invalid command returned 422 with **0** launches; (2) with the response cut after acceptance the client's connection was closed, `GET /api/runs/:id` still returned the committed run (`starting`), and repeating the same `requestId` returned the same run with exactly **1** launch; (3) a held command was `running`, the container was restarted, and the run came back `interrupted`/`host_restart` with exactly **1** launch for that command and **0** launches after the restart.
+- **Contract:** `plan/failure-state-contract.md` Command row and its three-point row now carry this evidence instead of `Not implemented`; routine and billing rows stay `not implemented` because no route exists (RC-045 and RC-060/RC-061 gate them).
+- **Failure-if check:** no rejected command launched anything, a lost response never launched a second command, and a restart never replayed one.
+- **Checks:** `bun test apps/api/src apps/gateway/src packages/client/src` 289 pass / 74 skip / 0 fail; `bun run typecheck` exit 0; documentation-links gate exit 0.
+
 # RC-018 receipts and limited requests — acceptance — 2026-10-07 (UTC)
 
 - **Status:** Complete. Each mutation carries a stable id, acceptance and result have a durable receipt, and a cut connection never means rollback.
