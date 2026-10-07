@@ -1,7 +1,7 @@
 # Where to resume
 
-Pushed checkpoint: `62d6dc7` on `checkpoint/rc002-linux-runtime-evidence`
-(matches `origin`). Plan status: **50 complete / 0 in progress / 0 blocked / 18 to do**
+Pushed checkpoint: `5db66e2` on `checkpoint/rc002-linux-runtime-evidence`
+(matches `origin`). Plan status: **51 complete / 0 in progress / 0 blocked / 17 to do**
 of the 68 tasks in `plan/tasks.html`.
 
 Read, in this order: `plan/tasks.html` (per-task status), `CHANGELOG.md`
@@ -10,18 +10,18 @@ observed result and the failure-if check for every accepted task), `PIVOT.md`
 (why a route changed) and `plan/capacity.md` / `plan/failure-state-contract.md`
 (measured limits and the per-operation failure table).
 
-Accepted since the previous resume page: RC-043 (two-client possession),
-RC-029 (workspace file editing), RC-063 (proved isolation) and RC-036
-(attachments and a run's changed files with its diff).
+Accepted since the previous resume page: RC-036 (attachments and a run's changed
+files with its diff) and RC-025 (the mobile client takes over and returns the
+screen on a real simulator).
 
 ## Ready right now
 
 | Task | Why it is ready |
 | --- | --- |
-| **RC-025** | The only task with every dependency met. RC-024 landed, so the mobile client can take over and return the session over the existing Eden core. The failure-if forbids a parallel API implementation, so it must reuse `packages/client`. The repo already has an iOS app (`apps/mobile` with `ios/` and `native-tests/RemoteCodeMobileProofUITests.swift`) and `scripts/run-mobile-native-test.sh`, which needs an absolute `RC_NATIVE_TEST_WORK_DIR`; a simulator is booted on this machine. |
-
-Everything else is gated behind RC-025: RC-026, RC-044 and RC-047 need it, and
-RC-046 onward need that chain. So RC-025 is the critical path to the remaining 18.
+| **RC-026** | RC-025 landed, so reconnect after drops can be strengthened on the existing mobile session. |
+| **RC-044** | RC-025 landed and RC-043 landed, so the shared journey can be finished across both clients. |
+Everything else is behind this chain: RC-047 needs RC-026 and RC-046, RC-046 needs RC-044, and
+RC-048 onward need RC-045 and RC-046. RC-026 and RC-044 are the two ready tasks.
 
 ## In progress and blocked
 
@@ -30,7 +30,7 @@ Nothing. Every task is either Complete or still To do with an unmet dependency.
 ## The pattern that produced every recent defect
 
 Run the task's own proof on real infrastructure before believing the
-implementation. Seven real product defects in this stretch were found only that
+implementation. Nine real product defects in this stretch were found only that
 way, and every one of them had passed the worker's unit tests first:
 
 1. the update data copy was killed before it finished (`docker start` returns
@@ -42,10 +42,28 @@ way, and every one of them had passed the worker's unit tests first:
 4. a crashed swap left the account advertised as `ready`;
 5. `docker stop` raced its own spawn timeout in hosted suspend;
 6. the preview/observation tokens were not scoped to the workspace;
-7. the unprivileged agent could read the service database (found by the RC-063 isolation proof).
+7. the unprivileged agent could read the service database (found by the RC-063 isolation proof);
+8. a released screen possession was reported as `expired` instead of `none`;
+9. the mobile client never renewed its possession, so it lost the screen (both found by the RC-025 proof).
 
 Also expect a worker to report a failure as "pre-existing" or "unrelated" when
 its own change caused it — check the diff before believing that.
+
+## Running the mobile proof
+
+`apps/mobile/ios/` is **gitignored** (it is generated), so it never appears in a
+diff and the native proof depends on the machine's generated project:
+
+1. If the Pods were built for an older Xcode, the build fails with
+   `The iOS Simulator deployment target 'IPHONEOS_DEPLOYMENT_TARGET' is set to 13.4`.
+   Raise every pod target to the app's own minimum (15.1) in
+   `apps/mobile/ios/Podfile`'s `post_install` and re-run `pod install`.
+2. Then run, with a fresh absolute directory:
+   `RC_NATIVE_TEST_WORK_DIR=<fresh> RC_NATIVE_TEST_FILES=1 RC_NATIVE_TEST_SESSION=1 RC_NATIVE_TEST_REUSE_IOS_PROJECT=1 bash scripts/run-mobile-native-test.sh`
+   It boots its own simulator, starts the API in a container over TLS, runs only
+   `testInstalledAppTakesOverAndReturnsTheScreenAndRefusesBotInput`, and then
+   verifies the Linux database itself. Success ends with
+   `Mobile client took and returned the screen; the Linux database shows the released possession`.
 
 ## Conventions this repository enforces
 
