@@ -1,15 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native-web";
 import { createApiClient, listBots, listThreads, type Bot, type Thread, type Workspace } from "@remotecode/client";
+import { AgentPanel } from "../agent/AgentPanel";
 import { WorkspacePanel } from "../workspaces/WorkspacePanel";
 
-type Props = { userId: string; onUnauthorized: () => void };
+type Props = { userId: string; onUnauthorized: () => void; eventCursor?: number | null };
 
 function safeTestId(name: string) {
   return name.replace(/[^a-zA-Z0-9_-]/g, "-").replace(/-+/g, "-").replace(/(^-|-$)/g, "");
 }
 
-export function NavigationShell({ userId, onUnauthorized }: Props) {
+export function NavigationShell({ userId, onUnauthorized, eventCursor }: Props) {
   const api = useMemo(() => createApiClient(window.location.origin), []);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [bots, setBots] = useState<Bot[]>([]);
@@ -267,6 +268,7 @@ export function NavigationShell({ userId, onUnauthorized }: Props) {
 
         <View style={styles.content} testID="app-content">
           <WorkspacePanel userId={userId} onUnauthorized={onUnauthorized} selectedWorkspaceId={selectedWorkspaceId} />
+          <AgentPanel userId={userId} selectedWorkspaceId={selectedWorkspaceId} selectedBotId={selectedBotId} eventCursor={eventCursor} />
         </View>
       </View>
     </View>

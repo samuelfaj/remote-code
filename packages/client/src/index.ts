@@ -11,6 +11,8 @@ export { workspaceGitStatus, workspaceGitDiff, workspaceGitBranches, commitGit }
 export type { GitStatus, GitDiff, GitBranches, GitCommit } from "./git";
 export { createThread, listThreads, postThreadMessage, listThreadMessages, readRunChanges } from "./messages";
 export type { Thread, MessageAttachment, ThreadMessage, ThreadMessagesResult, CreateThreadResult, PostMessageResult } from "./messages";
+export { listInbox, readInboxItem, markInboxItemRead, resolveInboxItem, inboxItemFromValue, inboxListFromValue } from "./inbox";
+export type { InboxItem, InboxKind } from "./inbox";
 export { listBots, createBot, readBot } from "./bots";
 export type { Bot } from "./bots";
 export { listSchedules, createSchedule, setScheduleEnabled } from "./routines";

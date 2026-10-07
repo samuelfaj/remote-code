@@ -927,7 +927,7 @@ export function App() {
             </View>
           )) : <Text style={styles.empty}>The backend has no receipts yet.</Text>}
         </View>
-        {panelUserId ? <NavigationShell userId={panelUserId} onUnauthorized={hideSession} /> : null}
+        {panelUserId ? <NavigationShell userId={panelUserId} onUnauthorized={hideSession} eventCursor={eventState.cursor} /> : null}
       </View>
     </ScrollView>
   );
