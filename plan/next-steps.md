@@ -1,6 +1,6 @@
 # Where to resume
 
-Latest confirmed state: the RC-050 partial checkpoint `COMMIT` on
+Latest confirmed state: the RC-050 partial checkpoint `00beb87` on
 `checkpoint/rc002-linux-runtime-evidence`, with the handoff commits on top. Plan status: **57 complete / 1 in progress / 0 blocked / 10 to do**
 of the 68 tasks in `plan/tasks.html`.
 
