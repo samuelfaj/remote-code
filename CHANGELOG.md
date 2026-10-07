@@ -1,4 +1,7 @@
 # Changelog
+## RC-020 storage degradation — 9 pass 2026-10-07T02:30:00Z (UTC)
+
+- `storage-degradation.test.ts`: 9 pass / 2 skip / 0 fail on 60b5c30. SQLite lock degrades readiness and recovers; supports RC-020 evidence.
 ## History routes focused verification — 4 pass 2026-10-07T02:00:00Z (UTC)
 
 - `app.test.ts -t history`: 4 pass / 0 fail on 9fe2375. History CRUD + receipts + isolation covered; thread/interrupt part of RC-037 stays blocked on Distill chain.
