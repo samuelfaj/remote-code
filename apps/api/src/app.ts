@@ -7,6 +7,7 @@ import { storageFeature } from "./features/storage";
 import { fileRequestSchemaReady } from "./features/file-requests";
 import { workspaceFilesFeature } from "./features/workspace-files";
 import { gitStatusFeature } from "./features/workspace-git";
+import { botsFeature } from "./features/bots";
 import { sshFeature } from "./features/ssh";
 import { workspaceLayoutFeature } from "./features/workspace-layout";
 import { terminalsFeature } from "./features/terminals";
@@ -118,6 +119,7 @@ export function createApi(
     .use(workspaceFilesFeature(configuredDatabasePath))
     .use(gitStatusFeature(configuredDatabasePath))
     .use(sshFeature(configuredDatabasePath))
+    .use(botsFeature(configuredDatabasePath))
     .use(workspaceLayoutFeature(configuredDatabasePath).routes)
     .use(terminals.routes)
     .use(runs.routes)

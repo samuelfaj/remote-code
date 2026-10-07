@@ -1,4 +1,11 @@
 # Changelog
+## RC-038 accepted — create, edit, hide and list Bots 2026-10-07T13:10:00Z (UTC)
+
+- New `apps/api/src/features/bots.ts` (registered in `app.ts`): `POST /api/bots` creates a Bot with persistent identity, instructions and context; `GET /api/bots` lists the owner's Bots newest first (hidden ones included with their flag); `GET /api/bots/:id` reads one; `PATCH /api/bots/:id` edits any subset of `{name, instructions, context, hidden}`. Rows are keyed by id and `user_id`, so editing one Bot can never touch another, and another login, an unknown id or an anonymous caller is refused (404/401). Validation is the same shape as the other features, including a scoped `onError` that answers a schema failure with 400 `invalid_bot_request` and no echoed body.
+- Proof `scripts/rc038/run-bots-proof.ts` PASS twice on real Linux: two Bots created with distinct instructions and context; Alpha edited and Beta hidden with Beta's instructions untouched; another login gets 404 on read/patch and an empty list, anonymous 401, unknown id 404; after a real `docker restart` on the same volume both Bots return with the same ids, the edited instructions and Beta still hidden.
+- Checks: `bun test apps/api/src packages/client/src` 237 pass / 74 skip / 0 fail; `bun run typecheck` clean; documentation-links gate clean.
+- `plan/tasks.html`: RC-038 Complete; summary now 27 complete / 4 in progress / 0 blocked / 37 to do.
+
 ## RC-033 accepted — shared layout and device-local focus proven with two real clients 2026-10-07T12:40:00Z (UTC)
 
 - New `scripts/rc033/run-layout-device-focus-proof.ts`. On real Linux (Docker container, the shipped API over TLS, the shipped web panel through vite) it drives two real browser contexts, desktop 1440 and mobile 390, against one workspace whose shared row was seeded through the real `PUT /api/workspaces/:id/layout` route with two tabs and two panes.

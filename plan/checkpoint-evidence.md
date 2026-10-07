@@ -1,3 +1,11 @@
+# RC-038 Bots — acceptance — 2026-10-07 (UTC)
+
+- **Status:** Complete. Bots can be created, edited, hidden and listed with persistent identity, instructions and context.
+- **Command:** `RC038_BOTS_PROOF_DIR=<fresh dir> bun scripts/rc038/run-bots-proof.ts` (Docker Linux/arm64, the shipped API over TLS on a task-owned volume).
+- **Observed (two runs, `result: bots_created_edited_hidden_and_persisted_passed`):** two Bots were created with distinct ids and their own instructions/context (`Alpha` / "Always answer in short sentences." / "Reviewing pull requests." and `Beta` / "Draft release notes from diffs." / "Release engineering."). `PATCH` on Alpha changed its instructions to "Always answer in one terse line." and its context, while Beta's instructions, context and `updatedAt`-bounded row were untouched; `PATCH` on Beta set `hidden: true` with its instructions intact. `GET /api/bots` returned exactly two Bots with those states. Isolation: another seeded login got 404 on both read and patch and an empty list, an anonymous request got 401, and an unknown uuid got 404. After `docker restart` on the same volume, `GET /api/bots` returned both Bots with the same ids, Alpha's edited instructions and Beta still hidden.
+- **Failure-if check:** the Bots do not share instructions (Alpha's edit left Beta's bytes unchanged) and editing one does not alter the other.
+- **Checks:** `bun test apps/api/src packages/client/src` 237 pass / 74 skip / 0 fail; `bun run typecheck` exit 0; documentation-links gate exit 0.
+
 # RC-033 shared layout and device focus — acceptance — 2026-10-07 (UTC)
 
 - **Status:** Complete. The backend saves the layout per workspace and a client opens tabs/panes without changing another device's focus.
