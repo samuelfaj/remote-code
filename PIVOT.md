@@ -1,5 +1,9 @@
 # Pivot policy
 
+## RC-032 SSH update — host path proven, managed API open 2026-10-06 (UTC)
+
+- **Update:** Host-initiated scp transfer + byte equality + revocation failure proven on Linux (checkpoint `e38cd98`). Managed SSH-credential API (storage/revocation surface) remains open with original criteria unchanged.
+
 ## RC-032 SSH — deferred, needs test SSH target 2026-10-06 (UTC)
 
 - **Decision:** RC-032 stays To Do with original criteria unchanged. Proof requires a test SSH server + credential revocation flow; no such target exists in repo or proof infra. The terminal PTY already gives shell access where an operator runs ssh/scp manually; a managed SSH-credential API is a new surface (secret storage, revocation) requiring design. No mock server substitutes.
