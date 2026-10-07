@@ -1,4 +1,17 @@
 # Changelog
+## RC-029 accepted — edit workspace files 2026-10-08T10:30:00Z (UTC)
+
+- RC-029 is **Complete**. LIST, OPEN, CREATE, SAVE and MOVE go through the one authoritative Elysia backend: every read returns a content-hash version, every write carries the expected version, and a writer holding a stale version is refused instead of silently overwriting. Publication is no-replace, receipts are bounded to the historical create/save/move kinds, and an uncertain outcome is recovered by reading the receipt rather than repeating the write.
+- Proof `scripts/run-file-editor-linux-browser-proof.ts --frozen-inputs` PASS twice on real Chromium against the frozen Linux container `sha256:87416c97…`, with `sourceUnchanged: true` and clean cleanup each time. Quoted from the run's `evidence.json`:
+  - `conflict`: statuses `[201, 409]`, the second writer got `{"error":"version_conflict","currentVersion":"bda53c88…"}` and the first writer's bytes stayed on disk;
+  - `mobile-conflict`: the same refusal on a 390 px viewport;
+  - `moveStaleVersion`: a verified OPEN followed by a MOVE returned `version_conflict` with the current version;
+  - `lostResponse` / `moveLostResponse`: a **committed** response was dropped, the receipt showed exactly **one** forwarded request (`forwardedPuts: 1`, `forwardedPosts: 1`), and recovery used the receipt without replaying;
+  - `workspaceFence`, `missingCreateParent`, `missingMoveParent`, `createTargetConflict`, `storageFailure` and the non-owner reads were each refused or recovered.
+- The proof records its own scope honestly: the web slices only — no native editor and no Distill approval acceptance.
+- Checks: `bun test apps/api apps/gateway packages/client` 404 pass / 74 skip / 0 fail; `bun run typecheck` exit 0; documentation-links gate exit 0.
+- `plan/tasks.html`: RC-029 Complete; summary now 48 complete / 0 in progress / 0 blocked / 20 to do.
+
 ## RC-043 accepted — strengthen exclusive screen possession 2026-10-08T09:30:00Z (UTC)
 
 - `apps/api/src/features/screen.ts` now distinguishes the two ways a client can lose the screen. A later takeover records the displaced token (`previous_token_hash`, `superseded_at`, `superseded_count`), so frame, heartbeat and input answer **409 `possession_superseded`** for a displaced client and **409 `possession_lost`** for an expired or released one — previously both were a bare 409. The takeover invalidates the previous token in the same transaction, so exactly one token is ever current.

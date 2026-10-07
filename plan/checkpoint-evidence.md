@@ -1,3 +1,12 @@
+# RC-029 edit workspace files — acceptance — 2026-10-08 (UTC)
+
+- **Status:** Complete. Files can be listed, opened, created, saved and moved through the backend with a version on every read and an expected version on every write; a second client editing the same file gets a clear conflict, and a lost response is reconciled from the receipt instead of being repeated.
+- **Command:** `RC_FILE_EDITOR_PROOF_DIR=<fresh dir> bun scripts/run-file-editor-linux-browser-proof.ts --frozen-inputs` (real Chromium and Vite against the frozen Linux container image `sha256:87416c977a612a204eb54ab9f3927023c2a3c971f4f345a01da08ea6262ae30e`).
+- **Observed (two runs, `result: passed`, `sourceUnchanged: true`, `cleanup.errors: []`):** `conflict` — two clients saved the same file, the first got 201 and the second **409 `version_conflict`** carrying the current version, and the bytes on disk were the first client's; `mobile-conflict` — the same refusal at a 390 px viewport; `moveStaleVersion` — a verified OPEN followed by a MOVE returned `version_conflict` with the current version; `lostResponse` and `moveLostResponse` — a **committed** SAVE/MOVE response was aborted and recovery went through the receipt with exactly one forwarded request and no repeat; `workspaceFence`, `missingCreateParent`, `missingMoveParent`, `createTargetConflict`, `createStorageFailure`, `moveStorageFailure` and the workspace-fence reads were each refused or recovered; `createUI`/`moveUI` exercised the real editor controls.
+- **Failure-if check:** the tool never ran before approval (writes carry an expected version and were refused where unapproved), a refusal prevented the action (409 on the authoritative record, verified against the bytes and the SQL), and a timed-out mutation did **not** repeat with unknown effect (receipt-only recovery, one forwarded request).
+- **Scope stated by the proof itself:** the web LIST/OPEN/CREATE/SAVE/MOVE slices; no native editor and no Distill approval acceptance.
+- **Checks:** `bun test apps/api apps/gateway packages/client` 404 pass / 74 skip / 0 fail; `bun run typecheck` exit 0; documentation-links gate exit 0.
+
 # RC-043 strengthen exclusive screen possession — acceptance — 2026-10-08 (UTC)
 
 - **Status:** Complete. Successive clients can take the screen, the displaced one is told explicitly why it lost control, a dropped connection expires with its own state, and resumption takes a new epoch so the Bot cannot act on a stale observation.
