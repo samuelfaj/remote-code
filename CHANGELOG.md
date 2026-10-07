@@ -1,4 +1,7 @@
 # Changelog
+## RC-031 shutdown re-proof — passed on 873bf0f 2026-10-07T00:00:00Z (UTC)
+
+- `run-terminal-shutdown-proof.ts` passed `terminal_graceful_live_actor_shutdown_passed` on 873bf0f, cleanup api+volume true.
 ## RC-029 file-editor re-proof — passed on a3bbd45 2026-10-06T23:00:00Z (UTC)
 
 - `run-file-editor-linux-browser-proof.ts --frozen-inputs` passed on a3bbd45: source unchanged, cleanup clean. Covers new git route files (sourceUnchanged true with workspace-git.ts present).
