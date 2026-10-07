@@ -1,7 +1,7 @@
 # Where to resume
 
-Pushed checkpoint: `b7dd9b6` on `checkpoint/rc002-linux-runtime-evidence`
-(matches `origin`). Plan status: **49 complete / 0 in progress / 0 blocked / 19 to do**
+Pushed checkpoint: `62d6dc7` on `checkpoint/rc002-linux-runtime-evidence`
+(matches `origin`). Plan status: **50 complete / 0 in progress / 0 blocked / 18 to do**
 of the 68 tasks in `plan/tasks.html`.
 
 Read, in this order: `plan/tasks.html` (per-task status), `CHANGELOG.md`
@@ -10,19 +10,18 @@ observed result and the failure-if check for every accepted task), `PIVOT.md`
 (why a route changed) and `plan/capacity.md` / `plan/failure-state-contract.md`
 (measured limits and the per-operation failure table).
 
-Accepted since the previous resume page: RC-024 (web takeover), RC-062 (image
-update), RC-064 (measured capacity), RC-042 (per-Bot preview), RC-043 (two-client
-possession), RC-029 (workspace file editing) and RC-063 (proved isolation).
+Accepted since the previous resume page: RC-043 (two-client possession),
+RC-029 (workspace file editing), RC-063 (proved isolation) and RC-036
+(attachments and a run's changed files with its diff).
 
 ## Ready right now
 
 | Task | Why it is ready |
 | --- | --- |
-| **RC-036** | RC-029 landed, so a message can carry an attachment and a run result can show changed files with a diff. No thread/message surface exists yet (`grep` finds none), so this task also has to introduce the smallest one. |
-| **RC-025** | RC-024 landed, so the mobile client can take over and return the session over the existing Eden core. The failure-if forbids a parallel API implementation, so it must reuse `packages/client`. |
+| **RC-025** | The only task with every dependency met. RC-024 landed, so the mobile client can take over and return the session over the existing Eden core. The failure-if forbids a parallel API implementation, so it must reuse `packages/client`. The repo already has an iOS app (`apps/mobile` with `ios/` and `native-tests/RemoteCodeMobileProofUITests.swift`) and `scripts/run-mobile-native-test.sh`, which needs an absolute `RC_NATIVE_TEST_WORK_DIR`; a simulator is booted on this machine. |
 
-Everything else is gated behind one of those two: RC-026 and RC-044 need RC-025,
-and RC-046 onward need that chain.
+Everything else is gated behind RC-025: RC-026, RC-044 and RC-047 need it, and
+RC-046 onward need that chain. So RC-025 is the critical path to the remaining 18.
 
 ## In progress and blocked
 
