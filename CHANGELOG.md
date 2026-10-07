@@ -1,4 +1,7 @@
 # Changelog
+## Cleanup — dead mkdirSync removed from git test 2026-10-07T02:00:00Z (UTC)
+
+- workspace-git.test.ts: dropped unused mkdirSync import + void statement left by earlier edit. TSC clean, focused 4 pass/4 skip (Linux-gated skips on macOS).
 ## RC-028 workspace re-proof — passed on 4adfeb3 2026-10-07T01:30:00Z (UTC)
 
 - `run-workspace-linux-browser-proof.ts` run2 passed on 4adfeb3: 2 workspaces, rename + archive, quick_check ok, cleanup true.

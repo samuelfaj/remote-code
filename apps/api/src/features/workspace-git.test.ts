@@ -3,7 +3,7 @@ import { afterEach, expect, it } from "bun:test";
 // Linux-only: folder fd guards require the Linux runtime. On Linux CI these
 // run against a volume-backed DATABASE_PATH like the proof runners do.
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { createApi } from "../app";
@@ -125,5 +125,4 @@ it.skipIf(process.platform !== "linux")("refuses a foreign workspace id", async 
     headers: { cookie: `remotecode_session=${ownerToken}` },
   }));
   expect(response.status).toBe(404);
-  void mkdirSync;
 });
