@@ -378,10 +378,19 @@ export function runsFeature(
       const owner = identity(request);
       if (!owner || !uuid.test(params.workspaceId)) { set.status = owner ? 404 : 401; return { error: owner ? "not_found" : "unauthorized" }; }
       try { assertSession(owner); } catch { set.status = 401; return { error: "unauthorized" as const }; }
-      const rows = database((db) => db.query<RunRow, [string, string]>(
-        "SELECT * FROM runs WHERE workspace_id = ? AND user_id = ? ORDER BY created_at DESC LIMIT 50",
-      ).all(params.workspaceId, owner.userId));
-      return { runs: rows.map(view) };
+      const result = database((db) => {
+        // Another user's workspace is denied like every other per-workspace
+        // route, instead of answering an empty list.
+        const workspace = db.query<unknown, [string, string]>(
+          "SELECT id FROM workspaces WHERE id = ? AND user_id = ?",
+        ).get(params.workspaceId, owner.userId);
+        if (!workspace) return null;
+        return db.query<RunRow, [string, string]>(
+          "SELECT * FROM runs WHERE workspace_id = ? AND user_id = ? ORDER BY created_at DESC LIMIT 50",
+        ).all(params.workspaceId, owner.userId);
+      });
+      if (result === null) { set.status = 404; return { error: "not_found" as const }; }
+      return { runs: result.map(view) };
     }, { params: t.Object({ workspaceId: uuidSchema }) })
     .post("/api/bots/:id/run", ({ params, body, request, set }) => {
       const owner = identity(request);

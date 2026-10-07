@@ -1,3 +1,12 @@
+# RC-012 authorize resources per user — acceptance — 2026-10-07 (UTC)
+
+- **Status:** Complete. Every shipped resource route derives ownership from the authoritative session and denies another user's resource.
+- **Command:** `RC012_PROOF_DIR=<fresh dir> bun scripts/rc012/run-ownership-audit-proof.ts` (Docker Linux/arm64, the shipped API over TLS, one container).
+- **Observed (two runs, `result: every_resource_route_denied_a_second_account_and_an_expired_session_passed`):** with account A holding real resources, a second live account B was denied on all 31 audited routes — workspace read/patch, folder read/create, history read/write, layout read/write, files list/content/write, git status/branches/commit/fetch, run list/read/stop/handoff/permissions, bot read/patch, bot memory read/write, bot skills, bot runs, bot run start, bot session read and a workspace receipt lookup — and the two list routes (`GET /api/workspaces`, `GET /api/bots`) returned no row owned by A. A's resources were unchanged afterwards (workspace `account-a`, file `account-a-secret`, 1 history entry, active tab `tab-a`, Bot `AccountABot`, 1 memory entry). An expired session was refused with 401 on list, read, write, Bot read and run read; an anonymous read was 401.
+- **Failure-if check:** no user read or changed another user's resource, and no route trusted an id without a session (the expired and anonymous checks failed closed).
+- **Fix found by the audit:** the per-workspace run list scoped its query by user but answered 200 with an empty list for a foreign workspace; it now returns 404 like the other per-workspace routes.
+- **Checks:** `bun test apps/api/src apps/gateway/src packages/client/src` 285 pass / 74 skip / 0 fail; `bun run typecheck` exit 0; documentation-links gate exit 0.
+
 # RC-011 gateway routes each account to its container — acceptance — 2026-10-07 (UTC)
 
 - **Status:** Complete. The gateway authenticates a caller and forwards the API and the event socket to the correct container without handing its routing token to the container, and never waits indefinitely for a container.

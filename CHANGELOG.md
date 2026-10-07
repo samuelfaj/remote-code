@@ -1,4 +1,12 @@
 # Changelog
+## RC-012 accepted — every resource route denies a second account 2026-10-07T19:30:00Z (UTC)
+
+- New `scripts/rc012/run-ownership-audit-proof.ts` audits the shipped API with two live sessions (a real login plus a seeded second account) and one expired session. It creates real resources as account A (workspace, folder, file, history, layout, Bot, Bot memory, a Bot run) and then calls all 31 resource routes that take a real id with account B's session: every one must deny it, and the two list routes must return no row owned by A. Afterwards it re-reads every A resource and asserts nothing changed, checks that an expired session is refused with 401 on list/read/write, and that an anonymous read is 401.
+- Result PASS twice on real Linux: 31 audited routes denied account B (`auditedRoutes: 31`), 5 expired-session checks refused, and A's workspace name, file content, history count, active tab, Bot name and memory count all intact.
+- Small product fix found by the audit: `GET /api/workspaces/:workspaceId/runs` scoped its query by user (no leak) but answered 200 with an empty list for another user's workspace, unlike every other per-workspace route; it now returns 404 `not_found`.
+- Checks: `bun test apps/api/src apps/gateway/src packages/client/src` 285 pass / 74 skip / 0 fail; `bun run typecheck` clean; documentation-links gate clean.
+- `plan/tasks.html`: RC-012 Complete; summary now 35 complete / 3 in progress / 0 blocked / 30 to do.
+
 ## RC-011 accepted — the gateway routes each account to its own container 2026-10-07T18:40:00Z (UTC)
 
 - New `apps/gateway/src/index.ts` (one file, no new dependencies, run with `bun apps/gateway/src/index.ts`): it authenticates a caller by `x-rc-gateway-token` against `RC011_ROUTES`, forwards the request to that account's container and strips its own token and any `x-rc-route*` header before forwarding. `GET /healthz` answers without a token; an unknown or missing token is 401. Every upstream attempt is bounded by `RC011_UPSTREAM_TIMEOUT_MS`, so a dead container is 503 `upstream_unavailable` instead of a hang. `/api/events` is bridged as a WebSocket with the caller's own handshake headers (cookie/origin) so the container authenticates the same session. `RC011_UPSTREAM_CA` lets it trust the containers' internal TLS, which the API requires from a non-loopback peer.
