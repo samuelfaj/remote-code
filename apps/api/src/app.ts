@@ -9,6 +9,7 @@ import { workspaceFilesFeature } from "./features/workspace-files";
 import { gitStatusFeature } from "./features/workspace-git";
 import { botsFeature } from "./features/bots";
 import { sshFeature } from "./features/ssh";
+import { hostedFeature } from "./features/hosted";
 import { workspaceLayoutFeature } from "./features/workspace-layout";
 import { terminalsFeature } from "./features/terminals";
 import { runsFeature } from "./features/runs";
@@ -122,6 +123,7 @@ export function createApi(
     .use(workspaceFilesFeature(configuredDatabasePath))
     .use(gitStatusFeature(configuredDatabasePath))
     .use(sshFeature(configuredDatabasePath))
+    .use(hostedFeature(configuredDatabasePath))
     .use(botsFeature(configuredDatabasePath))
     .use(backupFeature(configuredDatabasePath, { dataRoot: process.env.REMOTECODE_DATA_ROOT ?? "/var/lib/remotecode" }))
     .use(workspaceLayoutFeature(configuredDatabasePath).routes)

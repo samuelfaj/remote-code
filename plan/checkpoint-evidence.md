@@ -1,3 +1,12 @@
+# RC-060 provision the hosted offer — acceptance — 2026-10-08 (UTC)
+
+- **Status:** Complete. Hosting provisions one container, one volume, one published port and one secret per account, and an account is `ready` only when its own host answers.
+- **Command:** `RC060_PROOF_DIR=<fresh dir> bun scripts/rc060/run-hosted-provisioning-proof.ts` (real Docker on this host; the control plane runs on the trusted host beside the Docker CLI, the accounts run as containers on a per-run network).
+- **Observed (three runs, `result: two_accounts_got_separate_hosts_and_a_failed_provision_recovered_passed`):** Alpha and Beta each returned 201 `ready` with distinct `containerId`, `volumeId` and `hostPort`; `docker inspect` showed each container running with exactly the reported published port and its own named volume at `/var/lib/remotecode`; each account's own port answered `/api/health/ready` 200. A marker written into Alpha's volume read back **absent** in Beta. Neither `REMOTECODE_GATEWAY_TOKEN` nor the control password appeared in either account's environment. Suspending Alpha returned 200 `suspended`; Beta still answered 200 and Alpha's container showed `Running=false`. Restarting the control plane with `REMOTECODE_HOSTED_IMAGE=remotecode/does-not-exist:local` ended that account `failed` with `containerId: null`, zero leftover containers and a 503 `provisioning_failed`; a later create on the good image returned `ready`.
+- **Failure-if check:** data did **not** cross accounts (marker absent, distinct volume ids, distinct mounts, distinct ports) and a partial failure did **not** leave an account `ready` — it returned 503 with no container.
+- **Defect fixed while proving:** `suspend` used the default 10 s stop grace against a 10 s spawn timeout, so a host ignoring SIGTERM flaked to `provisioning_failed`; it now stops with `-t 1` and a 30 s timeout. Two proof defects were also fixed (fixed port base colliding with stale containers; untrimmed stdout making `"absent\n"` look like a crossed marker).
+- **Checks:** `bun test apps/api` 273 pass / 73 skip / 0 fail; `bun run typecheck` exit 0; documentation-links gate exit 0.
+
 # RC-059 publish self-managed installation — acceptance — 2026-10-08 (UTC)
 
 - **Status:** Complete. The public instructions install the host, the volume and the external supervisor, and a clean Linux environment can complete Bot creation and a restore by following only them.
