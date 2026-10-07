@@ -1,6 +1,6 @@
 # Where to resume
 
-Pushed checkpoint: `5db66e2` on `checkpoint/rc002-linux-runtime-evidence`
+Pushed checkpoint: `2404f88` on `checkpoint/rc002-linux-runtime-evidence`
 (matches `origin`). Plan status: **51 complete / 1 in progress / 0 blocked / 16 to do**
 of the 68 tasks in `plan/tasks.html`.
 
