@@ -1,4 +1,7 @@
 # Changelog
+## RC-030 fd-guard fix — all routes check .git before spawn 2026-10-07T07:00:00Z (UTC)
+
+- `hasGitDir` helper: fd-based `.git` check (O_DIRECTORY|O_NOFOLLOW) on all five routes before spawning git. Proof run15 `git_status_slice_passed` incl strict 404. TSC clean.
 ## Handoff sync — RC-014 cites fresh proof 2026-10-07T07:00:00Z (UTC)
 
 - tasks.html RC-014 status now cites 117d92f fresh 22 pass. Doc-links clean.

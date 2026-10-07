@@ -1,9 +1,18 @@
-import { readlinkSync } from "node:fs";
+import { constants, readlinkSync } from "node:fs";
 import { Elysia, t } from "elysia";
 import { sessionExpiresAt, sessionTokenHash, sessionUserId } from "./auth";
 import { withProvisionedWorkspaceFolder } from "./workspace-folders";
 import { Database } from "bun:sqlite";
 import { fsyncSync } from "node:fs";
+
+// Fail closed before spawning git: require a real .git directory through the
+// fd guard (O_DIRECTORY|O_NOFOLLOW), never a path probe.
+function hasGitDir(folderFd: number, openAt: (parentFd: number, name: string, flags: number, mode?: number) => number, close: (fd: number) => void): boolean {
+  const gitFd = openAt(folderFd, ".git", constants.O_DIRECTORY | constants.O_NOFOLLOW | 0x80000);
+  if (gitFd < 0) return false;
+  close(gitFd);
+  return true;
+}
 
 type GitStatus = { branch: string | null; clean: boolean; changed: string[]; untracked: string[] };
 type GitCommit = { commit: string; branch: string | null };
@@ -49,7 +58,8 @@ export function gitStatusFeature(databasePath: string, syncDirectory: (fd: numbe
     const userId = liveUserId(request);
     if (!userId) { set.status = 401; return { error: "unauthorized" as const }; }
     if (process.platform !== "linux") { set.status = 501; return { error: "workspace_git_require_linux" as const }; }
-    const result = withProvisionedWorkspaceFolder(databasePath, userId, params.workspaceId, (folderFd) => {
+    const result = withProvisionedWorkspaceFolder(databasePath, userId, params.workspaceId, (folderFd, openAt, close) => {
+      if (!hasGitDir(folderFd, openAt, close)) return { status: 404 as const, body: { error: "not_a_repository" as const } };
       const folderPath = readlinkSync(`/proc/self/fd/${folderFd}`);
       const run = (args: string[]) => {
         const proc = Bun.spawnSync(["git", ...args], { cwd: folderPath, stdout: "pipe", stderr: "pipe", timeout: 10_000 });
@@ -96,7 +106,8 @@ export function gitStatusFeature(databasePath: string, syncDirectory: (fd: numbe
       }
     } catch { set.status = 503; return { error: "receipt_unavailable" as const }; }
     finally { db?.close(); }
-    const result = withProvisionedWorkspaceFolder(databasePath, userId, params.workspaceId, (folderFd) => {
+    const result = withProvisionedWorkspaceFolder(databasePath, userId, params.workspaceId, (folderFd, openAt, close) => {
+      if (!hasGitDir(folderFd, openAt, close)) return { status: 404 as const, body: { error: "not_a_repository" as const } };
       const folderPath = readlinkSync(`/proc/self/fd/${folderFd}`);
       const run = (args: string[], input?: string) => {
         const proc = Bun.spawnSync(["git", ...args], { cwd: folderPath, stdin: input ? Buffer.from(input) : undefined,
@@ -138,7 +149,8 @@ export function gitStatusFeature(databasePath: string, syncDirectory: (fd: numbe
     const userId = liveUserId(request);
     if (!userId) { set.status = 401; return { error: "unauthorized" as const }; }
     if (process.platform !== "linux") { set.status = 501; return { error: "workspace_git_require_linux" as const }; }
-    const result = withProvisionedWorkspaceFolder(databasePath, userId, params.workspaceId, (folderFd) => {
+    const result = withProvisionedWorkspaceFolder(databasePath, userId, params.workspaceId, (folderFd, openAt, close) => {
+      if (!hasGitDir(folderFd, openAt, close)) return { status: 404 as const, body: { error: "not_a_repository" as const } };
       const folderPath = readlinkSync(`/proc/self/fd/${folderFd}`);
       const run = (args: string[]) => {
         const proc = Bun.spawnSync(["git", ...args], { cwd: folderPath, stdout: "pipe", stderr: "pipe", timeout: 10_000,
@@ -169,7 +181,8 @@ export function gitStatusFeature(databasePath: string, syncDirectory: (fd: numbe
       !/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(body.name) || body.name.includes("..") || body.name.endsWith("/") ||
       body.name.endsWith(".lock") || body.name.includes("//")) { set.status = 400; return { error: "invalid_branch_name" as const }; }
     if (process.platform !== "linux") { set.status = 501; return { error: "workspace_git_require_linux" as const }; }
-    const result = withProvisionedWorkspaceFolder(databasePath, userId, params.workspaceId, (folderFd) => {
+    const result = withProvisionedWorkspaceFolder(databasePath, userId, params.workspaceId, (folderFd, openAt, close) => {
+      if (!hasGitDir(folderFd, openAt, close)) return { status: 404 as const, body: { error: "not_a_repository" as const } };
       const folderPath = readlinkSync(`/proc/self/fd/${folderFd}`);
       const run = (args: string[]) => {
         const proc = Bun.spawnSync(["git", ...args], { cwd: folderPath, stdout: "pipe", stderr: "pipe", timeout: 15_000,
@@ -202,7 +215,8 @@ export function gitStatusFeature(databasePath: string, syncDirectory: (fd: numbe
       raw === ".remotecode-workspace" || raw.startsWith(".remotecode-stage-") ||
       /(^|\/)\.git(\/|$)/.test(raw)) { set.status = 400; return { error: "invalid_path" as const }; }
     if (process.platform !== "linux") { set.status = 501; return { error: "workspace_git_require_linux" as const }; }
-    const result = withProvisionedWorkspaceFolder(databasePath, userId, params.workspaceId, (folderFd) => {
+    const result = withProvisionedWorkspaceFolder(databasePath, userId, params.workspaceId, (folderFd, openAt, close) => {
+      if (!hasGitDir(folderFd, openAt, close)) return { status: 404 as const, body: { error: "not_a_repository" as const } };
       const folderPath = readlinkSync(`/proc/self/fd/${folderFd}`);
       const run = (args: string[]) => {
         const proc = Bun.spawnSync(["git", ...args], { cwd: folderPath, stdout: "pipe", stderr: "pipe", timeout: 10_000,
