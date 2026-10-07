@@ -34,6 +34,11 @@ function handle(message) {
       writeFileSync("envcheck.txt", String(process.env.REMOTECODE_GATEWAY_TOKEN ?? "absent"));
     }
     if (text.includes("SLOW")) return; // wait for session/cancel
+    if (text.includes("LATEOK")) {
+      // Answers long after the watchdog may have ended the run.
+      setTimeout(() => send({ id: promptId, result: { stopReason: "end_turn" } }), Number(process.env.STUB_LATE_MS ?? 1500));
+      return;
+    }
     setTimeout(() => send({ id: promptId, result: { stopReason: "end_turn" } }), 60);
     return;
   }

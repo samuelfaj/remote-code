@@ -231,7 +231,8 @@ describe("RC-009 run supervision", () => {
     expect(stalled.state).toBe("interrupted");
     expect(stalled.stopReason).toBe("stalled");
 
-    // No further progress after the stall interrupt.
+    // The killed agent settling later must not replace the honest ending.
+    await Bun.sleep(300);
     const after = (await (await request(app, cookie, `/api/runs/${run.id}`)).json()) as RunSummary;
     expect(after.state).toBe("interrupted");
     expect(after.stopReason).toBe("stalled");

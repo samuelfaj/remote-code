@@ -216,12 +216,27 @@ export function startAcpPrompt(options: Options): AcpSessionHandle {
 
   child.on("exit", () => {
     if (!settled) settled = true;
+    // An agent that dies without answering must settle the waiting requests,
+    // so a killed run's supervisor does not wait for the full prompt timeout.
+    for (const [id, resolve] of pending) {
+      pending.delete(id);
+      resolve({ error: { message: "agent exited before answering" } });
+    }
   });
 
   return {
     done,
     cancel: () => send({ method: "session/cancel", params: { sessionId } }),
     kill: () => {
+      // A stalled or cancelled run must not leave its terminal commands running.
+      for (const terminal of terminals.values()) {
+        try {
+          terminal.proc.kill("SIGKILL");
+        } catch {
+          // Already gone.
+        }
+      }
+      terminals.clear();
       try {
         child.kill("SIGKILL");
       } catch {

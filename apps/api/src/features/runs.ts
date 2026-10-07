@@ -101,21 +101,26 @@ export function runsFeature(
       // Only a run with a live agent process can stall; skipping the scan when
       // there is none keeps the watchdog from polling an idle API's database.
       if (live.size === 0) return;
-      const now = Date.now();
-      const rows = database((db) => db.query<RunRow, []>(
-        "SELECT * FROM runs WHERE state IN ('starting', 'running')",
-      ).all());
-      for (const row of rows) {
-        const progressAt = row.heartbeat_at
-          ? new Date(row.heartbeat_at).getTime()
-          : new Date(row.created_at).getTime();
-        if (now - progressAt <= stallMs) continue;
-        const current = readRow(row.id);
-        if (!current || TERMINAL_STATES.includes(current.state) || current.state === "needs_user") continue;
-        live.get(row.id)?.kill();
-        live.delete(row.id);
-        transition(row.id, { state: "interrupted", stop_reason: "stalled" });
-        emit(row.id);
+      try {
+        const now = Date.now();
+        const rows = database((db) => db.query<RunRow, []>(
+          "SELECT * FROM runs WHERE state IN ('starting', 'running')",
+        ).all());
+        for (const row of rows) {
+          const progressAt = row.heartbeat_at
+            ? new Date(row.heartbeat_at).getTime()
+            : new Date(row.created_at).getTime();
+          if (now - progressAt <= stallMs) continue;
+          const current = readRow(row.id);
+          if (!current || TERMINAL_STATES.includes(current.state) || current.state === "needs_user") continue;
+          live.get(row.id)?.kill();
+          live.delete(row.id);
+          transition(row.id, { state: "interrupted", stop_reason: "stalled" });
+          emit(row.id);
+        }
+      } catch {
+        // Storage is unavailable; readiness reports the degraded service and
+        // the next tick retries. A timer must never crash the API.
       }
     }, period);
   }
@@ -219,7 +224,9 @@ export function runsFeature(
     handle.done.then(({ stopReason, error: acpError }) => {
       live.delete(id);
       const current = readRow(id);
-      if (current?.state === "needs_user") return;
+      // A handoff or an earlier honest ending (stop deadline, stall watchdog)
+      // must not be replaced by whatever the agent reports afterwards.
+      if (!current || TERMINAL_STATES.includes(current.state) || current.state === "needs_user") return;
       const stopped = requestedStop() !== null;
       const state: RunState = stopReason === "cancelled" || stopped
         ? "interrupted"

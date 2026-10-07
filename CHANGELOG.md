@@ -1,4 +1,14 @@
 # Changelog
+## Fix — four review findings on the RC-027 change 2026-10-07T08:55:00Z (UTC)
+
+- Independent review of the stall watchdog and spawn handling found four concrete defects, all fixed:
+  1. A run ended by the watchdog (or by the stop deadline) could later be replaced by the agent's own report: the completion handler now skips any run that is already terminal or in `needs_user`.
+  2. Killing a stalled agent left its ACP terminal commands running: `kill()` now also kills and clears every terminal child.
+  3. An agent that dies without answering left requests pending until their full timeout: the child `exit` handler now settles them, so a killed run's supervisor stops waiting.
+  4. The watchdog's database work ran unguarded inside a timer: it is now wrapped so a locked database cannot crash the API.
+  5. The proof's "no agent process" check matched nothing (the agent is a shebang script, so `/proc/<pid>/cmdline` starts with the interpreter): it now matches argv[1], and the proof first asserts the running agent IS detected so the termination check cannot pass vacuously.
+- Verification: the stall test fails when the terminal-state guard is reverted (falsified) and passes with it; `apps/api/src/runs.test.ts` 14 pass; the RC-027 container proof passes twice with the agent positively detected while running.
+
 ## RC-027 accepted — stuck runs end honestly, freeze/kill-host proven 2026-10-07T08:20:00Z (UTC)
 
 - New `scripts/rc027/run-stuck-run-proof.sh` and `scripts/rc027/blocking-agent` (a controlled ACP agent that appends exactly one line to a file, then never answers the prompt). In a real container with the API on one SQLite database: (1) `docker restart` kills the host mid-command → after the API restarts the run is `interrupted` with `stopReason: host_restart`, no agent process remains, and the effect file still has exactly one line; (2) with `REMOTECODE_RUN_STALL_MS=3000`, a silent agent's run becomes `interrupted`/`stalled` in ~4s, its process is gone, and its effect file also has exactly one line. PASS twice.

@@ -29,11 +29,12 @@ json_field() {
 
 # The image has no pgrep/ps, so read /proc directly.
 agent_pids() {
-  # Match only the agent's own argv[0]; the API's launcher shell also carries
-  # the path in REMOTECODE_DISTILL_BIN.
+  # The agent is a shebang script, so /proc/<pid>/cmdline is the interpreter
+  # followed by the script path. Match argv[1]; the API's launcher shell also
+  # carries the path in REMOTECODE_DISTILL_BIN and must not match.
   run bash -lc 'for d in /proc/[0-9]*; do
-    c=$(tr "\0" " " < "$d/cmdline" 2>/dev/null)
-    case "$c" in "/workspace/rc027-blocking-agent"*) basename "$d" ;; esac
+    set -- $(tr "\0" "\n" < "$d/cmdline" 2>/dev/null)
+    [ "$2" = "/workspace/rc027-blocking-agent" ] && basename "$d"
   done' 2>/dev/null || true
 }
 
@@ -102,6 +103,11 @@ done
 say "-- verify run is running and effect file has one line before restart --"
 [ "$STATE1" = "running" ] || { say "FAIL run1 not running before restart: $BODY1"; exit 1; }
 [ "$LINES1" = "1" ] || { say "FAIL effect file does not have 1 line before restart: $LINES1"; exit 1; }
+
+say "-- the agent process is detectable while it runs (the later check is not vacuous) --"
+AGENT_ALIVE1=$(agent_pids)
+say "agent pids while running: [$AGENT_ALIVE1]"
+[ -n "$AGENT_ALIVE1" ] || { say "FAIL could not find the running agent process; the termination check would be vacuous"; exit 1; }
 
 say "-- restart container (kills API and agent mid-command) --"
 docker restart rc027-proof >/dev/null
@@ -192,6 +198,9 @@ done
 say "-- verify run2 is running and effect2 file has one line --"
 [ "$STATE2" = "running" ] || { say "FAIL run2 not running before stall: $BODY2"; exit 1; }
 [ "$LINES2" = "1" ] || { say "FAIL effect2 file does not have 1 line before stall: $LINES2"; exit 1; }
+AGENT_ALIVE2=$(agent_pids)
+say "agent pids while running: [$AGENT_ALIVE2]"
+[ -n "$AGENT_ALIVE2" ] || { say "FAIL could not find the running agent process; the termination check would be vacuous"; exit 1; }
 
 say "-- poll until run2 is interrupted with stalled (bound 60s) --"
 STALL_START=$(date +%s)
