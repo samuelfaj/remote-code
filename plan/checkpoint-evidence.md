@@ -1,3 +1,11 @@
+# RC-030 git fetch/pull/push — acceptance — 2026-10-07 (UTC)
+
+- **Status:** Complete. Status, stage/commit, branch, diff, fetch, pull and push are available through the shipped routes with real results on Linux.
+- **Command:** `RC030_GIT_IMAGE=rc030-gitproof:local RC030_GIT_PROOF_DIR=<fresh dir> bun scripts/run-git-status-proof.ts` (Docker Linux/arm64 `rc030-gitproof:local`, repo bind-mounted read-only, TLS API started from the mounted source).
+- **Observed (two runs; `result: git_status_commit_branch_diff_and_remote_passed`):** with a local bare repository as `origin`, `POST .../git/push` returned `head == remoteHead == d26d44c6736c65a68c57018b721036efbede8c9b`, and `git --git-dir <bare> rev-parse main` returned the same sha. A second working copy then advanced the remote to `3a92237fe40fc27912af3d23c7eafa770a34fc1d`; `POST .../git/fetch` returned `branches: ["origin/main"]`, `refs/remotes/origin/main` matched the new remote sha, and the working tree still had no `from-remote.txt`; `POST .../git/pull` returned `updated: true` with `head` equal to the remote sha and the pulled file content `remote`. A local commit plus a further remote advance made the branches diverge, and pull was refused with 409 `pull_not_fast_forward`. Push to an unknown remote → 404 `remote_not_found`; fetch with `../evil` → 400 `invalid_remote_name`; anonymous push → 401. `git version 2.47.3`; `PRAGMA quick_check` ok. Existing slice (status/commit/replay/commit-dirty/diff/branch/switch/404/401) still passed in the same run.
+- **Failure-if check:** every confirmed commit/push corresponds to a real git object verified with the CLI in the container (local sha == remote-tracking sha == bare-repo sha), and all git runs happen inside the Linux container, never on the local machine.
+- **Checks:** `bun test apps/api/src packages/client/src` 197 pass / 74 skip / 0 fail; `bun run typecheck` exit 0.
+
 # RC-027 stuck runs end honestly — acceptance — 2026-10-07 (UTC)
 
 - **Status:** Complete. A run whose heartbeat stops making progress ends with an honest state, its agent is stopped, and no external effect is repeated.

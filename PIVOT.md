@@ -1,5 +1,12 @@
 # Pivot policy
 
+## RC-030 fetch/pull/push — unblocked with a local bare remote 2026-10-07 (UTC)
+
+- **Was blocked by:** the earlier decision that fetch/pull/push "need a network remote with credentials", which no proof runner provides.
+- **Materially different route:** a local bare repository (`git init --bare` inside the container, bound through the volume) is a legitimate git remote and exercises the same fetch/pull/push code path with no network and no credentials. The remote is configured by the operator/terminal (`git remote add`), exactly as a user would configure any remote.
+- **Result:** the shipped routes drive push/fetch/pull against it with real results, including a refused diverged pull; RC-030 is accepted. A genuinely remote (https/ssh) transport remains untested here, but it goes through the same route and git code path; only the transport differs.
+
+
 ## RC-023 accepted — "Needs you" handoff and persisted session id 2026-10-07 (UTC)
 
 - **Closed the open clause of the entry below.** The run supervisor now persists the real ACP session id and can record a run as `needs_user` (the "Needs you" state from `plan/index.html`) through `POST /api/runs/:id/handoff`. A handoff is not overwritten when the agent finishes and survives a host restart, so the Bot's paused session is honest after a restart.

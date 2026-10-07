@@ -123,3 +123,165 @@ it.skipIf(process.platform !== "linux")("refuses a foreign workspace id", async 
   }));
   expect(response.status).toBe(404);
 });
+
+it("fetch rejects an invalid remote name with 400", async () => {
+  const { app, workspaceId } = setup();
+  const response = await app.handle(new Request(`http://localhost/api/workspaces/${workspaceId}/git/fetch`, {
+    method: "POST",
+    headers: { cookie: `remotecode_session=${ownerToken}`, "content-type": "application/json" },
+    body: JSON.stringify({ remote: "invalid remote" }),
+  }));
+  expect(response.status).toBe(400);
+  const body = await response.json() as { error: string };
+  expect(body.error).toBe("invalid_remote_name");
+});
+
+it("pull rejects an invalid remote name with 400", async () => {
+  const { app, workspaceId } = setup();
+  const response = await app.handle(new Request(`http://localhost/api/workspaces/${workspaceId}/git/pull`, {
+    method: "POST",
+    headers: { cookie: `remotecode_session=${ownerToken}`, "content-type": "application/json" },
+    body: JSON.stringify({ remote: "invalid remote" }),
+  }));
+  expect(response.status).toBe(400);
+  const body = await response.json() as { error: string };
+  expect(body.error).toBe("invalid_remote_name");
+});
+
+it("push rejects an invalid remote name with 400", async () => {
+  const { app, workspaceId } = setup();
+  const response = await app.handle(new Request(`http://localhost/api/workspaces/${workspaceId}/git/push`, {
+    method: "POST",
+    headers: { cookie: `remotecode_session=${ownerToken}`, "content-type": "application/json" },
+    body: JSON.stringify({ remote: "invalid remote" }),
+  }));
+  expect(response.status).toBe(400);
+  const body = await response.json() as { error: string };
+  expect(body.error).toBe("invalid_remote_name");
+});
+
+it("fetch rejects an anonymous request with 401", async () => {
+  const { app, workspaceId } = setup();
+  const response = await app.handle(new Request(`http://localhost/api/workspaces/${workspaceId}/git/fetch`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ remote: "origin" }),
+  }));
+  expect(response.status).toBe(401);
+});
+
+it("pull rejects an anonymous request with 401", async () => {
+  const { app, workspaceId } = setup();
+  const response = await app.handle(new Request(`http://localhost/api/workspaces/${workspaceId}/git/pull`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ remote: "origin" }),
+  }));
+  expect(response.status).toBe(401);
+});
+
+it("push rejects an anonymous request with 401", async () => {
+  const { app, workspaceId } = setup();
+  const response = await app.handle(new Request(`http://localhost/api/workspaces/${workspaceId}/git/push`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ remote: "origin" }),
+  }));
+  expect(response.status).toBe(401);
+});
+
+it.skipIf(process.platform !== "linux")("fetch returns 404 for an unknown remote", async () => {
+  const { app, workspaceId, folderPath } = setup();
+  await provision(app, workspaceId);
+  git(folderPath, ["init", "-b", "main"]);
+  git(folderPath, ["remote", "add", "origin", "file:///tmp/fake.git"]);
+  const response = await app.handle(new Request(`http://localhost/api/workspaces/${workspaceId}/git/fetch`, {
+    method: "POST",
+    headers: { cookie: `remotecode_session=${ownerToken}`, "content-type": "application/json" },
+    body: JSON.stringify({ remote: "nonexistent" }),
+  }));
+  expect(response.status).toBe(404);
+  const body = await response.json() as { error: string };
+  expect(body.error).toBe("remote_not_found");
+});
+
+it.skipIf(process.platform !== "linux")("pull returns 404 for an unknown remote", async () => {
+  const { app, workspaceId, folderPath } = setup();
+  await provision(app, workspaceId);
+  git(folderPath, ["init", "-b", "main"]);
+  git(folderPath, ["remote", "add", "origin", "file:///tmp/fake.git"]);
+  const response = await app.handle(new Request(`http://localhost/api/workspaces/${workspaceId}/git/pull`, {
+    method: "POST",
+    headers: { cookie: `remotecode_session=${ownerToken}`, "content-type": "application/json" },
+    body: JSON.stringify({ remote: "nonexistent" }),
+  }));
+  expect(response.status).toBe(404);
+  const body = await response.json() as { error: string };
+  expect(body.error).toBe("remote_not_found");
+});
+
+it.skipIf(process.platform !== "linux")("push returns 404 for an unknown remote", async () => {
+  const { app, workspaceId, folderPath } = setup();
+  await provision(app, workspaceId);
+  git(folderPath, ["init", "-b", "main"]);
+  git(folderPath, ["remote", "add", "origin", "file:///tmp/fake.git"]);
+  const response = await app.handle(new Request(`http://localhost/api/workspaces/${workspaceId}/git/push`, {
+    method: "POST",
+    headers: { cookie: `remotecode_session=${ownerToken}`, "content-type": "application/json" },
+    body: JSON.stringify({ remote: "nonexistent" }),
+  }));
+  expect(response.status).toBe(404);
+  const body = await response.json() as { error: string };
+  expect(body.error).toBe("remote_not_found");
+});
+
+it.skipIf(process.platform !== "linux")("fetch refuses a foreign workspace id", async () => {
+  const { app, databasePath } = setup();
+  const database = new Database(databasePath);
+  database.query("INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)")
+    .run(createHash("sha256").update("b".repeat(64)).digest("hex"), "bob", Date.now() + 60_000);
+  const otherId = crypto.randomUUID();
+  database.query("INSERT INTO workspaces (id, user_id, name, created_at) VALUES (?, 'bob', 'other', ?)")
+    .run(otherId, new Date().toISOString());
+  database.close();
+  const response = await app.handle(new Request(`http://localhost/api/workspaces/${otherId}/git/fetch`, {
+    method: "POST",
+    headers: { cookie: `remotecode_session=${ownerToken}`, "content-type": "application/json" },
+    body: JSON.stringify({ remote: "origin" }),
+  }));
+  expect(response.status).toBe(404);
+});
+
+it.skipIf(process.platform !== "linux")("pull refuses a foreign workspace id", async () => {
+  const { app, databasePath } = setup();
+  const database = new Database(databasePath);
+  database.query("INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)")
+    .run(createHash("sha256").update("b".repeat(64)).digest("hex"), "bob", Date.now() + 60_000);
+  const otherId = crypto.randomUUID();
+  database.query("INSERT INTO workspaces (id, user_id, name, created_at) VALUES (?, 'bob', 'other', ?)")
+    .run(otherId, new Date().toISOString());
+  database.close();
+  const response = await app.handle(new Request(`http://localhost/api/workspaces/${otherId}/git/pull`, {
+    method: "POST",
+    headers: { cookie: `remotecode_session=${ownerToken}`, "content-type": "application/json" },
+    body: JSON.stringify({ remote: "origin" }),
+  }));
+  expect(response.status).toBe(404);
+});
+
+it.skipIf(process.platform !== "linux")("push refuses a foreign workspace id", async () => {
+  const { app, databasePath } = setup();
+  const database = new Database(databasePath);
+  database.query("INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)")
+    .run(createHash("sha256").update("b".repeat(64)).digest("hex"), "bob", Date.now() + 60_000);
+  const otherId = crypto.randomUUID();
+  database.query("INSERT INTO workspaces (id, user_id, name, created_at) VALUES (?, 'bob', 'other', ?)")
+    .run(otherId, new Date().toISOString());
+  database.close();
+  const response = await app.handle(new Request(`http://localhost/api/workspaces/${otherId}/git/push`, {
+    method: "POST",
+    headers: { cookie: `remotecode_session=${ownerToken}`, "content-type": "application/json" },
+    body: JSON.stringify({ remote: "origin" }),
+  }));
+  expect(response.status).toBe(404);
+});

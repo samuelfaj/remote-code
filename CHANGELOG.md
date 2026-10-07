@@ -1,4 +1,12 @@
 # Changelog
+## RC-030 accepted — fetch/pull/push via a local bare remote 2026-10-07T09:40:00Z (UTC)
+
+- `workspace-git.ts` gains the three missing routes, following the existing guarded shape (owner check, Linux-only, fd-guarded folder, `GIT_TERMINAL_PROMPT=0` so a remote cannot hang the request): `POST .../git/fetch` → `{remote, branches}` from the remote-tracking refs; `POST .../git/pull` → `{remote, branch, head, updated}` with `--ff-only` and 409 `pull_not_fast_forward`; `POST .../git/push` → `{remote, branch, head, remoteHead}` verified with `ls-remote`. Unknown remote → 404 `remote_not_found`, invalid names → 400.
+- Pivot (recorded in PIVOT.md): the earlier sessions deferred this slice as "needs a network remote". A local bare repository is a real git remote, so the slice was proven without network by pushing, fetching and pulling against `git init --bare` inside the container.
+- Proof `scripts/run-git-status-proof.ts` (extended, `RC030_GIT_IMAGE=rc030-gitproof:local`) PASS twice: push leaves the bare repo at exactly the local head; after a second working copy advances the remote, fetch updates `refs/remotes/origin/main` with the working tree unchanged, pull advances the head and brings the file, and a diverged pull is refused 409. Unknown remote, invalid remote name and anonymous push are refused. `git 2.47.3`, `PRAGMA quick_check` ok.
+- Checks: `bun test apps/api/src packages/client/src` 197 pass / 74 skip / 0 fail; `bun run typecheck` clean.
+- `plan/tasks.html`: RC-030 Complete; summary now 22 complete / 8 in progress / 0 blocked / 38 to do.
+
 ## Fix — four review findings on the RC-027 change 2026-10-07T08:55:00Z (UTC)
 
 - Independent review of the stall watchdog and spawn handling found four concrete defects, all fixed:

@@ -53,6 +53,14 @@ export function gitStatusFeature(databasePath: string, syncDirectory: (fd: numbe
     } catch { return null; }
     finally { db.close(); }
   }
+  function remoteNameValid(name: string): boolean {
+    return /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(name) && name !== "." && name !== "..";
+  }
+  function branchNameValid(name: string): boolean {
+    return typeof name === "string" && name.length > 0 && name.length <= 250 &&
+      /^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(name) && !name.includes("..") && !name.endsWith("/") &&
+      !name.endsWith(".lock") && !name.includes("//");
+  }
   void syncDirectory;
   return new Elysia().get("/api/workspaces/:workspaceId/git/status", ({ params, request, set }) => {
     const userId = liveUserId(request);
@@ -241,5 +249,108 @@ export function gitStatusFeature(databasePath: string, syncDirectory: (fd: numbe
   }, {
     params: t.Object({ workspaceId: t.String({ format: "uuid", minLength: 36, maxLength: 36 }) }),
     query: t.Object({ path: t.String({ minLength: 1, maxLength: 4096 }) }),
+  })
+  .post("/api/workspaces/:workspaceId/git/fetch", ({ params, body, request, set }) => {
+    const userId = liveUserId(request);
+    if (!userId) { set.status = 401; return { error: "unauthorized" as const }; }
+    const remote = typeof body.remote === "string" ? body.remote : "origin";
+    if (!remoteNameValid(remote)) { set.status = 400; return { error: "invalid_remote_name" as const }; }
+    if (process.platform !== "linux") { set.status = 501; return { error: "workspace_git_require_linux" as const }; }
+    const result = withProvisionedWorkspaceFolder(databasePath, userId, params.workspaceId, (folderFd, openAt, close) => {
+      if (!hasGitDir(folderFd, openAt, close)) return { status: 404 as const, body: { error: "not_a_repository" as const } };
+      const folderPath = readlinkSync(`/proc/self/fd/${folderFd}`);
+      const run = (args: string[]) => {
+        const proc = Bun.spawnSync(["git", ...args], { cwd: folderPath, stdout: "pipe", stderr: "pipe", timeout: 30_000, env: { ...process.env, GIT_CONFIG_NOSYSTEM: "1", GIT_TERMINAL_PROMPT: "0" } });
+        return { exitCode: proc.exitCode, stdout: proc.stdout.toString(), stderr: proc.stderr.toString() };
+      };
+      if (run(["remote", "get-url", remote]).exitCode !== 0) return { status: 404 as const, body: { error: "remote_not_found" as const } };
+      const fetchResult = run(["fetch", remote]);
+      if (fetchResult.exitCode !== 0) return { status: 503 as const, body: { error: "git_fetch_unavailable" as const } };
+      const refs = run(["for-each-ref", "--format=%(refname:short)", `refs/remotes/${remote}`]);
+      if (refs.exitCode !== 0) return { status: 503 as const, body: { error: "git_fetch_unavailable" as const } };
+      const branches = refs.stdout.split("\n").map((s) => s.trim()).filter((s) => s && !s.includes(" "));
+      if (branches.length > 100) return { status: 503 as const, body: { error: "git_fetch_unavailable" as const } };
+      branches.sort();
+      return { status: 200 as const, body: { remote, branches } };
+    });
+    if (result.kind !== "opened") {
+      set.status = result.kind === "not_found" ? 404 : process.platform === "linux" ? 503 : 501;
+      return { error: result.kind === "not_found" ? "not_found" : process.platform === "linux" ? "workspace_folder_unavailable" : "workspace_git_require_linux" };
+    }
+    set.status = result.value.status;
+    return result.value.body;
+  }, {
+    params: t.Object({ workspaceId: t.String({ format: "uuid", minLength: 36, maxLength: 36 }) }),
+    body: t.Object({ remote: t.Optional(t.String()) }),
+  })
+  .post("/api/workspaces/:workspaceId/git/pull", ({ params, body, request, set }) => {
+    const userId = liveUserId(request);
+    if (!userId) { set.status = 401; return { error: "unauthorized" as const }; }
+    const remote = typeof body.remote === "string" ? body.remote : "origin";
+    if (!remoteNameValid(remote)) { set.status = 400; return { error: "invalid_remote_name" as const }; }
+    const branch = typeof body.branch === "string" ? body.branch : null;
+    if (branch !== null && !branchNameValid(branch)) { set.status = 400; return { error: "invalid_branch_name" as const }; }
+    if (process.platform !== "linux") { set.status = 501; return { error: "workspace_git_require_linux" as const }; }
+    const result = withProvisionedWorkspaceFolder(databasePath, userId, params.workspaceId, (folderFd, openAt, close) => {
+      if (!hasGitDir(folderFd, openAt, close)) return { status: 404 as const, body: { error: "not_a_repository" as const } };
+      const folderPath = readlinkSync(`/proc/self/fd/${folderFd}`);
+      const run = (args: string[]) => {
+        const proc = Bun.spawnSync(["git", ...args], { cwd: folderPath, stdout: "pipe", stderr: "pipe", timeout: 30_000, env: { ...process.env, GIT_CONFIG_NOSYSTEM: "1", GIT_TERMINAL_PROMPT: "0" } });
+        return { exitCode: proc.exitCode, stdout: proc.stdout.toString(), stderr: proc.stderr.toString() };
+      };
+      const effectiveBranch = branch ?? run(["rev-parse", "--abbrev-ref", "HEAD"]).stdout.trim();
+      if (run(["remote", "get-url", remote]).exitCode !== 0) return { status: 404 as const, body: { error: "remote_not_found" as const } };
+      const lsRemote = run(["ls-remote", "--heads", remote, `refs/heads/${effectiveBranch}`]);
+      if (lsRemote.stdout.trim() === "") return { status: 404 as const, body: { error: "remote_branch_not_found" as const } };
+      const beforeHead = run(["rev-parse", "HEAD"]);
+      const pull = run(["pull", "--ff-only", remote, effectiveBranch]);
+      if (pull.exitCode !== 0) return { status: 409 as const, body: { error: "pull_not_fast_forward" as const } };
+      const afterHead = run(["rev-parse", "HEAD"]);
+      return { status: 200 as const, body: { remote, branch: effectiveBranch, head: afterHead.stdout.trim(), updated: beforeHead.stdout.trim() !== afterHead.stdout.trim() } };
+    });
+    if (result.kind !== "opened") {
+      set.status = result.kind === "not_found" ? 404 : process.platform === "linux" ? 503 : 501;
+      return { error: result.kind === "not_found" ? "not_found" : process.platform === "linux" ? "workspace_folder_unavailable" : "workspace_git_require_linux" };
+    }
+    set.status = result.value.status;
+    return result.value.body;
+  }, {
+    params: t.Object({ workspaceId: t.String({ format: "uuid", minLength: 36, maxLength: 36 }) }),
+    body: t.Object({ remote: t.Optional(t.String()), branch: t.Optional(t.String()) }),
+  })
+  .post("/api/workspaces/:workspaceId/git/push", ({ params, body, request, set }) => {
+    const userId = liveUserId(request);
+    if (!userId) { set.status = 401; return { error: "unauthorized" as const }; }
+    const remote = typeof body.remote === "string" ? body.remote : "origin";
+    if (!remoteNameValid(remote)) { set.status = 400; return { error: "invalid_remote_name" as const }; }
+    const branch = typeof body.branch === "string" ? body.branch : null;
+    if (branch !== null && !branchNameValid(branch)) { set.status = 400; return { error: "invalid_branch_name" as const }; }
+    if (process.platform !== "linux") { set.status = 501; return { error: "workspace_git_require_linux" as const }; }
+    const result = withProvisionedWorkspaceFolder(databasePath, userId, params.workspaceId, (folderFd, openAt, close) => {
+      if (!hasGitDir(folderFd, openAt, close)) return { status: 404 as const, body: { error: "not_a_repository" as const } };
+      const folderPath = readlinkSync(`/proc/self/fd/${folderFd}`);
+      const run = (args: string[]) => {
+        const proc = Bun.spawnSync(["git", ...args], { cwd: folderPath, stdout: "pipe", stderr: "pipe", timeout: 30_000, env: { ...process.env, GIT_CONFIG_NOSYSTEM: "1", GIT_TERMINAL_PROMPT: "0" } });
+        return { exitCode: proc.exitCode, stdout: proc.stdout.toString(), stderr: proc.stderr.toString() };
+      };
+      const effectiveBranch = branch ?? run(["rev-parse", "--abbrev-ref", "HEAD"]).stdout.trim();
+      if (run(["remote", "get-url", remote]).exitCode !== 0) return { status: 404 as const, body: { error: "remote_not_found" as const } };
+      const push = run(["push", remote, effectiveBranch]);
+      if (push.exitCode !== 0) return { status: 503 as const, body: { error: "git_push_unavailable" as const } };
+      const lsRemote = run(["ls-remote", remote, `refs/heads/${effectiveBranch}`]);
+      if (lsRemote.stdout.trim() === "") return { status: 503 as const, body: { error: "git_push_unavailable" as const } };
+      const remoteHead = lsRemote.stdout.trim().split("\t")[0];
+      const head = run(["rev-parse", "HEAD"]);
+      return { status: 200 as const, body: { remote, branch: effectiveBranch, head: head.stdout.trim(), remoteHead } };
+    });
+    if (result.kind !== "opened") {
+      set.status = result.kind === "not_found" ? 404 : process.platform === "linux" ? 503 : 501;
+      return { error: result.kind === "not_found" ? "not_found" : process.platform === "linux" ? "workspace_folder_unavailable" : "workspace_git_require_linux" };
+    }
+    set.status = result.value.status;
+    return result.value.body;
+  }, {
+    params: t.Object({ workspaceId: t.String({ format: "uuid", minLength: 36, maxLength: 36 }) }),
+    body: t.Object({ remote: t.Optional(t.String()), branch: t.Optional(t.String()) }),
   });
 }

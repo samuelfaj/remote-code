@@ -1,6 +1,7 @@
-// RC-030 proof: git status slice through the real backend boundary on Linux.
+// RC-030 proof: git status/commit/branch/diff/fetch/pull/push through the real backend boundary on Linux.
 // Provisions a workspace, inits a git repo in the folder via the API's own
-// folder path, then checks branch/clean/dirty through the shipped route.
+// folder path, then checks branch/clean/dirty/commit/diff and drives fetch, pull
+// and push against a local bare repository (a real remote, no network).
 import { randomBytes, randomUUID } from "node:crypto";
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -119,10 +120,69 @@ try {
   const badBranch = await api(`/api/workspaces/${workspaceId}/git/branch`, "POST", { name: "../evil" }, cookie);
   if (badBranch.status !== 400) throw Error(`badbranch_${badBranch.status}`);
   record.branchSwitch = { created: createBranch.body, back: switchBack.body };
-  record.scope = "RC-030 git status+commit+branch+diff slice: branch/clean/dirty/404/401/commit/replay/branches/switch/diff; not fetch/pull/push";
+  // --- fetch / pull / push against a local bare repository (a real git remote) ---
+  const workspaceFolder = `/var/lib/remotecode/workspaces/${workspaceId}`;
+  const bare = "/var/lib/remotecode/rc030-remote.git";
+  const sh = (code: string) => command("docker", "exec", id, "bun", "-e", code).trim();
+  if (sh(`import{execSync}from'node:child_process';execSync('git init --bare -b main ${bare}',{stdio:['ignore','ignore','inherit']});console.log('ok')`) !== "ok") throw Error("bare_setup_failed");
+  if (sh(`import{execSync}from'node:child_process';execSync('git remote add origin ${bare}',{cwd:'${workspaceFolder}'});console.log('ok')`) !== "ok") throw Error("remote_add_failed");
+
+  const push = await api(`/api/workspaces/${workspaceId}/git/push`, "POST", { remote: "origin", branch: "main" }, cookie);
+  if (push.status !== 200 || !/^[0-9a-f]{40}$/.test(push.body?.head) || push.body.remoteHead !== push.body.head) {
+    throw Error(`push_${push.status}_${JSON.stringify(push.body)}`);
+  }
+  const bareHead = command("docker", "exec", id, "git", "--git-dir", bare, "rev-parse", "main");
+  if (bareHead !== push.body.head) throw Error(`push_remote_mismatch_${bareHead}_${push.body.head}`);
+  record.push = { ...push.body, bareHead };
+
+  // A second working copy advances the same remote independently.
+  const other = "/var/lib/remotecode/rc030-other";
+  const advance = `import{execSync}from'node:child_process';import{writeFileSync}from'node:fs';const d='${other}';` +
+    `execSync('git clone ${bare} '+d,{stdio:['ignore','ignore','inherit']});` +
+    `writeFileSync(d+'/from-remote.txt','remote');` +
+    `const g=(a)=>execSync('git -C '+d+' -c user.email=r@e.com -c user.name=r '+a,{stdio:['ignore','ignore','inherit']});` +
+    `g('add from-remote.txt');g('commit -m remote');g('push origin main');console.log('ok')`;
+  if (sh(advance) !== "ok") throw Error("remote_advance_failed");
+  const remoteAfter = command("docker", "exec", id, "git", "--git-dir", bare, "rev-parse", "main");
+
+  const fetched = await api(`/api/workspaces/${workspaceId}/git/fetch`, "POST", { remote: "origin" }, cookie);
+  if (fetched.status !== 200 || !fetched.body.branches.includes("origin/main")) throw Error(`fetch_${fetched.status}_${JSON.stringify(fetched.body)}`);
+  const tracking = command("docker", "exec", id, "git", "-C", workspaceFolder, "rev-parse", "refs/remotes/origin/main");
+  if (tracking !== remoteAfter) throw Error(`fetch_tracking_${tracking}_${remoteAfter}`);
+  const haveRemoteFile = sh(`import{existsSync}from'node:fs';console.log(existsSync('${workspaceFolder}/from-remote.txt')?'yes':'no')`);
+  if (haveRemoteFile !== "no") throw Error("fetch_changed_the_working_tree");
+  record.fetch = { ...fetched.body, tracking, workingTreeUnchanged: true };
+
+  const pull = await api(`/api/workspaces/${workspaceId}/git/pull`, "POST", { remote: "origin", branch: "main" }, cookie);
+  if (pull.status !== 200 || pull.body.updated !== true || pull.body.head !== remoteAfter) {
+    throw Error(`pull_${pull.status}_${JSON.stringify(pull.body)}`);
+  }
+  const pulled = command("docker", "exec", id, "cat", `${workspaceFolder}/from-remote.txt`).trim();
+  if (pulled !== "remote") throw Error(`pull_content_mismatch_${pulled}`);
+  record.pull = { ...pull.body, content: pulled };
+
+  // Diverged branches must be refused rather than force-merged.
+  if (sh(`import{writeFileSync}from'node:fs';writeFileSync('${workspaceFolder}/local-only.txt','local');console.log('ok')`) !== "ok") throw Error("local_write_failed");
+  const local = await api(`/api/workspaces/${workspaceId}/git/commit`, "POST", { requestId: randomUUID(), message: "local divergence" }, cookie);
+  if (local.status !== 200) throw Error(`local_commit_${local.status}_${JSON.stringify(local.body)}`);
+  if (sh(`import{execSync}from'node:child_process';import{writeFileSync}from'node:fs';const d='${other}';` +
+    `writeFileSync(d+'/second.txt','two');const g=(a)=>execSync('git -C '+d+' -c user.email=r@e.com -c user.name=r '+a,{stdio:['ignore','ignore','inherit']});` +
+    `g('add second.txt');g('commit -m second');g('push origin main');console.log('ok')`) !== "ok") throw Error("remote_advance2_failed");
+  const diverged = await api(`/api/workspaces/${workspaceId}/git/pull`, "POST", { remote: "origin", branch: "main" }, cookie);
+  if (diverged.status !== 409 || diverged.body.error !== "pull_not_fast_forward") throw Error(`diverge_${diverged.status}_${JSON.stringify(diverged.body)}`);
+  record.pullRefusedDiverged = diverged.body;
+
+  const unknownRemote = await api(`/api/workspaces/${workspaceId}/git/push`, "POST", { remote: "nope", branch: "main" }, cookie);
+  if (unknownRemote.status !== 404 || unknownRemote.body.error !== "remote_not_found") throw Error(`unknownremote_${unknownRemote.status}`);
+  const badRemote = await api(`/api/workspaces/${workspaceId}/git/fetch`, "POST", { remote: "../evil" }, cookie);
+  if (badRemote.status !== 400 || badRemote.body.error !== "invalid_remote_name") throw Error(`badremote_${badRemote.status}`);
+  const anonPush = await api(`/api/workspaces/${workspaceId}/git/push`, "POST", { remote: "origin", branch: "main" });
+  if (anonPush.status !== 401) throw Error(`anonpush_${anonPush.status}`);
+
+  record.scope = "RC-030 git: status/commit/branch/diff plus fetch/pull/push against a local bare remote; diverged pull refused; unknown remote, invalid remote and anonymous refused";
   const state = JSON.parse(command("docker", "exec", id, "bun", "-e", stateCode));
   record.state = state;
-  record.result = "git_status_slice_passed";
+  record.result = "git_status_commit_branch_diff_and_remote_passed";
   console.log(JSON.stringify({ result: record.result, clean: record.clean, dirty: record.dirty }));
 } catch (error) {
   record.error = error instanceof Error ? error.message : String(error);
