@@ -1,4 +1,13 @@
 # Changelog
+## RC-002 accepted — real Distill stdio session inside Linux 2026-10-06T23:20:00Z (UTC)
+
+- Pivot (authorized by /sam-pivot): the timed-out v2.0.14 prompt is not retried; a materially different route proves the ticket. Official Distill v2.0.33 Linux `aarch64` asset (SHA-256 verified) ran `distill agent stdio` natively in a clean Debian 12 Linux guest.
+- New `scripts/rc002/acp_client.py` (complete ACP client: permission, fs, terminal) + `scripts/rc002/run-distill-linux-stdio-proof.sh` (one-command, self-asserting). Transcript in the goal scratch `rc002-stdio.txt`.
+- Proven: file creation (`end_turn`, `rc002-created.txt` = `hello-rc002`); interruption (`session/cancel` -> `stopReason: cancelled`, persisted `turn_ended outcome=cancelled`, never completed); restart reconciliation (file, cancelled turn and `distill usage` receipt survive host/process restart). No RemoteCode fork, no Mac runtime for the process.
+- `plan/tasks.html`: RC-002 Complete; summary now 14 complete / 9 in progress / 0 blocked / 45 to do.
+## RC-007 GUI image assessment — X11 stack verified 2026-10-07T10:00:00Z (UTC)
+
+- `remotecode/computer:local` start.sh verified: Xvfb + fluxbox + x11vnc + websockify + Chromium. Elysia/Distill/linux-use integration open; task stays To Do.
 ## Full verification at 27ca510 — green 2026-10-07T09:00:00Z (UTC)
 
 - Plan verification: log clean, tree clean, remote matches local 27ca510. TSC clean, full suites 202 pass / 68 skip (Linux-gated) / 0 fail across 26 files. Backlog: RC-030 local + RC-032 host path proven; Distill-gated and new-infra tasks pivoted open per PIVOT.md.

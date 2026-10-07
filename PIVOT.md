@@ -1,5 +1,9 @@
 # Pivot policy
 
+## RC-007 GUI image — exists, Distill integration open 2026-10-07 (UTC)
+
+- **Finding:** `remotecode/computer:local` ships Xvfb + fluxbox + x11vnc + websockify + Chromium (start.sh verified). Missing: Elysia + Distill + linux-use in same container. RC-007 stays To Do; image is a GUI slice, not the full contract.
+
 ## Mid-backlog assessment — Distill-gated, deferred 2026-10-06 (UTC)
 
 - **Decision:** RC-037/038/039/045/046/048/049/050 stay To Do unchanged. All depend on Distill threads/Bots/schedules (RC-022/023/034/038/040/044/045 chain) with no existing code surface — gated behind blocked RC-002. Every Distill-free local surface already proven this session. No partial claim.
@@ -743,3 +747,12 @@ Keep safe, evidence-backed work moving when a task encounters a blocker. A pivot
 - **What this goal run delivered (pushed, reviewed, verified):** terminal honesty slices across start/send/resize/stop/poll/inspect/saveLayout/loadLayout (fences, receipts, CAS guards, preflight mapping, evidence-source wording, session-401 narrowing); full suite 176 pass/64 skip/0 fail/2160 assertions; terminal component E2E 10 pass in real Chromium; every code slice reasoning-reviewed with defects fixed or reverted; CHANGELOG + checkpoint-evidence current per checkpoint; X posts per rule (one double-submit recorded with dedup note; standing rule now max one/hour via humanizer).
 - **Why the backlog cannot close here:** RC-002 stays Blocked (no authorized receipt; retry forbidden); RC-004 and all Distill-gated work stay gated; RC-031/RC-033 stay In Progress (native surfaces, flow-control journey, mobile tab surface are product decisions needing real environments/devices, not local slices); phases 04-06 (bots, clients, deploy, billing) need accounts/devices/infra never granted in this session.
 - **Resume path for another agent:** tree clean at 58493b9 on checkpoint/rc002-linux-runtime-evidence, remote in sync. Next slices are the open In-Progress tasks in dependency order (RC-031 flow control → RC-033 acceptance → RC-018 closure), each with Start/Delivery/proof/Failure fields in plan/tasks.html. No blockers need user answers; the blockers are missing environments/credentials, recorded honestly — not code defects to work around.
+
+## Pivot record — RC-002 unblocked via a complete ACP client on current Distill — 2026-10-06
+
+- **Decision:** The standing rule "do not retry the timed-out v2.0.14 `session/prompt`" is honored; RC-002 is unblocked by a materially different route, per the user's explicit `/sam-pivot` authorization ("NÃO ACEITE BLOCKERS, SE DESBLOQUEIE SOZINHO"). The old attempt's provider effect stays recorded as unknown; nothing claims it was settled.
+- **What failed before:** A minimal ACP client that handled only permission requests stalled on `session/prompt` for both v2.0.14 (Linux guest) and v2.0.33 (checked on the Mac while diagnosing). The real cause was client-side: the reader loop that consumed agent notifications stopped after the first `session/update`, so the prompt result was never read.
+- **New route:** current official Distill v2.0.33 Linux `aarch64` release asset (checksum-verified), run natively (no emulation) in a clean Debian 12 guest; `scripts/rc002/acp_client.py` implements the full ACP client surface (`session/request_permission`, `fs/*`, `terminal/*`, notifications) and records the whole JSON transcript; `scripts/rc002/run-distill-linux-stdio-proof.sh` performs create + interrupt + restart-reconcile and asserts.
+- **Result:** real file creation, a cancelled (never completed) interrupted run, and durable file + cancelled-turn + `distill usage` receipt after a full host/process restart, all inside Linux with no RemoteCode fork and no macOS runtime for the Distill process.
+- **Capabilities recorded as missing:** full ACP client method coverage is required (permission-only stalls); no built-in headless one-shot prompt (stdio ACP is the interface); `session/set_model` alone can trigger HTTP 400 invalid-reasoning-effort; interrupted turns are absent from `distill usage` (durable state is the session `events.jsonl`).
+- **Next:** RC-002 was blocking RC-007, RC-009, RC-015, RC-022 and the Distill-gated chain. Re-derive which of those are now eligible, then continue the in-progress and remaining tasks.
