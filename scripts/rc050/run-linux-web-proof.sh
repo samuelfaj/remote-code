@@ -50,7 +50,12 @@ docker volume create "$DATA_VOLUME" >/dev/null
 # arranges it (scripts/run-terminal-linux-browser-proof.ts).
 # The terminal has to be able to run git, so it uses the same host image the
 # API runs in rather than a bare runtime image.
-TERMINAL_IMAGE="${RC050_TERMINAL_IMAGE:-$IMAGE}"
+# The terminal feature only accepts a terminal image given as an image ID
+# (apps/api/src/features/terminals.ts validConfig), so the terminal image is
+# addressed by its ID rather than by a tag.
+TERMINAL_REF="${RC050_TERMINAL_REF:-remotecode/terminal:local}"
+docker build -q -t "$TERMINAL_REF" -f "$ROOT/prototype/terminal.Dockerfile" "$ROOT" >/dev/null
+TERMINAL_IMAGE="${RC050_TERMINAL_IMAGE:-$(docker image inspect -f '{{.Id}}' "$TERMINAL_REF")}"
 docker run -d --name "$NAME" -p "127.0.0.1:${API_PORT}:3000" -v "$DATA_VOLUME:/var/lib/remotecode" \
   --mount type=bind,src=/var/run/docker.sock,dst=/var/run/docker.sock,readonly \
   -e REMOTECODE_TERMINAL_VOLUME="$DATA_VOLUME" \

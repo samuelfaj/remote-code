@@ -108,6 +108,34 @@ test("edits a file, observes git status, uses terminal, and restores layout afte
   await fileRow.click();
   await expect(page.getByTestId("git-diff")).toContainText("second line", { timeout: 20_000 });
 
+  // The file editor edits the same real file. The panel's own message is not
+  // the evidence: the host content read back afterwards is.
+  await page.getByRole("button", { name: "Refresh folder and files" }).click();
+  const openFile = page.getByRole("button", { name: `Open file ${fileName}` });
+  await expect(openFile).toBeVisible({ timeout: 20_000 });
+  await openFile.click();
+  const draft = page.getByLabel("File draft");
+  await expect(draft).toBeVisible({ timeout: 20_000 });
+  const edited = "first line\nedited through the file editor\nsecond line\n";
+  await draft.fill(edited);
+  await page.getByRole("button", { name: "Save file" }).click();
+  await expect(page.getByTestId("file-status")).toContainText(`SAVE receipt confirmed for ${fileName}`, { timeout: 20_000 });
+  const hosted = await page.evaluate(async (id: string) => {
+    const response = await fetch(`/api/workspaces/${id}/files/content?path=rc050-test-file.txt`);
+    return { status: response.status, json: await response.json() };
+  }, workspaceAId) as { status: number; json: { content?: string } };
+  expect(hosted.status, "GET file content").toBe(200);
+  expect(hosted.json.content).toBe(edited);
+
+  // The saved edit shows in the Git view, after asking it to look again.
+  await page.getByRole("button", { name: "Refresh git status" }).click();
+  await page.getByTestId(`git-file-${safe(fileName)}`).click();
+  await expect(page.getByTestId("git-diff")).toContainText("edited through the file editor", { timeout: 20_000 });
+
+  // The layout is stored per workspace on the host, so it has to come back.
+  await page.getByRole("button", { name: "Save layout" }).click();
+  await expect(page.getByTestId("terminal-layout-state")).toContainText("Layout saved", { timeout: 20_000 });
+
   // Another workspace never shows this workspace's work.
   await page.getByLabel("Workspace name", { exact: true }).fill(workspaceB);
   await page.getByRole("button", { name: "Create workspace" }).click();
@@ -116,6 +144,7 @@ test("edits a file, observes git status, uses terminal, and restores layout afte
   await expect(page.getByTestId("selected-workspace")).toContainText(workspaceB);
   await expect(page.getByTestId("git-status")).toBeVisible({ timeout: 20_000 });
   await expect(page.getByTestId(`git-file-${safe(fileName)}`)).toHaveCount(0);
+  await expect(page.getByTestId("terminal-layout-state")).toContainText("No saved layout for this workspace", { timeout: 20_000 });
 
   // Back to A, then a real reload of the page.
   await page.getByRole("button", { name: `Open workspace ${workspaceA}` }).click();
@@ -126,6 +155,8 @@ test("edits a file, observes git status, uses terminal, and restores layout afte
   await page.getByRole("button", { name: `Open workspace ${workspaceA}` }).click();
   await expect(page.getByTestId("selected-workspace")).toContainText(workspaceA);
   await expect(page.getByTestId(`git-file-${safe(fileName)}`)).toBeVisible({ timeout: 20_000 });
+  // The reloaded client reads this workspace's stored layout back from the host.
+  await expect(page.getByTestId("terminal-layout-state")).toContainText("Shared tabs: 1", { timeout: 20_000 });
 
   // Every displayed git row is a path the backend reports for this workspace.
   const rows = await page.locator("[data-testid^='git-file-']").all();

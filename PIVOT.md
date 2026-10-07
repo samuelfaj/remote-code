@@ -1,4 +1,9 @@
-# Pivot policy
+## RC-050 — the terminal image route, not the host image 2026-10-08 (UTC)
+- **Route that failed:** the Linux proof ran the terminal with the pinned `oven/bun` image, whose container has no `git`, so the workspace never became a repository and `GET /api/workspaces/:id/git/status` answered `not_a_repository`.
+- **Second route that failed:** pointing the terminal at the host image made `Start Linux terminal` refuse to start. The cause is the terminal contract, not the image: `publicImageEnvironment` in `apps/api/src/features/terminals.ts` accepts only an image whose `Config.Env` is exactly the canned `PATH`/`TERM`/`BUN_*` set, and the host image carries `DISPLAY`, `XDG_SESSION_TYPE`, `API_PORT`, `DATABASE_PATH` and `SOURCE_DATE_EPOCH`, so start failed with `terminal_image_not_public`. `validConfig` separately requires the terminal image to be given as an image ID (`sha256:...`).
+- **Route taken:** `prototype/terminal.Dockerfile` builds the terminal image from the same base with `git` added and no extra `ENV`; the runner builds it, passes its image ID, and the proof passes three times. Weakening the environment allowlist was rejected: it is a boundary the terminal feature depends on.
+
+Pivot policy
 
 ## RC-050: the halt was mine to remove, and most of it now is 2026-10-08 (UTC)
 
