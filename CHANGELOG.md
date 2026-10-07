@@ -1,4 +1,7 @@
 # Changelog
+## RC-029 file-editor re-proof — passed on a3bbd45 2026-10-06T23:00:00Z (UTC)
+
+- `run-file-editor-linux-browser-proof.ts --frozen-inputs` passed on a3bbd45: source unchanged, cleanup clean. Covers new git route files (sourceUnchanged true with workspace-git.ts present).
 ## Mid-backlog assessment — Distill-gated 2026-10-06T22:00:00Z (UTC)
 
 - PIVOT.md records RC-037/038/039/045/046/048/049/050 deferred (Distill chain, gated behind RC-002). Criteria unchanged.
