@@ -272,6 +272,17 @@ if [[ "${RC_NATIVE_TEST_WORKSPACES:-0}" == "1" ]]; then
   SKIP_TEST_ARG=""
   EXTRA_SKIP_ARGS=()
 fi
+if [[ "${RC_NATIVE_TEST_NAVIGATION:-0}" == "1" ]]; then
+  for mode in RC_NATIVE_TEST_RECOVERY RC_NATIVE_TEST_AUTO_ACTION RC_NATIVE_TEST_HEALTH RC_NATIVE_TEST_DEADLINE RC_NATIVE_TEST_POST_DELAY RC_NATIVE_TEST_LOGIN_DEADLINE RC_NATIVE_TEST_LOGIN_PREFLIGHT_DEADLINE RC_NATIVE_TEST_WORKSPACES RC_NATIVE_TEST_PRIVACY_EXPIRY RC_NATIVE_TEST_PRIVACY_BUSY RC_NATIVE_TEST_STORAGE_FAILURE RC_NATIVE_TEST_FILES; do
+    if [[ "${!mode:-0}" == "1" ]]; then
+      echo "RC_NATIVE_TEST_NAVIGATION cannot be combined with $mode." >&2
+      exit 2
+    fi
+  done
+  API_ENTRY="apps/api/src/index.ts"
+  SKIP_TEST_ARG=""
+  EXTRA_SKIP_ARGS=()
+fi
 if [[ "${RC_NATIVE_TEST_PRIVACY_EXPIRY:-0}" == "1" ]]; then
   API_ENTRY="apps/api/test-support/native-recovery.ts"
   SKIP_TEST_ARG=""
@@ -457,6 +468,14 @@ PYDEPS
   printf '{"containerId":"%s","name":"%s","ownedDeviceId":"%s","image":"%s"}\n' "$DOCKER_ID" "$DOCKER_NAME" "$OWNED_DEVICE_ID" "$LINUX_IMAGE" > "$WORK_DIR/linux-container.json"
   docker start "$DOCKER_ID" >/dev/null
 else
+  if [[ "${RC_NATIVE_TEST_NAVIGATION:-0}" == "1" ]]; then
+    cat > "$WORK_DIR/rc055-stub-agent.sh" <<'STUB'
+#!/bin/bash
+exec node "$ROOT_DIR/apps/api/src/features/runs-stub-agent.mjs"
+STUB
+    chmod +x "$WORK_DIR/rc055-stub-agent.sh"
+    REMOTECODE_DISTILL_BIN="$WORK_DIR/rc055-stub-agent.sh"
+  fi
   API_PORT="$API_PORT" \
     DATABASE_PATH="$DATABASE_PATH" \
     RC_NATIVE_TEST_STORAGE_DEVICE_ID="$OWNED_DEVICE_ID" \
@@ -464,6 +483,7 @@ else
     RC_NATIVE_TEST_WORK_DIR="$WORK_DIR" \
     REMOTECODE_AUTH_PASSWORD="$API_PASSWORD" \
     REMOTECODE_WEB_ORIGIN="$API_WEB_ORIGIN" \
+    ${REMOTECODE_DISTILL_BIN:+REMOTECODE_DISTILL_BIN="$REMOTECODE_DISTILL_BIN"} \
     bun run "$API_ENTRY" > "$WORK_DIR/api.log" 2>&1 &
   API_PID=$!
 fi
