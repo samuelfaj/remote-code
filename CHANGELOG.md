@@ -1,4 +1,7 @@
 # Changelog
+## RC-028 workspace re-proof — passed on 4adfeb3 2026-10-07T01:30:00Z (UTC)
+
+- `run-workspace-linux-browser-proof.ts` run2 passed on 4adfeb3: 2 workspaces, rename + archive, quick_check ok, cleanup true.
 ## RC-032 SSH re-proof — passed on 09f8324 2026-10-07T01:00:00Z (UTC)
 
 - `run-ssh-proof.ts` run2 `ssh_transfer_slice_passed` on 09f8324, cleanup true.
