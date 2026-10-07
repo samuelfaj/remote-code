@@ -1,3 +1,12 @@
+# RC-059 publish self-managed installation — acceptance — 2026-10-08 (UTC)
+
+- **Status:** Complete. The public instructions install the host, the volume and the external supervisor, and a clean Linux environment can complete Bot creation and a restore by following only them.
+- **Command:** `RC059_PROOF_DIR=<fresh dir> bun scripts/rc059/run-install-proof.ts` (a clean `docker:cli` container with the host's Docker socket and this repository mounted, driven from the host).
+- **Observed (two runs, `result: public_instructions_installed_a_host_with_bot_creation_and_restore_passed`):** the proof extracted 10 fenced `bash` blocks from `INSTALL.md` and ran them in order in one shell. The image built, the readiness probe returned `ready`, the supervisor reported `healthy restarts=1`, the first Bot was created (`FirstBot`), the backup printed an archive path with a manifest counting one Bot, the restore returned `"requiresNewLogin":true`, signing in again with the documented command worked, and the Bot list afterwards contained both `AfterRestore` and the original `FirstBot`. The document check confirmed it never names a private registry, a licence key or a payment URL, and that it states no paid account and no internal-service access are needed.
+- **Failure-if check:** no step required a paid account, internal access or an undocumented command — every command the proof ran came from the document — and the journey (Bot creation and restore) completed.
+- **Defects fixed while proving:** nested quoting in the login/Bot/backup/restore commands produced a 422; the supervisor step backgrounded a one-shot process so its report was lost.
+- **Checks:** `bun test apps/api/src apps/gateway/src packages/client/src` 384 tests, 0 failures; `bun run typecheck` exit 0; documentation-links gate exit 0.
+
 # RC-058 verifiable backup and restore — acceptance — 2026-10-07 (UTC)
 
 - **Status:** Complete. A backup of the database, workspace files and Bot profiles restores on another host with a report of what returned and what needs a new login, and an invalid copy is rejected.

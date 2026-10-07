@@ -1,4 +1,13 @@
 # Changelog
+## RC-059 accepted — public self-managed installation 2026-10-08T00:30:00Z (UTC)
+
+- New `INSTALL.md`: the full self-managed path in numbered steps with runnable commands — requirements, host credential, image build, data volume, container start, readiness, the external supervisor and what its lock means, first Bot, backup, restore (including that a restore invalidates sessions and asks for a new login), and upgrade. It states that no paid account and no access to any internal service is required, and the README now links to it.
+- New `scripts/rc059/run-install-proof.ts`: it reads the fenced `bash` blocks out of `INSTALL.md` and runs exactly those commands, in document order and in one shell, on a clean Linux environment (the official Docker CLI image with the shell tools a Linux server has), then completes the journey. Document and verified path cannot drift apart.
+- PASS twice: the image built, the host answered `ready`, the supervisor reported `healthy restarts=1`, the first Bot was created, a backup produced a manifest and an archive path, the restore returned `requiresNewLogin: true`, signing in again worked, and both the Bot created after the restore and the original `FirstBot` were present.
+- Two guide defects were fixed while proving it: the login/Bot/backup/restore commands used nested quoting that produced a 422, and the supervisor step backgrounded a one-shot process whose output was therefore lost. The guide now runs it in the foreground and shows its state file.
+- Checks: `bun test apps/api/src apps/gateway/src packages/client/src` 384 tests, 0 fail; `bun run typecheck` clean; documentation-links gate clean (README now links `INSTALL.md`).
+- `plan/tasks.html`: RC-059 Complete; summary now 39 complete / 2 in progress / 0 blocked / 27 to do.
+
 ## RC-058 accepted — verifiable backup and cross-host restore 2026-10-07T23:30:00Z (UTC)
 
 - New `apps/api/src/features/backup.ts` (registered in `app.ts`): `POST /api/backup` makes a consistent database copy (`VACUUM INTO`), archives it with the workspace files and Bot profiles, and writes a manifest that hashes every member; a failure removes the partial archive. `POST /api/restore` requires an absolute path inside the archive root, extracts into a temp directory, rejects a truncated archive, a missing manifest, a member hash mismatch and an archive with unexpected or missing members **before** touching live state, then verifies `integrity_check`/`quick_check` on the restored database, swaps it in, invalidates every session and reports what returned plus `requiresNewLogin`.

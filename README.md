@@ -4,6 +4,10 @@ RemoteCode is being planned as a persistent Linux workspace for each user. The b
 
 The project is intended to be open source and self-hostable, with paid hosting for people who prefer a managed workspace. This repository contains the product plan, screen concepts, and local proof implementations. The full application remains incomplete; [checkpoint evidence](plan/checkpoint-evidence.md) separates verified behavior from open requirements.
 
+## Install it yourself
+
+[INSTALL.md](INSTALL.md) is the public, self-managed installation guide: build the host image, create the data volume, start the container, run the external supervisor, and back up or restore. It needs no paid account and no access to any internal service.
+
 ## Read the plan
 
 - [Product and architecture](plan/index.html): how the Linux host, clients, GUI, Distill, and recovery paths fit together.
