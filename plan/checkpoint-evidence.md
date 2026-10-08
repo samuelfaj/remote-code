@@ -1,3 +1,14 @@
+# RC-052 integrate computer panel — acceptance — 2026-10-08 (UTC)
+
+- **Task:** RC-052 (side panel opens the correct session, shows current ownership, takes and returns control with recoverable errors), dependencies RC-020, RC-042, RC-043, RC-044 and RC-051.
+- **Command:** `bun run test:e2e -- apps/web/e2e/computer-panel.spec.ts`, run twice.
+- **Environment:** this macOS host, `bun --hot apps/api/src/index.ts` as the API and the Vite dev server as the web origin (Playwright's own `webServer`), real Chromium in two independent browser contexts of the same signed-in user.
+- **Observed result:** `1 passed` both runs (21.7 s and 21.9 s).
+- **What the spec drove, all read back from the host:** A selects a workspace with two Bots, takes the Bot's screen and the host answers `GET /api/workspaces/:id/screen/possession` with `holder`; B signs in separately, reads `none` for its own token, takes it and the host confirms B; A reads `superseded` and shows "Another client took it" with Return disabled, so the two clients are never both holders; B's link is dropped (`setOffline`), the panel reports it and Return is unavailable, then restored; B returns control, the panel shows `returned` and the host reports `none`; A takes it back and the host confirms `holder` again.
+- **Failure-if check:** "two controllers appear active" — asserted from both panels and from the host at each step; the displaced client is the one that stops. "UI says returned when the backend did not confirm" — the panel only reports `returned` after re-reading the host, and the spec independently reads `state: "none"`; an unknown outcome is labelled and not resent.
+- **Counterexamples tried and passed:** the first spec asserted B would see "Owner: You" and that a second take would be refused, which the host does not do (RC-043 makes a later takeover supersede the earlier holder); the corrected spec asserts the accepted semantics. The proof also caught two product defects: a stale possession read overwriting a confirmed `holder`, and a displaced client being unable to take the screen back.
+- **Not covered:** the Linux GUI window and the macOS/Windows browser clients are RC-053 and RC-054.
+
 # RC-055 push routing for a run — partial proof on Linux — 2026-10-08 (UTC)
 
 - **Command:** `RC055_PROOF_DIR=<fresh absolute dir> bun scripts/rc055/run-push-routing-proof.ts`, twice.

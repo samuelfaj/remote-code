@@ -20,6 +20,7 @@ const POLL_MS = 5_000;
 export function ComputerPanel({ selectedWorkspaceId, selectedBotId, userId }: Props) {
   const [possession, setPossession] = useState<ScreenPossessionState | null>(null);
   const [takeError, setTakeError] = useState("");
+  const possessionGeneration = useRef(0);
   const [returnStatus, setReturnStatus] = useState("");
   const [heartbeatStatus, setHeartbeatStatus] = useState<"idle" | "confirmed" | "failed">("idle");
   const [heartbeatAt, setHeartbeatAt] = useState<number | null>(null);
@@ -40,8 +41,13 @@ export function ComputerPanel({ selectedWorkspaceId, selectedBotId, userId }: Pr
 
   async function refreshPossession() {
     if (!selectedWorkspaceId) return;
+    const generation = possessionGeneration.current;
     try {
       const state = await readScreenPossession(selectedWorkspaceId, window.location.origin);
+      // A read that started before this client took the screen reports the old
+      // holder; ignoring it stops the panel from showing "superseded" right
+      // after its own confirmed take.
+      if (generation !== possessionGeneration.current) return;
       setPossession(state);
       if (state.state !== "holder") {
         setHeartbeatStatus("idle");
@@ -82,6 +88,7 @@ export function ComputerPanel({ selectedWorkspaceId, selectedBotId, userId }: Pr
     setTakeError("");
     try {
       const result = await takeScreenPossession(selectedWorkspaceId, window.location.origin);
+      possessionGeneration.current += 1;
       tokenRef.current = result.token;
       setPossession({ state: "holder", expiresAt: result.expiresAt, epoch: result.epoch, supersededCount: 0 });
       setReturnStatus("");
@@ -103,6 +110,7 @@ export function ComputerPanel({ selectedWorkspaceId, selectedBotId, userId }: Pr
     tokenRef.current = null;
     try {
       await releaseScreenPossession(selectedWorkspaceId, token, window.location.origin);
+      possessionGeneration.current += 1;
       await new Promise((resolve) => setTimeout(resolve, 300));
       const state = await readScreenPossession(selectedWorkspaceId, window.location.origin);
       if (state.state === "none") {
@@ -118,14 +126,17 @@ export function ComputerPanel({ selectedWorkspaceId, selectedBotId, userId }: Pr
     }
   }
 
+  // The host reports possession relative to this client's own token, so "none"
+  // means this client holds nothing — it is not a statement that nobody else
+  // does. Another client's lock is only learned from the host refusing a take.
   const ownerLabel = possession?.state === "holder"
     ? "You"
     : possession?.state === "none"
-      ? "No one"
+      ? "No possession from this client"
       : possession?.state === "superseded"
-        ? "Another client (superseded)"
+        ? "Another client took it"
         : possession?.state === "expired"
-          ? "Another client (expired)"
+          ? "This client's window expired"
           : "Unknown";
 
   const sinceLabel = possession?.state === "holder" && possession.expiresAt
@@ -134,7 +145,9 @@ export function ComputerPanel({ selectedWorkspaceId, selectedBotId, userId }: Pr
       ? `expired at ${new Date(possession.expiresAt).toLocaleTimeString()}`
       : "";
 
-  const canTake = (possession?.state === "none" || possession?.state === "expired") && isOnline;
+  // A client that was displaced, or whose window ran out, can take the screen
+  // back: the host allows a takeover, and control has to be recoverable.
+  const canTake = possession?.state !== "holder" && isOnline;
   const canReturn = possession?.state === "holder" && isOnline;
 
   return (
@@ -148,12 +161,12 @@ export function ComputerPanel({ selectedWorkspaceId, selectedBotId, userId }: Pr
         {isOnline ? "Connected" : "Connection dropped"}
       </Text>
       {sinceLabel ? <Text style={styles.info}>{sinceLabel}</Text> : null}
-      {takeError ? <Text style={styles.error}>{takeError}</Text> : null}
-      {returnStatus === "returned" && <Text style={styles.success}>returned</Text>}
+      {takeError ? <Text testID="computer-error" style={styles.error}>{takeError}</Text> : null}
+      {returnStatus === "returned" && <Text testID="return-result" style={styles.success}>returned</Text>}
       {returnStatus === "unknown" && <Text style={styles.error}>Outcome unknown — no retry sent.</Text>}
       {returnStatus === "returning" && <Text style={styles.info}>Returning…</Text>}
       {possession?.state === "holder" && (
-        <Text style={styles.info}>
+        <Text testID="computer-heartbeat" style={styles.info}>
           Heartbeat: {heartbeatStatus === "confirmed" ? "confirmed" : heartbeatStatus === "failed" ? "not confirmed" : "pending"}
           {heartbeatAt ? ` (last ${new Date(heartbeatAt).toLocaleTimeString()})` : null}
         </Text>

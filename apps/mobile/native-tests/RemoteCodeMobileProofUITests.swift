@@ -23,6 +23,32 @@ private struct AuthReceiptLookup: Decodable {
     let sessionStatus: String
 }
 
+private struct BotMetadata: Decodable {
+    let id: String
+    let name: String
+}
+
+private struct ThreadMetadata: Decodable {
+    let id: String
+    let workspaceId: String
+    let title: String
+}
+
+private struct RunMetadata: Decodable {
+    let id: String
+    let state: String
+}
+
+private struct InboxItemMetadata: Decodable {
+    let id: String
+    let title: String
+    let state: String
+}
+
+private struct InboxListMetadata: Decodable {
+    let items: [InboxItemMetadata]
+}
+
 final class RemoteCodeMobileProofUITests: XCTestCase {
     override func setUpWithError() throws {
         try super.setUpWithError()
@@ -2166,6 +2192,59 @@ final class RemoteCodeMobileProofUITests: XCTestCase {
     }
 
     @MainActor
+    func testNavigationAcrossScreensJourney() async throws {
+        let app = XCUIApplication(bundleIdentifier: "com.remotecode.mobileproof")
+        let observer = URLSession(configuration: .ephemeral)
+        app.launch()
+        let host = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Host: ")).firstMatch
+        XCTAssertTrue(host.waitForExistence(timeout: 15))
+        let api = try XCTUnwrap(URL(string: String(host.label.dropFirst("Host: ".count))))
+        signIn(app)
+        try await observer.signIn(at: api, password: password)
+
+        let workspaceName = "native-nav-workspace-\(UUID().uuidString)"
+        let workspace = try await observer.createWorkspace(at: api, name: workspaceName)
+
+        let botName = "native-nav-bot-\(UUID().uuidString)"
+        let bot = try await observer.createBot(at: api, name: botName)
+
+        let threadTitle = "native-nav-thread-\(UUID().uuidString)"
+        let thread = try await observer.createThread(at: api, workspaceId: workspace.id, title: threadTitle)
+
+        let messageBody = "native-nav-message-body"
+        try await observer.postMessage(at: api, threadId: thread.id, body: messageBody)
+
+        let actionName = "native-nav-action-\(UUID().uuidString)"
+        let actionReceipt = try await observer.submitAction(at: api, action: actionName)
+
+        let botsTab = app.buttons["tab-bots"]
+        XCTAssertTrue(botsTab.waitForExistence(timeout: 10))
+        botsTab.tap()
+        XCTAssertTrue(app.staticTexts[botName].waitForExistence(timeout: 10), "The Bots screen should show the seeded Bot name")
+
+        let workspacesTab = app.buttons["tab-workspaces"]
+        workspacesTab.tap()
+        XCTAssertTrue(app.staticTexts["Workspaces"].waitForExistence(timeout: 10))
+        let openWorkspace = app.buttons["Open workspace \(workspaceName)"]
+        XCTAssertTrue(openWorkspace.waitForExistence(timeout: 10))
+        openWorkspace.tap()
+        XCTAssertTrue(app.staticTexts["Selected: \(workspaceName)"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts[threadTitle].waitForExistence(timeout: 10), "The workspace should show the seeded thread title")
+        app.staticTexts[threadTitle].tap()
+        XCTAssertTrue(app.staticTexts[messageBody].waitForExistence(timeout: 10), "The ThreadMessages screen should show the seeded message body")
+
+        let inboxTab = app.buttons["tab-inbox"]
+        XCTAssertTrue(inboxTab.waitForExistence(timeout: 10))
+        inboxTab.tap()
+        XCTAssertTrue(app.staticTexts["Inbox"].waitForExistence(timeout: 10), "The Inbox screen should be visible")
+
+        let actionsTab = app.buttons["tab-actions"]
+        XCTAssertTrue(actionsTab.waitForExistence(timeout: 10))
+        actionsTab.tap()
+        XCTAssertTrue(app.staticTexts[actionName].waitForExistence(timeout: 10), "The Actions screen should show the seeded action name")
+    }
+
+    @MainActor
     private func signIn(_ app: XCUIApplication) {
         let input = app.secureTextFields["Host password"]
         XCTAssertTrue(input.waitForExistence(timeout: 15))
@@ -2434,6 +2513,77 @@ private extension URLSession {
         let (data, response) = try await data(from: URL(string: "/api/actions", relativeTo: baseURL)!)
         XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
         return try JSONDecoder().decode(ActionHistory.self, from: data).actions
+    }
+
+    func createWorkspace(at baseURL: URL, name: String) async throws -> WorkspaceMetadata {
+        var request = URLRequest(url: URL(string: "/api/workspaces", relativeTo: baseURL)!)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["name": name, "requestId": UUID().uuidString])
+        let (data, response) = try await data(for: request)
+        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 201)
+        return try JSONDecoder().decode(WorkspaceMetadata.self, from: data)
+    }
+
+    func createBot(at baseURL: URL, name: String) async throws -> BotMetadata {
+        var request = URLRequest(url: URL(string: "/api/bots", relativeTo: baseURL)!)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["name": name, "instructions": "Test bot"])
+        let (data, response) = try await data(for: request)
+        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 201)
+        return try JSONDecoder().decode(BotMetadata.self, from: data)
+    }
+
+    func createThread(at baseURL: URL, workspaceId: String, title: String) async throws -> ThreadMetadata {
+        var request = URLRequest(url: URL(string: "/api/workspaces/\(workspaceId)/threads", relativeTo: baseURL)!)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["title": title, "requestId": UUID().uuidString])
+        let (data, response) = try await data(for: request)
+        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 201)
+        return try JSONDecoder().decode(ThreadMetadata.self, from: data)
+    }
+
+    func postMessage(at baseURL: URL, threadId: String, body: String) async throws {
+        var request = URLRequest(url: URL(string: "/api/threads/\(threadId)/messages", relativeTo: baseURL)!)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["body": body, "requestId": UUID().uuidString])
+        let (_, response) = try await data(for: request)
+        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 201)
+    }
+
+    func startRun(at baseURL: URL, workspaceId: String, botId: String, prompt: String) async throws -> RunMetadata {
+        var request = URLRequest(url: URL(string: "/api/runs", relativeTo: baseURL)!)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["workspaceId": workspaceId, "botId": botId, "prompt": prompt, "requestId": UUID().uuidString])
+        let (data, response) = try await data(for: request)
+        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 201)
+        return try JSONDecoder().decode(RunMetadata.self, from: data)
+    }
+
+    func getRun(at baseURL: URL, id: String) async throws -> RunMetadata {
+        let (data, response) = try await data(from: URL(string: "/api/runs/\(id)", relativeTo: baseURL)!)
+        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
+        return try JSONDecoder().decode(RunMetadata.self, from: data)
+    }
+
+    func listInbox(at baseURL: URL) async throws -> [InboxItemMetadata] {
+        let (data, response) = try await data(from: URL(string: "/api/inbox", relativeTo: baseURL)!)
+        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
+        return try JSONDecoder().decode(InboxListMetadata.self, from: data).items
+    }
+
+    func submitAction(at baseURL: URL, action: String) async throws -> ActionReceipt {
+        var request = URLRequest(url: URL(string: "/api/actions", relativeTo: baseURL)!)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["action": action])
+        let (data, response) = try await data(for: request)
+        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 201)
+        return try JSONDecoder().decode(ActionReceipt.self, from: data)
     }
 
     func get(_ url: URL) async throws -> HTTPURLResponse {

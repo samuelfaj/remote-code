@@ -280,6 +280,7 @@ if [[ "${RC_NATIVE_TEST_NAVIGATION:-0}" == "1" ]]; then
     fi
   done
   API_ENTRY="apps/api/src/index.ts"
+  TEST_SELECTION="RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testNavigationAcrossScreensJourney"
   SKIP_TEST_ARG=""
   EXTRA_SKIP_ARGS=()
 fi
@@ -474,7 +475,7 @@ else
 exec node "$ROOT_DIR/apps/api/src/features/runs-stub-agent.mjs"
 STUB
     chmod +x "$WORK_DIR/rc055-stub-agent.sh"
-    REMOTECODE_DISTILL_BIN="$WORK_DIR/rc055-stub-agent.sh"
+    export REMOTECODE_DISTILL_BIN="$WORK_DIR/rc055-stub-agent.sh"
   fi
   API_PORT="$API_PORT" \
     DATABASE_PATH="$DATABASE_PATH" \
@@ -483,9 +484,11 @@ STUB
     RC_NATIVE_TEST_WORK_DIR="$WORK_DIR" \
     REMOTECODE_AUTH_PASSWORD="$API_PASSWORD" \
     REMOTECODE_WEB_ORIGIN="$API_WEB_ORIGIN" \
-    ${REMOTECODE_DISTILL_BIN:+REMOTECODE_DISTILL_BIN="$REMOTECODE_DISTILL_BIN"} \
     bun run "$API_ENTRY" > "$WORK_DIR/api.log" 2>&1 &
   API_PID=$!
+  if [[ "${RC_NATIVE_TEST_NAVIGATION:-0}" == "1" ]]; then
+    unset REMOTECODE_DISTILL_BIN
+  fi
 fi
 
 ready=false
