@@ -1,4 +1,8 @@
 # Changelog
+## RC-057 partial — the app can send human input, the device harness reaches the host handshake 2026-10-08 (UTC)
+- The shared client gained `sendScreenInput` (click, type, key) and the mobile session panel gained text and click controls that are enabled only while this client holds the screen and that report only what the host answers.
+- `scripts/rc057/run-mobile-takeover-proof.sh` stands up the Linux host with its own Xvfb display and TLS, starts the emulator with a writable system, installs the host's certificate as a system CA (Android needs `-writable-system` and a remount for that) and installs the release app.
+- It stops at the handshake: the app shows `Host readiness unavailable` for `https://10.0.2.2:<port>`, so RC-057 stays To do with that single open question named.
 ## RC-054 macOS leg proven; Windows leg unverified 2026-10-08 (UTC)
 - `bash scripts/rc054/run-macos-browsers-proof.sh <fresh dir>` stands up the repository's Linux host over TLS behind a local Vite and runs `apps/web/e2e/macos-linux-client.spec.ts` on this Mac on two engines. Chromium and WebKit each passed: sign in, create a workspace, prepare its folder, create and save a file through the panel with the host's copy read back, post and read a thread message, take and release the screen with the host as the authority, close the live channel and reconnect.
 - Windows is not run: this machine has no Windows host, VM or browser, so RC-054 stays In progress with that leg named rather than assumed.
