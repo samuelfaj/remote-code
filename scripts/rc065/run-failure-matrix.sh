@@ -40,6 +40,7 @@ CASES=(
   "version-mismatch-refusal|RC059_PROOF_DIR={CASE} bun $ROOT/scripts/rc059/run-install-proof.ts"
   "hosted-account-container-death|RC065_PROOF_DIR={CASE} bun $ROOT/scripts/rc065/run-hosted-failure-proof.ts"
   "sanitized-log-and-ui-after-restart|bash $ROOT/scripts/rc065/run-restart-log-ui-proof.sh {CASE}"
+  "swapped-window-frame-identity|RC065_PROOF_DIR={CASE} bun $ROOT/scripts/rc065/run-window-swap-proof.ts"
 )
 
 PASSED=0

@@ -51,17 +51,31 @@ recorded run with its observed outcome.
 1. **~~No single matrix run.~~ Closed 2026-10-08.** `scripts/rc065/run-failure-matrix.sh`
    now runs every row below in turn and keeps one transcript per case in one
    proof directory; the executed run is recorded at the end of this file.
-2. **Hosted account leg.** The task asks for the injection in a self-managed
-   **and a hosted** account. Self-managed is what the rows above run; the hosted
-   leg exists only as the billing/provider proof (`scripts/rc061`) and the
-   hosted provisioning proof (`scripts/rc060`), not as an injected-failure run.
-3. **Sanitized logs and UI-after-restart comparison.** Several proofs compare
-   receipts and files; a matrix that also diffs sanitized logs and the UI after a
-   restart is not assembled.
+2. **~~Hosted account leg.~~ Closed 2026-10-08.** `RC065_PROOF_DIR=<fresh dir> bun
+   scripts/rc065/run-hosted-failure-proof.ts` provisions a hosted account against
+   the real control plane, kills its container out of band, and asserts the
+   record does not claim a false success — then resumes it. It found a real
+   defect: the control plane read its own row and never asked Docker, so a dead
+   account kept reporting `ready`. `apps/api/src/features/hosted.ts` now
+   reconciles a `ready` row with its container and writes
+   `failed`/`container_not_running`; `resume` still restores it. Passes three
+   times, and a unit case covers it in `apps/api/src/features/hosted.test.ts`.
+3. **~~Sanitized logs and UI-after-restart comparison.~~ Closed 2026-10-08.**
+   `bash scripts/rc065/run-restart-log-ui-proof.sh <fresh dir>` drives the web
+   app in a browser, creates and saves a file, kills and restarts the API inside
+   the container, then re-reads the file through the app: the content still
+   matches, the status says it was read from the host, the reloaded page is live,
+   and the host's database holds exactly one create and one save. The API's
+   stdout is captured across both runs, sanitized (passphrase, `x-rc-*` values,
+   `Bearer` tokens), and asserted free of the passphrase and any token in its raw
+   form. Passes three times.
 4. **Swapped window** is proven as a *crossed cookie* refusal
    (`scripts/rc042`); a run that swaps the visible window mid-stream and asserts
-   the frame identity is not written.
-5. **Android storage-failure modes** exist for iOS only.
+   the frame identity is being built in `scripts/rc065/run-window-swap-proof.ts`
+   on rc042's own setup.
+5. **Android storage-failure modes** exist for iOS only; the Android equivalent
+   is being built in `scripts/rc065/run-android-storage-failure-proof.sh` on the
+   RC-057 device harness.
 
 ## Why this file exists
 
