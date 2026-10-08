@@ -108,15 +108,19 @@ printf '%s' "$PASSWORD" | gh secret set RC054_AUTH_PASSWORD --repo "$REPO"
 # below, so the next ordinary push runs nothing.
 say "-- arming the Windows job on branch ${BRANCH} --"
 gh variable set RC054_BACKEND_ORIGIN --repo "$REPO" --body "$TUNNEL"
+# The push that arms the job also fires the other runs on this branch, so the
+# run this script waits for is the one created after this moment, not simply
+# the newest by name.
+ARMED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 git -C "$ROOT" commit --allow-empty -q -m "ci: arm the RC-054 Windows leg against ${TUNNEL}"
 git -C "$ROOT" push -q origin "HEAD:${BRANCH}"
 
 RUN_ID=""
-for _ in $(seq 1 30); do
+for _ in $(seq 1 40); do
   sleep 5
-  RUN_ID=$(gh run list --repo "$REPO" --branch "$BRANCH" --limit 10 \
-    --json databaseId,name,event,headSha \
-    --jq "[.[] | select(.name == \"rc054-windows-client\")][0].databaseId" 2>/dev/null || true)
+  RUN_ID=$(gh run list --repo "$REPO" --branch "$BRANCH" --limit 20 \
+    --json databaseId,name,createdAt \
+    --jq "[.[] | select(.name == \"rc054-windows-client\" and .createdAt >= \"${ARMED_AT}\")][0].databaseId" 2>/dev/null || true)
   [[ -n "$RUN_ID" && "$RUN_ID" != "null" ]] && break
 done
 if [[ -z "$RUN_ID" || "$RUN_ID" == "null" ]]; then
