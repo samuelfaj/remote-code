@@ -1,8 +1,8 @@
 # Where to resume
 
-Latest confirmed state: the RC-057 partial checkpoint `97f4096` on
+Latest confirmed state: the RC-057 acceptance checkpoint `6b3d24d` on
 `checkpoint/rc002-linux-runtime-evidence`, pushed. Plan status:
-**63 complete / 1 in progress / 0 blocked / 4 to do** of the 68 tasks in
+**64 complete / 1 in progress / 0 blocked / 3 to do** of the 68 tasks in
 `plan/tasks.html`.
 
 Read, in this order: `plan/tasks.html` (per-task status), `CHANGELOG.md`
