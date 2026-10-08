@@ -74,14 +74,22 @@ export function SessionPanel({ origin, userId, workspace, blocked, onUnauthorize
         setMessage("The host refused the input or its outcome is unknown. Nothing was resent.");
         await refreshPossession();
       }
-    } finally { if (current()) { working.current = false; setBusy(false); } }
+    } finally {
+      // This operation always releases its own hold on the panel: a fence that
+      // went stale (the panel polls while the input is in flight) must not leave
+      // the controls disabled for good.
+      if (active.current) { working.current = false; setBusy(false); }
+    }
   }
 
-  async function refreshPossession() {
+  // `interactive` marks the reads a person asked for (mount, take, return) as
+  // opposed to the poll that keeps the panel current: a poll must not flip the
+  // gate that disables the controls, or a tap can land on a disabled button.
+  async function refreshPossession(interactive = false) {
     if (!workspace) return;
     const current = begin();
     const end = Date.now() + deadlineMs;
-    working.current = true; setBusy(true);
+    if (interactive) { working.current = true; setBusy(true); }
     try {
       const state = await readScreenPossession(workspace.id, origin);
       if (!current()) return;
@@ -101,7 +109,7 @@ export function SessionPanel({ origin, userId, workspace, blocked, onUnauthorize
       }
     } catch {
       if (current()) setMessage("Possession state unavailable. Outcome remains unknown.");
-    } finally { if (current()) { working.current = false; setBusy(false); } }
+    } finally { if (interactive && active.current) { working.current = false; setBusy(false); } }
   }
 
   async function handleTakeOver() {

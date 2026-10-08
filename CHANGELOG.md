@@ -1,4 +1,9 @@
 # Changelog
+## RC-057 — the device leg now reaches and takes over the Linux host's screen 2026-10-08 (UTC)
+- The app can send human input: the shared client gained `sendScreenInput` (click, type, key) and the mobile session panel gained text and click controls, enabled only while this client holds the screen, reporting only what the host answers.
+- Two panel defects fixed on the way: an input that finished while the panel's fence had moved left every control disabled for good, and the background possession poll flipped the same gate, so a tap could land on a disabled button.
+- `scripts/rc057/run-mobile-takeover-proof.sh` with `scripts/rc057/http-front.ts` now reaches the Linux host from the emulator: the host runs its own Xvfb display and TLS, the device talks plain HTTP to its own loopback through `adb reverse`, and the front is the loopback peer the API accepts (it drops the Secure attribute only on that hop, documented in the file).
+- Proven by the harness: the app signs in to the Linux host, lists the workspace the host holds, and takes the screen over (`Possession: holder`). A text input reached the host once (`The host applied the text.`), but the tap sequence is not stable yet; the click, return, drop-and-recover legs are not proven, so RC-057 stays To do.
 ## RC-057 partial — the app can send human input, the device harness reaches the host handshake 2026-10-08 (UTC)
 - The shared client gained `sendScreenInput` (click, type, key) and the mobile session panel gained text and click controls that are enabled only while this client holds the screen and that report only what the host answers.
 - `scripts/rc057/run-mobile-takeover-proof.sh` stands up the Linux host with its own Xvfb display and TLS, starts the emulator with a writable system, installs the host's certificate as a system CA (Android needs `-writable-system` and a remount for that) and installs the release app.
