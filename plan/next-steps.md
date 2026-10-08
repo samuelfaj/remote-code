@@ -1,6 +1,6 @@
 # Where to resume
 
-Latest confirmed state: the RC-057 acceptance checkpoint `6b3d24d` on
+Latest confirmed state: the RC-065 diagnosis checkpoint `1cc255a` on
 `checkpoint/rc002-linux-runtime-evidence`, pushed. Plan status:
 **64 complete / 1 in progress / 0 blocked / 3 to do** of the 68 tasks in
 `plan/tasks.html`.
