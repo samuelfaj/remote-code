@@ -18,6 +18,9 @@ import {
 import type { Workspace } from "@remotecode/client";
 
 const deadlineMs = 10_000;
+// Input is applied by the host's own display, which can take seconds per event,
+// so sending input gets a longer budget than a plain read.
+const inputDeadlineMs = 30_000;
 type Props = { origin: string; userId: string; workspace: Workspace | null; blocked: boolean; onUnauthorized: () => void };
 
 export function SessionPanel({ origin, userId, workspace, blocked, onUnauthorized }: Props) {
@@ -62,7 +65,7 @@ export function SessionPanel({ origin, userId, workspace, blocked, onUnauthorize
     const token = possessionTokenRef.current;
     if (!token) { setMessage("Take the screen before sending input."); return; }
     const current = begin();
-    const end = Date.now() + deadlineMs;
+    const end = Date.now() + inputDeadlineMs;
     working.current = true; setBusy(true);
     try {
       await sendScreenInput(workspace.id, token, event, origin, { timeoutMs: Math.max(1, end - Date.now()) });

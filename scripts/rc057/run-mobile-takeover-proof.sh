@@ -253,6 +253,24 @@ for node in re.finditer(r'<node[^>]*>', xml):
 PY
   [ -s "$OUT/tap.txt" ]
 }
+# The host applies input on its own schedule (the container runs the input
+# through its display), so the answer is waited for rather than assumed.
+wait_for_text() {
+  local label="$1"
+  local text="$2"
+  local attempt
+  for attempt in $(seq 1 15); do
+    dump "$label"
+    if grep -q -e "text=\"$text\"" -e "content-desc=\"$text\"" "$OUT/window-$label.xml"; then
+      say "visible in $label: $text"
+      return 0
+    fi
+    sleep 2
+  done
+  say "FAIL: '$text' not visible in $label"
+  return 1
+}
+
 # The dump carries each value as its own attribute, so the match is exact:
 # "connected" must not be satisfied by "disconnected".
 assert_text() {
@@ -335,23 +353,66 @@ done
 adb -s "$DEVICE" shell input keyevent 4 >> "$TRANSCRIPT" 2>&1
 sleep 1
 wait_enabled_tap "Send screen text"
-sleep 6
-dump typed
-assert_text typed "The host applied the text."
+wait_for_text typed "The host applied the text."
 wait_enabled_tap "Click screen centre"
-sleep 6
-dump clicked
-assert_text clicked "The host applied the click."
+wait_for_text clicked "The host applied the click."
 
 REACHED=1
+# While the human holds the screen the Bot must be refused: an agent input is
+# attempted from this Mac's own session and the host has to say no.
+AGENT_RESULT="$(python3 - "$API_PORT" "$PASSWORD" "$WORKSPACE_ID" <<'PY'
+import json, ssl, sys, urllib.request, urllib.error
+port, password, workspace = sys.argv[1:4]
+context = ssl._create_unverified_context()
+def call(path, method="GET", body=None, cookie=""):
+    data = json.dumps(body).encode() if body is not None else None
+    headers = {"content-type": "application/json", **({"cookie": cookie} if cookie else {})}
+    request = urllib.request.Request(f"https://127.0.0.1:{port}" + path, data=data, method=method, headers=headers)
+    try:
+        with urllib.request.urlopen(request, timeout=30, context=context) as response:
+            return response.status, response.read().decode(), response.headers.get("set-cookie", "")
+    except urllib.error.HTTPError as failure:
+        return failure.code, failure.read().decode(), ""
+_, _, cookie = call("/api/auth/login", "POST", {"password": password})
+cookie = cookie.split(";")[0]
+status, body, _ = call(f"/api/workspaces/{workspace}/screen/agent/input", "POST", {"stateToken": "rc057-not-an-observation", "event": {"kind": "click", "x": 1, "y": 1}}, cookie)
+print(json.dumps({"status": status, "body": body}))
+PY
+)"
+say "agent input while the phone holds the screen: $AGENT_RESULT"
+if ! printf '%s' "$AGENT_RESULT" | grep -q '"status": 409'; then
+  say "FAIL: the host did not refuse the agent while the human held the screen"
+  exit 1
+fi
+
 # The link drops mid-way: the app is killed while it holds the screen.
 adb -s "$DEVICE" shell am force-stop "$PACKAGE" >> "$TRANSCRIPT" 2>&1
 sleep 4
 say "after the drop the host reads: $(host_state)"
 adb -s "$DEVICE" shell am start -n "$PACKAGE/.MainActivity" >> "$TRANSCRIPT" 2>&1
-sleep 10
-dump recovered
-assert_text recovered "connected"
+# A cold start signs out, so the phone signs in again, and the app's own words
+# are waited for rather than assumed after a fixed sleep.
+wait_for_text recovered-signin "Host password"
+tap_label "Host password"
+adb -s "$DEVICE" shell input text "$PASSWORD" >> "$TRANSCRIPT" 2>&1
+adb -s "$DEVICE" shell input keyevent 4 >> "$TRANSCRIPT" 2>&1
+sleep 1
+tap_label "Sign in to host"
+wait_for_text recovered "connected"
+# The killed client must not still appear to hold the screen.
+if grep -q 'text="Possession: holder"' "$OUT/window-recovered.xml"; then
+  say "FAIL: the restarted client still claims to hold the screen"
+  exit 1
+fi
+say "the restarted client holds nothing"
+# Control is recoverable: the phone takes the screen again.
+tap_label "Refresh workspaces" || true
+sleep 2
+tap_label "Open workspace $WORKSPACE_NAME"
+sleep 3
+tap_label "Take over screen"
+wait_for_text recovered-takeover "Possession: holder"
+say "the phone took the screen over again after the drop"
 
 say "-- result --"
 if [ "${REACHED:-}" != "1" ]; then

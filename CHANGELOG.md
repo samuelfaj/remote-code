@@ -1,4 +1,9 @@
 # Changelog
+## RC-057 Android leg proven end to end 2026-10-08 (UTC)
+- `bash scripts/rc057/run-mobile-takeover-proof.sh <fresh dir>` passed twice on a real emulator against the Linux host: sign-in, workspace list, opening the workspace, take-over (`Possession: holder`), a text and a click input both applied by the host, the host refusing an agent input while the phone holds the screen (`409 possession_held_by_user`), and recovery after the app is force-stopped mid-hold (the restarted client holds nothing, signs in again and takes the screen over).
+- Measured: the host applies a text input in ~193 ms and a click in ~10 s. The click first read as an unknown outcome because the panel's read budget was 10 s; input now has its own 30 s budget, which is what turned "unknown" into the host's own confirmation.
+- The harness's own timing was the last obstacle: it asserted on a fixed sleep instead of waiting for the app's own words, and only taps a control the app says is enabled.
+- Remaining: the same journey on iOS (the simulator reaches the front on 127.0.0.1 directly, so it needs `NSAllowsLocalNetworking` and a native mode driving take-over, input and return), so RC-057 stays To do.
 ## RC-057 — the emulator reaches the Linux host, takes the screen over and sends text 2026-10-08 (UTC)
 - The device leg now works through a plain-HTTP front on this Mac (`scripts/rc057/http-front.ts`), which is the loopback peer the API accepts and speaks TLS to the host; the app reaches it through `adb reverse`. The front relays the event socket with the app's own cookie and drops the `Secure` attribute only on that one hop.
 - Proven by `scripts/rc057/run-mobile-takeover-proof.sh` on a real emulator: the app signs in to the Linux host, lists the workspace the host holds, takes the screen over (`Possession: holder`) and the host applies a text input (`The host applied the text.`).

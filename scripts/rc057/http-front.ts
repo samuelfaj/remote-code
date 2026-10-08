@@ -20,6 +20,7 @@ const server = Bun.serve({
   port: listenPort,
   hostname: "127.0.0.1",
   async fetch(request, self) {
+    const started = Date.now();
     const url = new URL(request.url);
     if (request.headers.get("upgrade")?.toLowerCase() === "websocket") {
       // The client's own path and query carry the channel (clientVersion among
@@ -55,7 +56,9 @@ const server = Bun.serve({
         // attribute is dropped here and nowhere else.
         for (const cookie of setCookie) out.append("set-cookie", cookie.replace(/;\s*Secure\b/i, ""));
       }
-      console.log(`${request.method} ${url.pathname} -> ${upstream.status}`);
+      // The latency is part of the evidence: the host applies input on its own
+      // display, and a device-side deadline shorter than that reads as unknown.
+      console.log(`${new Date().toISOString()} ${request.method} ${url.pathname} -> ${upstream.status} in ${Date.now() - started}ms`);
       return new Response(upstream.body, { status: upstream.status, headers: out });
     } catch (error) {
       return new Response(JSON.stringify({ error: "front_failed", detail: String(error) }), {
