@@ -28,6 +28,25 @@ The image contains the Elysia backend, the web client, Distill, the Linux GUI an
 docker build -t remotecode/host:local -f prototype/Dockerfile .
 ```
 
+## 3b. Which release you are installing
+
+Every public release is an annotated tag of this repository, and the tag fixes
+the `prototype/Dockerfile` the command above builds from: the image is
+reproducible from the tag alone, so there is no separate registry copy that can
+drift from the source you are reading.
+
+- Current release: `v0.1.0` (`9cb2975`). Release notes carry the same commands as
+  this file.
+- The image's Distill version is the `ARG DISTILL_VERSION` in
+  `prototype/Dockerfile`. If the credential you copy into the container belongs
+  to another Distill release, pin it instead of accepting the default:
+  `--build-arg DISTILL_VERSION=<version> --build-arg DISTILL_SHA256_AARCH64=<sha256>`
+  (`scripts/rc015/run-isolation-proof.sh` does exactly this).
+- Upgrading and rolling back are the same build: check out the tag you want,
+  rebuild the image, and follow section 10. A client older or newer than the
+  host is refused by the host itself (see `scripts/rc059/run-install-proof.ts`),
+  so a half-upgraded pair fails closed rather than mixing versions.
+
 ## 4. Create the data volume
 
 All durable state lives here: the SQLite database, workspace files, Bot profiles and backups. Deleting this volume deletes the installation's data, so keep it.
