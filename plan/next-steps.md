@@ -1,9 +1,36 @@
 # Where to resume
 
-Latest confirmed state: the RC-065 acceptance checkpoint `ed7a2ad` on
+Latest confirmed state: the RC-067 checkpoint on
 `checkpoint/rc002-linux-runtime-evidence`, pushed. Plan status:
-**66 complete / 0 in progress / 0 blocked / 2 to do** of the 68 tasks in
-`plan/tasks.html`. The two open tasks are **RC-066** and **RC-067**.
+**66 complete / 1 in progress / 0 blocked / 1 to do** of the 68 tasks in
+`plan/tasks.html`. Open: **RC-066** (to do) and **RC-067** (in progress).
+
+Do these two things next, in this order:
+
+1. **RC-067's last leg.** `bash scripts/rc067/run-hosted-service-dispatch.sh <fresh dir>`
+   publishes the control plane on a Cloudflare quick tunnel and runs the check on
+   GitHub's `windows-latest` runner. The outside machine already reaches the
+   public endpoint (`/api/health/ready` 200, login 200); provisioning answers
+   **503**. Run it once and read the line the proof now prints
+   (`control plane said: ...`) together with `apps/api/src/features/capacity.ts`
+   — the refusal is `account_limit`, `disk_pressure` or `memory_pressure`, and
+   `REMOTECODE_HOSTED_MAX_ACCOUNTS`, `REMOTECODE_HOSTED_RESERVED_HEADROOM_BYTES`
+   and `REMOTECODE_DATA_ROOT` are the knobs the control plane reads. Then make
+   that leg pass twice and mark RC-067 complete. A registry-published image is
+   still impossible here: this account's GitHub token has no `write:packages`
+   scope and ECR Public has no alias, so the image is built from the published
+   tag's own Dockerfile.
+2. **RC-066's remaining matrix cells.** `plan/acceptance-matrix.md` states, per
+   client and journey, what is proven and what is `not run`. The biggest missing
+   runs are the panel journeys from the container's own browser
+   (`scripts/rc066/run-container-browser-panel-proof.sh` was started and is
+   **unverified** — it needs a standalone driver that uses
+   `chromium.connectOverCDP` against the guest Chromium, not the Playwright test
+   runner's own browser), the Bot-routine journey from the iOS and Android apps,
+   and the cut-and-reconnect journey from the container's browser. Push delivery
+   on iOS and Android is a documented ceiling, not a gap: no APNs, FCM or Expo
+   push project id exists here.
+
 
 Read, in this order: `plan/acceptance-matrix.md` (RC-066's artifact and the
 exact cells still missing), `plan/tasks.html` (per-task status), `CHANGELOG.md`

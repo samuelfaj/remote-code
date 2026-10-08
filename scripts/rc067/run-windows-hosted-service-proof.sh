@@ -73,7 +73,10 @@ if [[ "$ACCOUNT_STATUS" == "201" && -n "$ACCOUNT_ID" && -n "$ACCOUNT_PORT" ]]; t
   say "PASS: provision returned 201, id=$ACCOUNT_ID, hostPort=$ACCOUNT_PORT"
   STEP_PROVISION="ok"
 else
+  # The control plane's refusal carries its own reason; it is printed so the
+  # next attempt starts from what it said rather than from the status alone.
   say "FAIL: provision returned $ACCOUNT_STATUS, id=${ACCOUNT_ID:-none}, port=${ACCOUNT_PORT:-none}"
+  say "control plane said: $(printf '%s' "$ACCOUNT_BODY" | head -c 400)"
   STEP_PROVISION="fail"
 fi
 
