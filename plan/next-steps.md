@@ -126,3 +126,31 @@ instructions and a real paid test account, plus the rollback and support path.
   (`bun run test:e2e`) is 112 passed / 5 skipped / 0 failed on this host.
 - Proof scripts live in `scripts/rc<NNN>/` and take a fresh absolute output dir
   that does not already exist.
+
+## RC-057 current state (2026-10-08, latest)
+
+Items 1–3 of the RC-057 list above are done. The harness
+`scripts/rc057/run-mobile-takeover-proof.sh` stands up the Linux host with its own
+Xvfb display and TLS, runs a plain-HTTP front on this Mac
+(`scripts/rc057/http-front.ts`; the emulator reaches it through `adb reverse`, it
+speaks TLS to the host and drops the `Secure` attribute only on that loopback
+hop), installs the app and proves: sign-in to the Linux host, the workspace list,
+opening the workspace, the take-over (`Possession: holder`) and a text input the
+host applied (`The host applied the text.`).
+
+It stops there because every control in the session panel is disabled afterwards:
+the app's own view tree shows all four controls (`Take over screen`,
+`Return screen`, `Send screen text`, `Click screen centre`) enabled right after the
+text send and all four disabled at the next observation, with no error message on
+screen. The session panel's own busy gate is released per operation now, so the
+flag comes from its parent
+`apps/mobile/src/features/workspaces/WorkspacePanel.tsx`, which passes
+`blocked={busy || Boolean(pending) || !storageReady || Boolean(readError)}`.
+One instrumented run printing those four values (or a `testID` per value) names
+the one that sticks; the likely candidate is `storageReady`, which is set false on
+a device-storage failure and set true again only through the pending-recovery
+path.
+
+After that, the click, the return and the force-stop-and-recover legs follow the
+text leg's shape, and the same journey should run on an iOS simulator (there the
+container CA path is `xcrun simctl keychain <device> add-root-cert <pem>`).
