@@ -69,10 +69,12 @@ test("saves a file, survives an API restart and reads it back once", async ({ pa
     timeout: 120_000,
     intervals: [1_000],
   }).toBe(true);
+  // The proxy in front of the host holds a pooled connection that the restart
+  // breaks, so this is given the time that pool needs to be replaced.
   await expect.poll(ready, {
     message: "the host should answer again after the restart",
-    timeout: 120_000,
-    intervals: [1_000],
+    timeout: 240_000,
+    intervals: [2_000],
   }).toBe("ready");
 
   // Read the file back through the app after the restart.

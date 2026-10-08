@@ -178,6 +178,15 @@ else
     sleep 1
   done
   say "API restarted: $(curl -sk https://127.0.0.1:${API_PORT}/api/health/ready)"
+  # The public path the Windows runner uses, so a tunnel that did not survive the
+  # restart is visible in this log rather than only in the run's failure.
+  for _ in $(seq 1 60); do
+    if curl -s --fail --max-time 10 "${TUNNEL}/api/health/ready" >/dev/null 2>&1; then
+      say "the public path answers again through the tunnel"
+      break
+    fi
+    sleep 2
+  done
 fi
 
 STATUS=0
