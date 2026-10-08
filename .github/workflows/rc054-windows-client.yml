@@ -2,28 +2,33 @@ name: rc054-windows-client
 
 # RC-054's Windows leg needs a browser on Windows. GitHub's windows-latest
 # runner is a real Windows machine, so the journey runs there while the Linux
-# host stays the one named by the dispatch input. Dispatched by hand: it is a
-# platform proof, not a gate that repeats the sam-harness checks.
+# host stays the one this run is pointed at.
+#
+# It is armed through a pull request rather than `workflow_dispatch`, because a
+# dispatch only resolves for a workflow that also exists on the default branch
+# and this repository's is not merged there. The `RC054_BACKEND_ORIGIN`
+# repository variable carries the host's origin and is cleared as soon as the
+# run has started, so an ordinary push runs nothing.
 on:
   workflow_dispatch:
     inputs:
       backend_origin:
         description: HTTPS origin of the Linux RemoteCode host, e.g. https://34.1.2.3:8443
         required: true
-      auth_password:
-        description: Passphrase that Linux host was started with
-        required: true
       browser:
         description: Chromium engine to run the journey on
         required: false
         type: string
         default: chromium
+  pull_request:
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: read
 
 jobs:
   windows-client:
+    if: github.event_name != 'pull_request' || vars.RC054_BACKEND_ORIGIN != ''
     runs-on: windows-latest
     defaults:
       run:
@@ -38,13 +43,13 @@ jobs:
       - name: Install the dependencies and the Windows browser
         run: |
           bun install --frozen-lockfile
-          bunx playwright install --with-deps "${{ inputs.browser }}"
+          bunx playwright install "${{ inputs.browser || 'chromium' }}"
 
       - name: Run the journey from the Windows browser
         env:
-          RC054_BACKEND_ORIGIN: ${{ inputs.backend_origin }}
-          RC054_AUTH_PASSWORD: ${{ inputs.auth_password }}
-          RC054_BROWSER: ${{ inputs.browser }}
+          RC054_BACKEND_ORIGIN: ${{ inputs.backend_origin || vars.RC054_BACKEND_ORIGIN }}
+          RC054_AUTH_PASSWORD: ${{ secrets.RC054_AUTH_PASSWORD }}
+          RC054_BROWSER: ${{ inputs.browser || 'chromium' }}
         run: bash scripts/rc054/run-windows-client-proof.sh "$GITHUB_WORKSPACE/proof-rc054-windows"
 
       - name: Keep the transcript, the Vite log and the result

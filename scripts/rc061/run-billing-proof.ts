@@ -30,17 +30,15 @@ function sign(body: string) {
 async function deliver(event: Record<string, unknown>, options: { loseResponse?: boolean } = {}) {
   const body = JSON.stringify(event);
   if (options.loseResponse) {
-    // The provider gave up on the response. The server still processes the
-    // event; only the caller's knowledge is missing.
-    const controller = new AbortController();
-    const request = fetch(`${base}/api/billing/webhook`, {
+    // The provider gave up on the response: the request is delivered and its
+    // answer is never read, so the caller is left without an outcome. Aborting
+    // the fetch instead raced with the send and sometimes dropped the event,
+    // which is a different failure from losing the answer to it.
+    void fetch(`${base}/api/billing/webhook`, {
       method: "POST",
       headers: { "content-type": "application/json", "x-rc-signature": sign(body) },
       body,
-      signal: controller.signal,
     }).catch(() => null);
-    controller.abort();
-    await request;
     return { status: 0, body: null as any };
   }
   const response = await fetch(`${base}/api/billing/webhook`, {
@@ -140,7 +138,15 @@ try {
   //    receipt instead of charging again.
   const recovered = { eventId: randomUUID(), kind: "checkout.completed", sequence: 9, userId: owner, plan: "hosted-pro", occurredAt: new Date().toISOString() };
   await deliver(recovered, { loseResponse: true });
-  const recoveredReceipt = await receipt(recovered.eventId);
+  // With no response to read, the caller asks the receipt; the record of an
+  // event it just sent is not written the very instant the request is.
+  let recoveredReceipt: any = null;
+  const receiptDeadline = Date.now() + 10_000;
+  while (Date.now() < receiptDeadline) {
+    recoveredReceipt = await receipt(recovered.eventId);
+    if (recoveredReceipt?.found === true) break;
+    await delay(200);
+  }
   if (recoveredReceipt?.found !== true) throw Error(`receipt_missing_${JSON.stringify(recoveredReceipt)}`);
   if (recoveredReceipt.applied !== true) throw Error(`receipt_not_applied_${JSON.stringify(recoveredReceipt)}`);
   const afterRecovery = await subscription();
