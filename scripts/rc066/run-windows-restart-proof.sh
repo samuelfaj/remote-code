@@ -185,6 +185,9 @@ else
     sleep 1
   done
   say "API restarted: $(curl -sk https://127.0.0.1:${API_PORT}/api/health/ready)"
+  # The browser cannot see the gap -- the port stays open -- so the restart is
+  # announced by a workspace only the new process can have served.
+  docker exec "$NAME" bash -lc "curl -sk -X POST https://127.0.0.1:3000/api/workspaces -H 'content-type: application/json' -H 'cookie: $HOST_COOKIE' -d '{\"name\":\"RC066-WIN-RESTART-DONE $(date +%s)\",\"requestId\":\"$(uuidgen)\"}' >/dev/null" || say "the restart marker could not be written"
   # The public path the Windows runner uses, so a tunnel that did not survive the
   # restart is visible in this log rather than only in the run's failure.
   for _ in $(seq 1 60); do
