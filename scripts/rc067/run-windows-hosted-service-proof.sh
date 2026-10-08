@@ -66,8 +66,8 @@ ACCOUNT_RESPONSE=$(curl -sk -w "\n%{http_code}" -X POST "$CONTROL_ORIGIN/api/hos
   -d '{"name":"RC067-Windows-Proof"}' 2>/dev/null || true)
 ACCOUNT_STATUS=$(echo "$ACCOUNT_RESPONSE" | tail -1)
 ACCOUNT_BODY=$(echo "$ACCOUNT_RESPONSE" | sed '$d')
-ACCOUNT_ID=$(echo "$ACCOUNT_BODY" | grep -o '"id"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | grep -o '"[^"]*"$' | tr -d '"')
-ACCOUNT_PORT=$(echo "$ACCOUNT_BODY" | grep -o '"hostPort"[[:space:]]*:[[:space:]]*[0-9]*' | head -1 | grep -o '[0-9]*$')
+ACCOUNT_ID=$(echo "$ACCOUNT_BODY" | grep -o '"id"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | grep -o '"[^"]*"$' | tr -d '"' || true)
+ACCOUNT_PORT=$(echo "$ACCOUNT_BODY" | grep -o '"hostPort"[[:space:]]*:[[:space:]]*[0-9]*' | head -1 | grep -o '[0-9]*$' || true)
 
 if [[ "$ACCOUNT_STATUS" == "201" && -n "$ACCOUNT_ID" && -n "$ACCOUNT_PORT" ]]; then
   say "PASS: provision returned 201, id=$ACCOUNT_ID, hostPort=$ACCOUNT_PORT"
@@ -122,7 +122,7 @@ SUSPEND_RESPONSE=$(curl -sk -w "\n%{http_code}" -X POST "$CONTROL_ORIGIN/api/hos
   -H "Cookie: $LOGIN_COOKIE" 2>/dev/null || true)
 SUSPEND_STATUS=$(echo "$SUSPEND_RESPONSE" | tail -1)
 SUSPEND_BODY=$(echo "$SUSPEND_RESPONSE" | sed '$d')
-SUSPEND_STATE=$(echo "$SUSPEND_BODY" | grep -o '"state"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | grep -o '"[^"]*"$' | tr -d '"')
+SUSPEND_STATE=$(echo "$SUSPEND_BODY" | grep -o '"state"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | grep -o '"[^"]*"$' | tr -d '"' || true)
 
 if [[ "$SUSPEND_STATUS" == "200" && "$SUSPEND_STATE" == "suspended" ]]; then
   say "PASS: suspend returned 200 and state is suspended"
@@ -138,7 +138,7 @@ VERIFY_RESPONSE=$(curl -sk -w "\n%{http_code}" "$CONTROL_ORIGIN/api/hosted/accou
   -H "Cookie: $LOGIN_COOKIE" 2>/dev/null || true)
 VERIFY_STATUS=$(echo "$VERIFY_RESPONSE" | tail -1)
 VERIFY_BODY=$(echo "$VERIFY_RESPONSE" | sed '$d')
-VERIFY_STATE=$(echo "$VERIFY_BODY" | grep -o '"state"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | grep -o '"[^"]*"$' | tr -d '"')
+VERIFY_STATE=$(echo "$VERIFY_BODY" | grep -o '"state"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | grep -o '"[^"]*"$' | tr -d '"' || true)
 
 if [[ "$VERIFY_STATUS" == "200" && "$VERIFY_STATE" == "suspended" ]]; then
   say "PASS: account record reports suspended"
