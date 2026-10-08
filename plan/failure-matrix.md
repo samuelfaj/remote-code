@@ -46,7 +46,7 @@ recorded run with its observed outcome.
 | Restore: backup and restore | `scripts/rc058/run-backup-restore-proof.ts`, `apps/api/src/features/backup.test.ts` | yes | restored state read back from the authority |
 | Version: client/server mismatch | `scripts/rc059/run-install-proof.ts`, `scripts/rc062/run-update-proof.ts`, `apps/web/e2e/workspaces.spec.ts` (older capability blocks create before any POST) | yes | refusal before any write |
 
-## Named gaps (what keeps RC-065 open)
+## Named gaps (all closed 2026-10-08)
 
 1. **~~No single matrix run.~~ Closed 2026-10-08.** `scripts/rc065/run-failure-matrix.sh`
    now runs every row below in turn and keeps one transcript per case in one
@@ -69,13 +69,20 @@ recorded run with its observed outcome.
    stdout is captured across both runs, sanitized (passphrase, `x-rc-*` values,
    `Bearer` tokens), and asserted free of the passphrase and any token in its raw
    form. Passes three times.
-4. **Swapped window** is proven as a *crossed cookie* refusal
-   (`scripts/rc042`); a run that swaps the visible window mid-stream and asserts
-   the frame identity is being built in `scripts/rc065/run-window-swap-proof.ts`
-   on rc042's own setup.
-5. **Android storage-failure modes** exist for iOS only; the Android equivalent
-   is being built in `scripts/rc065/run-android-storage-failure-proof.sh` on the
-   RC-057 device harness.
+4. **~~Swapped window.~~ Closed 2026-10-08.** `RC065_PROOF_DIR=<fresh dir> bun
+   scripts/rc065/run-window-swap-proof.ts`, built on RC-042's two-display setup:
+   each Bot's frame is its own screen, the window on one Bot's display is
+   replaced mid-stream, and the stream then serves the new page on that display
+   while the other Bot's stays untouched — ten post-swap frame checks, no errors,
+   and a display with no window answers 409 rather than a stale frame. Passes
+   twice.
+5. **~~Android storage-failure modes.~~ Closed 2026-10-08.**
+   `bash scripts/rc065/run-android-storage-failure-proof.sh <fresh dir>` runs on
+   the `rc056-android` emulator against the real Linux host through the RC-057
+   front: the app's own store is made unwritable with `adb root` (recorded and
+   restored), a create attempted before it and another after a confirmed receipt
+   both refuse to claim success, and the host afterwards holds exactly one
+   action. Passes twice.
 
 ## Why this file exists
 
@@ -86,9 +93,8 @@ and fill in the gaps above without rediscovering which proof covers which case.
 
 `bash scripts/rc065/run-failure-matrix.sh <fresh dir>` runs each case below in turn and keeps one transcript per case (`meta/<case>/transcript.log`, `exit`, `command`) plus `matrix.json`.
 
-Observed on this machine: **18 of 18 cases exited 0**, each with its own transcript and each creating its own output directory — network before acceptance and after a lost response, Distill provider 401/429, the stalled-run watchdog, run reconciliation after a host restart, the Docker host supervisor, linux-use command failure and isolation, the linux-use first session and revoked target, the visual channel crossed cookie, input after revocation and supersession, the GUI restart, the event gap, the ownership audit, routines, push, webhooks, restore and the version refusal. `matrix.json` records `{"result": "passed", "casesRun": 18, "casesPassed": 18, "casesFailed": 0}`.
-
-Two cases failed on earlier runs and are now fixed at their cause, neither in product code: `scripts/rc015/run-isolation-proof.sh` handed the agent a model the container cannot resolve, and `scripts/rc061/run-billing-proof.ts` aborted its "lost response" request before it left the process, so the event was sometimes never delivered instead of merely unanswered.
+Observed on this machine: **22 of 22 cases exited 0**, each creating its own output directory and keeping its own transcript: network before acceptance and after a lost response, Distill provider 401/429, the stalled-run watchdog, run reconciliation after a host restart, the Docker host supervisor, linux-use command failure and isolation, the linux-use first session and revoked target, the visual channel crossed cookie, input after revocation and supersession, the GUI restart, the event gap, the ownership audit, routines, push, webhooks, restore, the version refusal, a hosted account whose container is killed, the sanitized log and the UI after an API restart, a window swapped mid-stream, and the Android storage-failure modes. `matrix.json` records
+`{"result": "passed", "casesRun": 22, "casesPassed": 22, "casesFailed": 0}`.
 
 Still outside this matrix, and why RC-065 is not accepted: no injected-failure run in a hosted account, no sanitized-log and UI-after-restart comparison, no swapped-window stream (only the crossed-cookie refusal), and no Android storage-failure modes.
 

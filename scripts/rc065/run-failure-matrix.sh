@@ -41,6 +41,7 @@ CASES=(
   "hosted-account-container-death|RC065_PROOF_DIR={CASE} bun $ROOT/scripts/rc065/run-hosted-failure-proof.ts"
   "sanitized-log-and-ui-after-restart|bash $ROOT/scripts/rc065/run-restart-log-ui-proof.sh {CASE}"
   "swapped-window-frame-identity|RC065_PROOF_DIR={CASE} bun $ROOT/scripts/rc065/run-window-swap-proof.ts"
+  "android-storage-failure-modes|bash $ROOT/scripts/rc065/run-android-storage-failure-proof.sh {CASE}"
 )
 
 PASSED=0
