@@ -49,7 +49,8 @@ COPY scripts/linux-guest-browser-proof.mjs scripts/linux-guest-browser-proof.mjs
 COPY scripts/rc002/acp_client.py scripts/rc002/acp_client.py
 COPY scripts/rc023/linux-use-session.py scripts/rc023/linux-use-session.py
 COPY prototype/start.sh prototype/start.sh
-RUN chmod 0755 prototype/start.sh
+COPY prototype/dev-entrypoint.sh prototype/dev-entrypoint.sh
+RUN chmod 0755 prototype/start.sh prototype/dev-entrypoint.sh
 
 # ImageMagick embeds the current time in PNG output, so the same window would
 # hash differently on every capture and linux-use would always reject its own

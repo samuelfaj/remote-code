@@ -10,7 +10,7 @@ The project is intended to be open source and self-hostable, with paid hosting f
 
 ## Develop locally
 
-Bun 1.4 or later is required; see https://bun.sh. Run `bash dev.sh` from the repository root to start the API on port 3000 and the web app on http://localhost:5173. The development login password is `remote-code-local-dev`; set `REMOTECODE_AUTH_PASSWORD` to override it. You can also override `API_PORT`, `WEB_PORT`, and `DATABASE_PATH` as environment variables. State and the API log live in the untracked `.dev` directory. Press Ctrl-C to stop both processes. The mobile app is not started by this script.
+Bun 1.4 or later is required; see https://bun.sh. Run `bash dev.sh` from the repository root to start the API and the web app. On Linux the API runs directly on the host; on macOS `dev.sh` starts the API inside a Linux host container via Docker so that terminals, workspace files, git, and bot features work as in production. The development login password is `remote-code-local-dev`; set `REMOTECODE_AUTH_PASSWORD` to override it. You can also override `API_PORT`, `WEB_PORT`, and `DATABASE_PATH` as environment variables. State and the API log live in the untracked `.dev` directory; on the Docker path the database and workspace files live in the `remotecode-dev-data` volume, the TLS certificate is generated under `.dev/tls`, and the log is `docker logs remotecode-dev`. Press Ctrl-C to stop both processes. The mobile app is not started by this script.
 
 ## Read the plan
 
