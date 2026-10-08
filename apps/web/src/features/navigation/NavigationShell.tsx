@@ -1,17 +1,18 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native-web";
+import { color, space, radius, font, sidebarWidth, contentMaxWidth, ui } from "../../design/tokens";
 import { createApiClient, listBots, listThreads, type Bot, type Thread, type Workspace } from "@remotecode/client";
 import { AgentPanel } from "../agent/AgentPanel";
 import { ComputerPanel } from "../computer/ComputerPanel";
 import { WorkspacePanel } from "../workspaces/WorkspacePanel";
 
-type Props = { userId: string; onUnauthorized: () => void; eventCursor?: number | null };
+type Props = { userId: string; onUnauthorized: () => void; eventCursor?: number | null; footer?: ReactNode };
 
 function safeTestId(name: string) {
   return name.replace(/[^a-zA-Z0-9_-]/g, "-").replace(/-+/g, "-").replace(/(^-|-$)/g, "");
 }
 
-export function NavigationShell({ userId, onUnauthorized, eventCursor }: Props) {
+export function NavigationShell({ userId, onUnauthorized, eventCursor, footer }: Props) {
   const api = useMemo(() => createApiClient(window.location.origin), []);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [bots, setBots] = useState<Bot[]>([]);
@@ -51,6 +52,14 @@ export function NavigationShell({ userId, onUnauthorized, eventCursor }: Props) 
       setBots([]);
     }
   }
+
+  useEffect(() => {
+    // Below the shell breakpoint the sidebar overlays the content, so a viewport
+    // that enters mobile width would otherwise cover the pane it drew over.
+    const syncSidebarToViewport = () => setSidebarOpen(window.innerWidth >= 769);
+    window.addEventListener("resize", syncSidebarToViewport);
+    return () => window.removeEventListener("resize", syncSidebarToViewport);
+  }, []);
 
   useEffect(() => {
     loadWorkspaces();
@@ -268,9 +277,12 @@ export function NavigationShell({ userId, onUnauthorized, eventCursor }: Props) 
         </View>
 
         <View style={styles.content} testID="app-content">
-          <WorkspacePanel userId={userId} onUnauthorized={onUnauthorized} selectedWorkspaceId={selectedWorkspaceId} />
-          <ComputerPanel userId={userId} selectedWorkspaceId={selectedWorkspaceId} selectedBotId={selectedBotId} />
-          <AgentPanel userId={userId} selectedWorkspaceId={selectedWorkspaceId} selectedBotId={selectedBotId} eventCursor={eventCursor} />
+          <View style={styles.contentInner}>
+            <WorkspacePanel userId={userId} onUnauthorized={onUnauthorized} selectedWorkspaceId={selectedWorkspaceId} />
+            <ComputerPanel userId={userId} selectedWorkspaceId={selectedWorkspaceId} selectedBotId={selectedBotId} />
+            <AgentPanel userId={userId} selectedWorkspaceId={selectedWorkspaceId} selectedBotId={selectedBotId} eventCursor={eventCursor} />
+            {footer}
+          </View>
         </View>
       </View>
     </View>
@@ -278,42 +290,48 @@ export function NavigationShell({ userId, onUnauthorized, eventCursor }: Props) 
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, minHeight: "100vh", backgroundColor: "#f4f7f5" },
+  container: { flex: 1, backgroundColor: color.bg },
   header: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
-    padding: 12,
-    backgroundColor: "#fff",
+    gap: space.md,
+    padding: space.md,
+    backgroundColor: color.surface,
     borderBottomWidth: 1,
-    borderBottomColor: "#d9e5e0",
+    borderBottomColor: color.line,
   },
-  toggleButton: { padding: 8, minHeight: 44 },
-  toggleText: { color: "#183337", fontSize: 14, fontWeight: "600" },
-  headerTitle: { flex: 1, color: "#183337", fontSize: 18, fontWeight: "800" },
-  signOutButton: { padding: 8, minHeight: 44 },
-  signOutText: { color: "#a52d20", fontSize: 14, fontWeight: "600" },
+  toggleButton: { padding: space.sm, minHeight: 44 },
+  toggleText: { color: color.textSecondary, fontSize: font.body },
+  headerTitle: { flex: 1, color: color.text, fontSize: font.title3, fontWeight: "600" },
+  signOutButton: { padding: space.sm, minHeight: 44 },
+  signOutText: { color: color.danger, fontSize: font.body, fontWeight: "600" },
   body: { flex: 1, flexDirection: "row", overflow: "hidden" },
   sidebar: {
-    backgroundColor: "#fff",
+    backgroundColor: color.surface,
     borderRightWidth: 1,
-    borderRightColor: "#d9e5e0",
-    overflow: "hidden",
+    borderRightColor: color.line,
+    overflow: "auto",
   },
-  sidebarOpen: { width: 280, minWidth: 280 },
+  sidebarOpen: { width: sidebarWidth, minWidth: sidebarWidth },
   sidebarClosed: { width: 0, minWidth: 0, display: "none" },
-  sidebarSection: { padding: 12, gap: 8 },
-  sectionHeading: { color: "#304e4e", fontSize: 12, fontWeight: "800", letterSpacing: 0.5, textTransform: "uppercase" },
-  list: { gap: 2, maxHeight: 300, overflow: "scroll" },
+  sidebarSection: { padding: space.md, gap: space.sm },
+  sectionHeading: ui.sectionLabel,
+  list: { gap: space.xs, maxHeight: 300, overflow: "auto" },
   listItem: {
-    padding: 10,
-    borderRadius: 6,
-    minHeight: 44,
-    justifyContent: "center",
+    ...ui.listItem,
+    minHeight: 32,
   },
-  listItemSelected: { backgroundColor: "#e8f0ed" },
-  listItemText: { color: "#183337", fontSize: 14 },
-  listItemTextSelected: { color: "#0d7056", fontWeight: "700" },
-  emptyText: { color: "#6a807c", fontSize: 13, padding: 8 },
-  content: { flex: 1, overflow: "auto", padding: 16, backgroundColor: "#f4f7f5" },
+  listItemSelected: { ...ui.listItemSelected },
+  listItemText: { color: color.textSecondary, fontSize: font.body },
+  listItemTextSelected: { color: color.accent, fontWeight: "600" },
+  emptyText: { color: color.textTertiary, fontSize: font.body, padding: space.md },
+  content: { flex: 1, overflow: "auto", backgroundColor: color.bg },
+  contentInner: {
+    alignSelf: "center",
+    gap: space.xl,
+    maxWidth: contentMaxWidth,
+    paddingHorizontal: space.xxl,
+    paddingVertical: space.xl,
+    width: "100%",
+  },
 });

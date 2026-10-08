@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native-web";
+import { color, space, radius, font, ui } from "../../design/tokens";
 import { createApiClient, fileConflictVersion, fileReceiptFromValue, workspaceErrorStatus, workspaceFromValue, type PendingFile, type Workspace } from "@remotecode/client";
 import { clearPendingFile, clearPendingFolder, directoryFromValue, fileStorageKey, folderStorageKey, folderStateFromValue, isMissingFilePath, isTargetExists, isVersionConflict, openFileFromValue, persistPendingFile, persistPendingFolder, readPendingFile, readPendingFolder, textSha256, validPath, validText, type FileEntry, type FolderState, type OpenFile } from "./file-editor";
 
@@ -441,7 +442,7 @@ export function FilePanel({ userId, workspace, blocked, onUnauthorized }: Props)
               const path = event.target.value;
               setCreation((values) => ({ ...values, [workspace.id]: { path, content: values[workspace.id]?.content ?? "" } }));
             }}
-            style={{ minHeight: 42, padding: 12, border: "1px solid #c9d9d2", borderRadius: 9 }} />
+            style={{ minHeight: 32, paddingLeft: space.md, paddingRight: space.md, paddingTop: space.sm, paddingBottom: space.sm, borderWidth: 1, borderColor: color.line, borderRadius: radius.control, color: color.text, fontFamily: font.sans, fontSize: font.body, width: "100%" }} />
           <label htmlFor="workspace-create-content">New file text</label>
           <textarea id="workspace-create-content" aria-label="New file text" value={currentCreation?.content ?? ""} spellCheck={false}
             readOnly={workspace.archived || currentInspection?.archived === true}
@@ -450,7 +451,7 @@ export function FilePanel({ userId, workspace, blocked, onUnauthorized }: Props)
               const content = event.target.value;
               setCreation((values) => ({ ...values, [workspace.id]: { path: values[workspace.id]?.path ?? "", content } }));
             }}
-            style={{ width: "100%", boxSizing: "border-box", minHeight: 100, resize: "vertical", padding: 12, border: "1px solid #c9d9d2", borderRadius: 9, fontFamily: "monospace", color: "#183337", background: "#fbfdfc" }} />
+            style={{ width: "100%", boxSizing: "border-box", minHeight: 100, resize: "vertical", padding: space.md, borderWidth: 1, borderColor: color.line, borderRadius: radius.control, fontFamily: font.mono, color: color.text, backgroundColor: color.surfaceRaised }} />
           {currentCreation && (!validPath(currentCreation.path) || !validText(currentCreation.content))
             ? <Text>Use a non-empty relative file path without reserved or traversal segments, and valid UTF-8 text without NUL, at most 1 MiB.</Text> : null}
           <Pressable accessibilityRole="button" accessibilityLabel="Create file" disabled={createDisabled} accessibilityState={{ disabled: createDisabled }}
@@ -467,12 +468,12 @@ export function FilePanel({ userId, workspace, blocked, onUnauthorized }: Props)
               editorRef.current = { ...item, draft };
               setEditor((value) => value?.host === item.host ? { ...value, draft } : value);
             }}
-            style={{ width: "100%", boxSizing: "border-box", minHeight: 220, resize: "vertical", padding: 12, border: "1px solid #c9d9d2", borderRadius: 9, fontFamily: "monospace", color: "#183337", background: "#fbfdfc" }} />
+            style={{ width: "100%", boxSizing: "border-box", minHeight: 220, resize: "vertical", padding: space.md, borderWidth: 1, borderColor: color.line, borderRadius: radius.control, fontFamily: font.mono, color: color.text, backgroundColor: color.surfaceRaised }} />
           {currentEditor.draft !== currentEditor.host.content ? <>
             <Text>Draft differs from last read host text. Reading does not replace your draft.</Text>
             <label htmlFor="workspace-file-host">Last read host text (not live)</label>
             <textarea id="workspace-file-host" aria-label="Last read host text" value={currentEditor.host.content} readOnly
-              style={{ width: "100%", boxSizing: "border-box", minHeight: 100, fontFamily: "monospace", border: "1px solid #c9d9d2", borderRadius: 9, padding: 12 }} />
+              style={{ width: "100%", boxSizing: "border-box", minHeight: 100, fontFamily: font.mono, borderWidth: 1, borderColor: color.line, borderRadius: radius.control, padding: space.md }} />
           </> : null}
           {!validText(currentEditor.draft) ? <Text accessibilityRole="alert">SAVE requires valid UTF-8 text without NUL, at most 1 MiB.</Text> : null}
           <Pressable accessibilityRole="button" accessibilityLabel="Read current file" disabled={busy || blocked}
@@ -486,7 +487,7 @@ export function FilePanel({ userId, workspace, blocked, onUnauthorized }: Props)
               if (live.current.workspace?.id !== workspace.id || editorRef.current?.host !== currentEditor.host) return;
               setMove({ workspaceId: workspace.id, sourcePath: currentEditor.host.path, destinationPath: event.target.value });
             }}
-            style={{ minHeight: 42, padding: 12, border: "1px solid #c9d9d2", borderRadius: 9 }} />
+            style={{ minHeight: 32, paddingLeft: space.md, paddingRight: space.md, paddingTop: space.sm, paddingBottom: space.sm, borderWidth: 1, borderColor: color.line, borderRadius: radius.control, color: color.text, fontFamily: font.sans, fontSize: font.body, width: "100%" }} />
           <Text>MOVE uses the current verified open version, never the unsaved draft. Destination is relative to the workspace root; its parent directory must exist.</Text>
           {currentEditor.draft !== currentEditor.host.content ? <Text>Save or explicitly discard the dirty draft before moving. No draft will be saved by MOVE.</Text> : null}
           <Pressable accessibilityRole="button" accessibilityLabel="Move file" disabled={moveDisabled} accessibilityState={{ disabled: moveDisabled }}
@@ -508,13 +509,13 @@ export function FilePanel({ userId, workspace, blocked, onUnauthorized }: Props)
 }
 
 const styles = StyleSheet.create({
-  panel: { borderTopColor: "#e3ebe7", borderTopWidth: 1, gap: 12, paddingTop: 12 },
-  heading: { color: "#183337", fontSize: 18, fontWeight: "700" },
-  section: { gap: 8 },
-  row: { borderTopColor: "#e3ebe7", borderTopWidth: 1, minHeight: 42, justifyContent: "center", paddingVertical: 8 },
-  button: { alignItems: "center", backgroundColor: "#126b54", borderRadius: 9, justifyContent: "center", minHeight: 42 },
-  buttonText: { color: "#fff", fontWeight: "700" },
-  disabled: { opacity: 0.55 },
-  secondary: { alignItems: "center", justifyContent: "center", minHeight: 40 },
-  pending: { backgroundColor: "#fff0cf", gap: 8, padding: 12 },
+  panel: { ...ui.panel },
+  heading: { ...ui.title },
+  section: { gap: space.md },
+  row: { ...ui.listItem, flexDirection: "row", justifyContent: "space-between", flexShrink: 1, minWidth: 0 },
+  button: { ...ui.buttonPrimary },
+  buttonText: { ...ui.buttonLabelPrimary },
+  disabled: { ...ui.buttonDisabled },
+  secondary: { ...ui.button },
+  pending: { backgroundColor: color.surfaceRaised, gap: space.md, padding: space.md },
 });

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native-web";
+import { color, space, radius, font, ui } from "../../design/tokens";
 import {
   createApiClient,
   listBots,
@@ -509,6 +510,9 @@ export function WorkspacePanel({ userId, onUnauthorized, selectedWorkspaceId }: 
     }
   }
 
+  const createDisabled =
+    busy || Boolean(pending) || capability === "unsupported" || !storageReady || !name.trim();
+
   return (
     <View style={styles.card} testID="workspace-panel">
       <Text accessibilityRole="header" style={styles.heading}>
@@ -525,14 +529,10 @@ export function WorkspacePanel({ userId, onUnauthorized, selectedWorkspaceId }: 
         accessibilityRole="button"
         accessibilityLabel="Create workspace"
         disabled={
-          busy ||
-          Boolean(pending) ||
-          capability === "unsupported" ||
-          !storageReady ||
-          !name.trim()
+          createDisabled
         }
         onPress={() => void mutate("create")}
-        style={styles.button}
+        style={[styles.button, createDisabled && styles.buttonDisabled]}
       >
         <Text style={styles.buttonText}>Create workspace</Text>
       </Pressable>
@@ -558,7 +558,7 @@ export function WorkspacePanel({ userId, onUnauthorized, selectedWorkspaceId }: 
           testID="new-bot"
           onPress={createBot}
           disabled={busy || !botName.trim() || !selectedId}
-          style={[styles.smallButton, busy && styles.smallButtonDisabled]}
+          style={[styles.smallButton, (busy || !botName.trim() || !selectedId) && styles.smallButtonDisabled]}
         >
           <Text style={styles.smallButtonText}>Create bot</Text>
         </Pressable>
@@ -572,8 +572,14 @@ export function WorkspacePanel({ userId, onUnauthorized, selectedWorkspaceId }: 
         <Text>No workspaces yet.</Text>
       ) : null}
       {workspaces.map((workspace) => (
-        <View key={workspace.id} style={styles.row}>
-          <Text>
+        <View
+          key={workspace.id}
+          style={[
+            styles.row,
+            workspace.id === selectedId && styles.listItemSelected,
+          ]}
+        >
+          <Text style={workspace.id === selectedId && styles.selectedText}>
             {workspace.name}
             {workspace.archived ? " (archived, read-only)" : ""}
           </Text>
@@ -703,7 +709,7 @@ export function WorkspacePanel({ userId, onUnauthorized, selectedWorkspaceId }: 
                       onPress={() => void selectGitFile(path)}
                       style={[
                         styles.gitFileRow,
-                        gitSelectedFile === path && styles.gitFileRowSelected,
+                        gitSelectedFile === path ? styles.gitFileRowSelected : undefined,
                       ]}
                     >
                       <Text style={styles.gitFilePath}>{path}</Text>
@@ -723,7 +729,7 @@ export function WorkspacePanel({ userId, onUnauthorized, selectedWorkspaceId }: 
                       onPress={() => void selectGitFile(path)}
                       style={[
                         styles.gitFileRow,
-                        gitSelectedFile === path && styles.gitFileRowSelected,
+                        gitSelectedFile === path ? styles.gitFileRowSelected : undefined,
                       ]}
                     >
                       <Text style={styles.gitFilePath}>{path}</Text>
@@ -758,78 +764,95 @@ export function WorkspacePanel({ userId, onUnauthorized, selectedWorkspaceId }: 
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: "#fff",
-    borderColor: "#d9e5e0",
-    borderRadius: 16,
-    borderWidth: 1,
-    gap: 12,
-    padding: 18,
+    ...ui.panel,
   },
-  heading: { color: "#183337", fontSize: 18, fontWeight: "700" },
+  heading: {
+    ...ui.title,
+  },
   input: {
-    borderColor: "#c9d9d2",
-    borderRadius: 9,
-    borderWidth: 1,
-    minHeight: 42,
-    paddingHorizontal: 12,
+    ...ui.input,
   },
   button: {
-    alignItems: "center",
-    backgroundColor: "#126b54",
-    borderRadius: 9,
-    justifyContent: "center",
-    minHeight: 42,
+    ...ui.buttonPrimary,
   },
-  buttonText: { color: "#fff", fontWeight: "700" },
-  secondary: { alignItems: "center", justifyContent: "center", minHeight: 40 },
-  createRow: { flexDirection: "row", gap: 8, alignItems: "center" },
+  buttonText: {
+    ...ui.buttonLabelPrimary,
+  },
+  buttonDisabled: {
+    ...ui.buttonDisabled,
+  },
+  secondary: {
+    ...ui.button,
+  },
+  createRow: {
+    flexDirection: "row",
+    gap: space.md,
+    alignItems: "center",
+  },
   smallButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: "#126b54",
-    borderRadius: 8,
-    minHeight: 42,
-    justifyContent: "center",
+    ...ui.button,
   },
-  smallButtonDisabled: { opacity: 0.55 },
-  smallButtonText: { color: "#fff", fontSize: 13, fontWeight: "750" },
+  smallButtonDisabled: {
+    ...ui.buttonDisabled,
+  },
+  smallButtonText: {
+    ...ui.buttonLabel,
+  },
   row: {
-    alignItems: "center",
-    borderTopColor: "#e3ebe7",
-    borderTopWidth: 1,
+    ...ui.listItem,
     flexDirection: "row",
     justifyContent: "space-between",
-    paddingVertical: 8,
+    flexShrink: 1,
+    minWidth: 0,
+  },
+  listItemSelected: {
+    ...ui.listItemSelected,
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  selectedText: {
+    color: color.accent,
   },
   selected: {
-    borderTopColor: "#e3ebe7",
     borderTopWidth: 1,
-    gap: 8,
-    paddingTop: 12,
+    borderTopColor: color.line,
+    gap: space.md,
+    paddingTop: space.md,
   },
-  pending: { backgroundColor: "#fff0cf", gap: 8, padding: 12 },
-  gitRefresh: { alignSelf: "flex-start", paddingVertical: 6, paddingHorizontal: 10 },
+  pending: {
+    backgroundColor: color.surfaceRaised,
+    gap: space.md,
+    padding: space.md,
+  },
+  gitRefresh: {
+    ...ui.button,
+    alignSelf: "flex-start",
+    paddingVertical: space.sm,
+    paddingHorizontal: space.md,
+  },
   gitPanel: {
-    borderTopColor: "#e3ebe7",
+    ...ui.card,
     borderTopWidth: 1,
-    gap: 8,
-    paddingTop: 12,
+    borderTopColor: color.line,
+    gap: space.md,
+    paddingTop: space.md,
   },
-  subheading: { color: "#183337", fontSize: 14, fontWeight: "700" },
-  gitSectionHeading: { color: "#304e4e", fontSize: 12, fontWeight: "800", marginTop: 8 },
+  subheading: {
+    ...ui.heading,
+  },
+  gitSectionHeading: {
+    ...ui.sectionLabel,
+  },
   gitFileRow: {
-    padding: 6,
-    borderRadius: 4,
-    minHeight: 32,
-    justifyContent: "center",
+    ...ui.listItem,
   },
-  gitFileRowSelected: { backgroundColor: "#e8f0ed" },
-  gitFilePath: { color: "#183337", fontSize: 13, fontFamily: "monospace" },
+  gitFileRowSelected: {
+    ...ui.listItemSelected,
+  },
+  gitFilePath: {
+    ...ui.mono,
+  },
   gitDiff: {
-    borderColor: "#d9e5e0",
-    borderWidth: 1,
-    borderRadius: 6,
-    padding: 8,
-    marginTop: 8,
+    ...ui.card,
   },
 });

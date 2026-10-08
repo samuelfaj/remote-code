@@ -8,6 +8,7 @@ import {
   workspaceLayoutFromValue, workspaceLayoutResponseFromValue,
   type TerminalReceipt, type TerminalReference, type Workspace, type WorkspaceLayout,
 } from "@remotecode/client";
+import { color, space, radius, font, ui } from "../../design/tokens";
 
 type Props = { userId: string; workspace: Workspace | null; blocked: boolean; onUnauthorized: () => void };
 const budgetMs = 10_000;
@@ -978,53 +979,53 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
     finally { if (current()) { working.current = false; setBusy(false); } }
   }
 
-  return <section className="terminal-panel" aria-label="Linux terminal" style={{ border: "1px solid #dce4df", borderRadius: 8, padding: 16, marginTop: 16, maxWidth: "100%" }}>
-    <h3>Linux terminal</h3>
-    {!workspace ? <p>Select a workspace to use its host terminal.</p> : <>
-      <p>Line input with a read-only terminal screen. {directKeys ? `Direct keyboard input is on: typing in the terminal screen queues each keystroke and sends them in order through the same host input queue.${queuedKeys > 0 ? ` ${queuedKeys} waiting.` : ""}` : "Direct keyboard input is off."}</p>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <button type="button" disabled={busy || blocked || !available || !storageReady || !!reference || workspace.archived} onClick={() => void start()}>Start Linux terminal</button>
+  return <section className="terminal-panel" aria-label="Linux terminal">
+    <h3 style={ui.heading}>Linux terminal</h3>
+    {!workspace ? <p style={ui.body}>Select a workspace to use its host terminal.</p> : <>
+      <p style={ui.body}>Line input with a read-only terminal screen. {directKeys ? `Direct keyboard input is on: typing in the terminal screen queues each keystroke and sends them in order through the same host input queue.${queuedKeys > 0 ? ` ${queuedKeys} waiting.` : ""}` : "Direct keyboard input is off."}</p>
+      <div style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: space.md }}>
+        <button type="button" className="primary" disabled={busy || blocked || !available || !storageReady || !!reference || workspace.archived} onClick={() => void start()}>Start Linux terminal</button>
         <button type="button" disabled={busy || blocked} onClick={() => void inspect()}>Inspect terminal state</button>
         <button type="button" disabled={busy || blocked || !storageReady || !sameWorkspace || !reference?.terminalId || reference.stopRequested || closed} onClick={() => void stop()}>Stop terminal</button>
       </div>
-      <p role="status" data-testid="terminal-status">{message}</p>
-      {reference && !sameWorkspace ? <p>Select the original workspace to inspect its terminal reference.</p> : null}
-      {reference?.inputUncertain ? <p role="alert">Input delivery remains unknown. No input will be resent automatically.</p> : null}
-      {reference?.resizeUncertain ? <p role="alert">Resize outcome remains unknown. The terminal size is unconfirmed and input is blocked; Stop the terminal to release it.</p> : null}
-      {reference?.stopRequested ? <p>Stop is unconfirmed. Input stays disabled until the host confirms cleanup.</p> : null}
-      {currentReceipt?.inputState === "queued" ? <p data-testid="terminal-input-backpressure">Host buffered input. Poll before sending more.</p> : null}
-      <p data-testid="terminal-host-state">{currentReceipt ? `Host state: ${currentReceipt.state}; cleanup: ${currentReceipt.cleanup}; ${currentReceipt.cols} columns × ${currentReceipt.rows} rows; resize: ${currentReceipt.resizeState}${currentReceipt.exitCode === null ? "" : `; exit code: ${currentReceipt.exitCode}`}` : "Host terminal state is unconfirmed."}</p>
-      {gap ? <p>Earlier output was discarded or is unavailable. Only received bytes are shown.</p> : null}
-      {currentReceipt?.flow ? <p data-testid="terminal-flow-state">{`Flow: ${currentReceipt.flow.totalBytes} produced, ${currentReceipt.flow.retainedBytes} retained, ${currentReceipt.flow.droppedBytes} dropped.`}</p> : null}
+      <p role="status" data-testid="terminal-status" style={ui.meta}>{message}</p>
+      {reference && !sameWorkspace ? <p style={ui.body}>Select the original workspace to inspect its terminal reference.</p> : null}
+      {reference?.inputUncertain ? <p role="alert" style={ui.error}>Input delivery remains unknown. No input will be resent automatically.</p> : null}
+      {reference?.resizeUncertain ? <p role="alert" style={ui.error}>Resize outcome remains unknown. The terminal size is unconfirmed and input is blocked; Stop the terminal to release it.</p> : null}
+      {reference?.stopRequested ? <p style={ui.body}>Stop is unconfirmed. Input stays disabled until the host confirms cleanup.</p> : null}
+      {currentReceipt?.inputState === "queued" ? <p data-testid="terminal-input-backpressure" style={ui.error}>Host buffered input. Poll before sending more.</p> : null}
+      <p data-testid="terminal-host-state" style={ui.meta}>{currentReceipt ? `Host state: ${currentReceipt.state}; cleanup: ${currentReceipt.cleanup}; ${currentReceipt.cols} columns × ${currentReceipt.rows} rows; resize: ${currentReceipt.resizeState}${currentReceipt.exitCode === null ? "" : `; exit code: ${currentReceipt.exitCode}`}` : "Host terminal state is unconfirmed."}</p>
+      {gap ? <p style={ui.body}>Earlier output was discarded or is unavailable. Only received bytes are shown.</p> : null}
+      {currentReceipt?.flow ? <p data-testid="terminal-flow-state" style={ui.meta}>{`Flow: ${currentReceipt.flow.totalBytes} produced, ${currentReceipt.flow.retainedBytes} retained, ${currentReceipt.flow.droppedBytes} dropped.`}</p> : null}
       <TerminalScreen ref={screen} size={currentReceipt ? { cols: currentReceipt.cols, rows: currentReceipt.rows } : null}
         onKey={directKeys && canInput ? (key) => void send(key) : undefined} />
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+      <div style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: space.md }}>
         <button type="button" disabled={busy || blocked || !canInput} onClick={() => { clearKeys(); setDirectKeys((value) => !value); if (!directKeys) screen.current?.focus(); }}>
           {directKeys ? "Turn off direct keyboard input" : "Turn on direct keyboard input"}
         </button>
       </div>
       <div className="terminal-resize">
-        <label>Columns (2–300)<input type="number" inputMode="numeric" min={2} max={300} step={1} value={cols} onChange={(event) => setCols(event.target.value)} /></label>
-        <label>Rows (2–200)<input type="number" inputMode="numeric" min={2} max={200} step={1} value={rows} onChange={(event) => setRows(event.target.value)} /></label>
+        <label style={{ display: "block" }}>Columns (2–300)<input type="number" inputMode="numeric" min={2} max={300} step={1} value={cols} onChange={(event) => setCols(event.target.value)} /></label>
+        <label style={{ display: "block" }}>Rows (2–200)<input type="number" inputMode="numeric" min={2} max={200} step={1} value={rows} onChange={(event) => setRows(event.target.value)} /></label>
         <button type="button" disabled={busy || !canResize || !validSize} onClick={() => void resize()}>Apply size</button>
       </div>
-      <label style={{ display: "block" }}>Terminal input<textarea aria-label="Terminal input" value={draft} onChange={(event) => setDraft(event.target.value)} spellCheck={false} autoCorrect="off" autoCapitalize="off" style={{ boxSizing: "border-box", width: "100%", minHeight: 72 }} /></label>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+      <label style={{ display: "block" }}>Terminal input<textarea aria-label="Terminal input" value={draft} onChange={(event) => setDraft(event.target.value)} spellCheck={false} autoCorrect="off" autoCapitalize="off" /></label>
+      <div style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: space.md }}>
         <button type="button" disabled={busy || !canInput || !draft} onClick={() => void send(draft.endsWith("\n") ? draft : `${draft}\n`, draft)}>Send input</button>
         <button type="button" disabled={busy || !canInput} onClick={() => void send("\x03")}>Send Ctrl+C</button>
         <button type="button" disabled={busy || blocked || !storageReady || !workspace || workspace.archived} onClick={() => void saveLayout()}>Save layout</button>
       </div>
-      <p data-testid="terminal-layout-state">{layoutMessage || "Layout not loaded for this workspace."}{layout ? ` Shared tabs: ${layout.tabs.length}; this device: ${localTabId ?? "none"}; pane: ${localPaneId ?? "none"}; selection stays on this device.` : ""}</p>
-      {layout ? <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }} aria-label="Local tabs" data-testid="terminal-local-tabs">
-        {layout.tabs.length === 0 ? <span>No shared tabs yet.</span> : layout.tabs.map((tab) => <button key={tab.id} type="button" disabled={tab.id === localTabId} onClick={() => {
+      <p data-testid="terminal-layout-state" style={ui.meta}>{layoutMessage || "Layout not loaded for this workspace."}{layout ? ` Shared tabs: ${layout.tabs.length}; this device: ${localTabId ?? "none"}; pane: ${localPaneId ?? "none"}; selection stays on this device.` : ""}</p>
+      {layout ? <div style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: space.md }} aria-label="Local tabs" data-testid="terminal-local-tabs">
+        {layout.tabs.length === 0 ? <span style={ui.body}>No shared tabs yet.</span> : layout.tabs.map((tab) => <button key={tab.id} type="button" style={tab.id === localTabId ? ui.listItemSelected : ui.listItem} disabled={tab.id === localTabId} onClick={() => {
           setLocalTabId(tab.id);
           const inTab = (layout.panes ?? []).filter((pane) => pane.tabId === tab.id).sort((a, b) => a.order - b.order);
           setLocalPaneId(inTab[0]?.id ?? null);
         }}>Open {tab.id}{tab.id === localTabId ? " (this device)" : ""}</button>)}
       </div> : null}
-      {layout && localTabId ? <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }} aria-label="Local panes" data-testid="terminal-local-panes">
-        {layout.panes?.filter((pane) => pane.tabId === localTabId).sort((a, b) => a.order - b.order).map((pane) => <button key={pane.id} type="button" disabled={pane.id === localPaneId} onClick={() => setLocalPaneId(pane.id)}>Open {pane.id}{pane.id === localPaneId ? " (this device)" : ""}</button>) ?? null}
-        {(layout.panes?.filter((pane) => pane.tabId === localTabId).length ?? 0) === 0 ? <span>No panes on this tab.</span> : null}
+      {layout && localTabId ? <div style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: space.md }} aria-label="Local panes" data-testid="terminal-local-panes">
+        {layout.panes?.filter((pane) => pane.tabId === localTabId).sort((a, b) => a.order - b.order).map((pane) => <button key={pane.id} type="button" style={pane.id === localPaneId ? ui.listItemSelected : ui.listItem} disabled={pane.id === localPaneId} onClick={() => setLocalPaneId(pane.id)}>Open {pane.id}{pane.id === localPaneId ? " (this device)" : ""}</button>) ?? null}
+        {(layout.panes?.filter((pane) => pane.tabId === localTabId).length ?? 0) === 0 ? <span style={ui.body}>No panes on this tab.</span> : null}
       </div> : null}
     </>}
   </section>;

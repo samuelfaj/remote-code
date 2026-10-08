@@ -1,6 +1,7 @@
 import { forwardRef, useImperativeHandle, useLayoutEffect, useRef } from "react";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
+import { color } from "../../design/tokens";
 
 export type TerminalScreenHandle = {
   // Recreates the emulator so parser, UTF-8 decoder and buffers all start clean.
@@ -25,6 +26,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
     const next = new Terminal({
       disableStdin: false, scrollback: 1000, screenReaderMode: true, cursorBlink: false,
       cols: dims.current?.cols ?? 80, rows: dims.current?.rows ?? 24, fontSize: 13,
+      theme: { background: color.terminalBg, foreground: color.terminalFg, cursor: color.terminalFg, selectionBackground: color.selection },
     });
     // Direct keyboard input stays gated by the parent: the emulator only
     // forwards keystrokes while a handler is attached; with no handler the

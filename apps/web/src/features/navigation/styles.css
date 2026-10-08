@@ -1,17 +1,13 @@
-.sidebar-toggle {
-  display: none;
-}
-
-@media (max-width: 768px) {
-  .sidebar-toggle {
-    display: flex;
-  }
+/* React Native Web does not apply a Pressable hoverStyle prop; the row hover
+   lives here instead, matching the macOS sidebar's white 5% hover layer. */
+[data-testid="app-sidebar"] [role="option"]:hover {
+  background-color: rgba(255, 255, 255, 0.05);
 }
 
 [data-testid="app-sidebar"] [data-nav-item]:focus-visible {
-  outline: 2px solid #126b54;
+  outline: 2px solid var(--rc-accent);
   outline-offset: 2px;
-  box-shadow: 0 0 0 4px rgba(18, 107, 84, 0.3);
+  box-shadow: 0 0 0 4px rgba(124, 199, 255, 0.3);
 }
 
 [data-testid="app-sidebar"] [data-nav-item]:focus:not(:focus-visible) {
@@ -19,26 +15,13 @@
   box-shadow: none;
 }
 
-@media (min-width: 769px) {
-  [data-testid="app-sidebar"] {
-    display: flex !important;
-    width: 280px !important;
-    min-width: 280px !important;
-    position: relative !important;
-    overflow: visible !important;
-  }
-}
-
+/* Below the shell breakpoint the sidebar overlays the content instead of
+   sharing the row. Width and display stay owned by the component's own styles
+   so the closed state cannot be overridden by a stylesheet rule. */
 @media (max-width: 768px) {
   [data-testid="app-sidebar"] {
-    position: absolute;
+    position: absolute !important;
     z-index: 10;
     height: 100%;
-    width: 280px;
-    min-width: 280px;
-    display: flex;
-  }
-  [data-testid="app-sidebar"][data-closed="true"] {
-    display: none !important;
   }
 }

@@ -14,6 +14,7 @@ import {
   type ThreadMessage,
   type WorkspaceRun,
 } from "@remotecode/client";
+import { color, space, font, ui } from "../../design/tokens";
 
 type Props = {
   userId: string;
@@ -332,182 +333,206 @@ export function AgentPanel({ userId, selectedWorkspaceId, selectedBotId, eventCu
 
   if (!selectedWorkspaceId) {
     return (
-      <View style={styles.panel} testID="agent-panel">
-        <Text style={styles.heading}>Agent</Text>
-        <Text>Select a workspace to view agent activity.</Text>
+      <View style={[ui.panel, styles.panel]} testID="agent-panel">
+        <Text style={ui.heading}>Agent</Text>
+        <Text style={ui.body}>Select a workspace to view agent activity.</Text>
       </View>
     );
   }
 
   return (
-    <ScrollView style={styles.panel} testID="agent-panel">
-      <Text accessibilityRole="header" style={styles.heading}>Agent</Text>
+    <ScrollView style={[ui.panel, styles.panel]} testID="agent-panel">
+      <Text accessibilityRole="header" style={ui.heading}>Agent</Text>
 
       {/* 1. Runs */}
-      <Text style={styles.sectionHeading}>Runs</Text>
-      {runError ? <Text accessibilityRole="alert" testID="run-error">{runError}</Text> : null}
-      {runs.length === 0 && !runError ? <Text>No runs yet.</Text> : null}
-      {runs.map((run) => (
-        <View key={run.id} style={styles.row} testID={`run-${run.id}`}>
-          <Text>state: {run.state} | prompt: {run.prompt.slice(0, 60)}{run.prompt.length > 60 ? "\u2026" : ""} | updated: {run.updatedAt} | stopReason: {run.stopReason ?? "\u2014"}</Text>
-          {!TERMINAL_STATES.has(run.state) ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={`Stop run ${run.id}`}
-              testID={`stop-run-${run.id}`}
-              onPress={() => void stopRun(run.id)}
-              style={styles.smallButton}
-            >
-              <Text style={styles.smallButtonText}>Stop run</Text>
-            </Pressable>
-          ) : null}
-        </View>
-      ))}
-
-      {/* 2. Permissions */}
-      <Text style={styles.sectionHeading}>Permissions</Text>
-      {permError ? <Text accessibilityRole="alert">{permError}</Text> : null}
-      {Object.entries(permissionsByRun).flatMap(([runId, list]) => list.map((perm) => ({ runId, perm }))).map(({ runId, perm }) => (
-        <View key={perm.requestId} style={styles.row} testID={`run-permission-${perm.requestId}`}>
-          <Text>{perm.title} ({perm.kind})</Text>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={`Allow permission ${perm.requestId}`}
-            testID={`allow-permission-${perm.requestId}`}
-            onPress={() => void decidePermission(runId, perm.requestId, "allow")}
-            style={styles.smallButton}
-          >
-            <Text style={styles.smallButtonText}>Allow</Text>
-          </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={`Deny permission ${perm.requestId}`}
-            testID={`deny-permission-${perm.requestId}`}
-            onPress={() => void decidePermission(runId, perm.requestId, "deny")}
-            style={[styles.smallButton, styles.denyButton]}
-          >
-            <Text style={styles.smallButtonText}>Deny</Text>
-          </Pressable>
-        </View>
-      ))}
-      {permissions.length === 0 && !permError ? <Text>No pending permissions.</Text> : null}
-
-      {/* 3. Roster */}
-      <Text style={styles.sectionHeading}>Roster</Text>
-      {rosterError ? <Text accessibilityRole="alert">{rosterError}</Text> : null}
-      <View testID="roster-list">
-        <View style={styles.row} testID={`roster-user-${userId}`}>
-          <Text>You ({userId})</Text>
-        </View>
-        {bots.map((bot) => (
-          <View key={bot.id} style={styles.row} testID={`roster-bot-${bot.id}`}>
-            <Text>{bot.name}</Text>
+      <View style={ui.card}>
+        <Text style={ui.sectionLabel}>Runs</Text>
+        {runError ? <Text accessibilityRole="alert" testID="run-error" style={ui.error}>{runError}</Text> : null}
+        {runs.length === 0 && !runError ? <Text style={ui.body}>No runs yet.</Text> : null}
+        {runs.map((run) => (
+          <View key={run.id} style={[styles.row, styles.cardRow]} testID={`run-${run.id}`}>
+            <Text style={[ui.body, styles.rowText]}>
+              state: {run.state} | prompt: {run.prompt.slice(0, 60)}{run.prompt.length > 60 ? "\u2026" : ""} | updated: <Text style={ui.mono}>{run.updatedAt}</Text> | stopReason: {run.stopReason ?? "\u2014"}
+            </Text>
+            {!TERMINAL_STATES.has(run.state) ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Stop run ${run.id}`}
+                testID={`stop-run-${run.id}`}
+                onPress={() => void stopRun(run.id)}
+                style={ui.button}
+              >
+                <Text style={ui.buttonLabel}>Stop run</Text>
+              </Pressable>
+            ) : null}
           </View>
         ))}
       </View>
 
-      {/* 4. Threads & Messages */}
-      <Text style={styles.sectionHeading}>Threads</Text>
-      {threadError ? <Text accessibilityRole="alert">{threadError}</Text> : null}
-      <View testID="thread-list">
-        {threads.map((thread) => (
-          <Pressable
-            key={thread.id}
-            accessibilityRole="button"
-            testID={`thread-item-${safeTestId(thread.title)}`}
-            onPress={() => setSelectedThreadId(thread.id)}
-            style={[styles.listItem, selectedThreadId === thread.id && styles.listItemSelected]}
-          >
-            <Text>{thread.title}</Text>
-          </Pressable>
+      {/* 2. Permissions */}
+      <View style={ui.card}>
+        <Text style={ui.sectionLabel}>Permissions</Text>
+        {permError ? <Text accessibilityRole="alert" style={ui.error}>{permError}</Text> : null}
+        {Object.entries(permissionsByRun).flatMap(([runId, list]) => list.map((perm) => ({ runId, perm }))).map(({ runId, perm }) => (
+          <View key={perm.requestId} style={[styles.row, styles.cardRow]} testID={`run-permission-${perm.requestId}`}>
+            <Text style={[ui.body, styles.rowText]}>{perm.title} ({perm.kind})</Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Allow permission ${perm.requestId}`}
+              testID={`allow-permission-${perm.requestId}`}
+              onPress={() => void decidePermission(runId, perm.requestId, "allow")}
+              style={ui.buttonPrimary}
+            >
+              <Text style={ui.buttonLabelPrimary}>Allow</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Deny permission ${perm.requestId}`}
+              testID={`deny-permission-${perm.requestId}`}
+              onPress={() => void decidePermission(runId, perm.requestId, "deny")}
+              style={ui.buttonDanger}
+            >
+              <Text style={ui.buttonLabel}>Deny</Text>
+            </Pressable>
+          </View>
         ))}
-        {!threads.length && !threadError ? <Text>No threads.</Text> : null}
+        {permissions.length === 0 && !permError ? <Text style={ui.body}>No pending permissions.</Text> : null}
       </View>
-      {selectedThreadId ? (
-        <View style={styles.messages}>
-          <Text style={styles.subheading}>Messages</Text>
-          {msgError ? <Text accessibilityRole="alert">{msgError}</Text> : null}
-          {messages.map((msg) => (
-            <View key={msg.id} style={styles.msgRow} testID={`thread-message-${msg.id}`}>
-              <Text>[{msg.kind}] {msg.body}</Text>
+
+      {/* 3. Bots */}
+      <View style={ui.card}>
+        <Text style={ui.sectionLabel}>Bots</Text>
+        {rosterError ? <Text accessibilityRole="alert" style={ui.error}>{rosterError}</Text> : null}
+        <View testID="roster-list">
+          <View style={[styles.row, styles.cardRow]} testID={`roster-user-${userId}`}>
+            <Text style={ui.body}>You ({userId})</Text>
+          </View>
+          {bots.map((bot) => (
+            <View key={bot.id} style={[styles.row, styles.cardRow]} testID={`roster-bot-${bot.id}`}>
+              <Text style={ui.body}>{bot.name}</Text>
             </View>
           ))}
-          {messages.length === 0 && !msgError ? <Text>No messages.</Text> : null}
+        </View>
+      </View>
+
+      {/* 4. Threads */}
+      <View style={ui.card}>
+        <Text style={ui.sectionLabel}>Threads</Text>
+        {threadError ? <Text accessibilityRole="alert" style={ui.error}>{threadError}</Text> : null}
+        <View testID="thread-list">
+          {threads.map((thread) => (
+            <Pressable
+              key={thread.id}
+              accessibilityRole="button"
+              testID={`thread-item-${safeTestId(thread.title)}`}
+              onPress={() => setSelectedThreadId(thread.id)}
+              style={[ui.listItem, selectedThreadId === thread.id && ui.listItemSelected, styles.cardRow]}
+            >
+              <Text style={ui.body}>{thread.title}</Text>
+            </Pressable>
+          ))}
+          {!threads.length && !threadError ? <Text style={ui.body}>No threads.</Text> : null}
+        </View>
+      </View>
+
+      {/* 5. Messages */}
+      {selectedThreadId ? (
+        <View style={ui.card}>
+          <Text style={ui.sectionLabel}>Messages</Text>
+          {msgError ? <Text accessibilityRole="alert" style={ui.error}>{msgError}</Text> : null}
+          {messages.map((msg) => (
+            <View key={msg.id} style={[styles.msgRow, styles.cardRow]} testID={`thread-message-${msg.id}`}>
+              <Text style={[ui.body, styles.msgRowText]}>
+                [<Text style={ui.mono}>{msg.kind}</Text>] {msg.body}
+              </Text>
+            </View>
+          ))}
+          {messages.length === 0 && !msgError ? <Text style={ui.body}>No messages.</Text> : null}
         </View>
       ) : null}
 
-      {/* 5. Workspace Scheduled Tasks */}
-      <Text style={styles.sectionHeading}>Scheduled Tasks</Text>
-      {schedError ? <Text accessibilityRole="alert">{schedError}</Text> : null}
-      {schedules.map((sch) => (
-        <View key={sch.id} style={styles.row} testID={`schedule-${sch.id}`}>
-          <Text>localTime: {sch.localTime} | tz: {sch.timezone} | enabled: {String(sch.enabled)}</Text>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={`Toggle schedule ${sch.id}`}
-            testID={`toggle-schedule-${sch.id}`}
-            onPress={() => void toggleScheduleEnabled(sch.id, !sch.enabled)}
-            style={styles.smallButton}
-          >
-            <Text style={styles.smallButtonText}>{sch.enabled ? "Disable" : "Enable"}</Text>
-          </Pressable>
-        </View>
-      ))}
-      <ScheduleForm
-        kind="task"
-        workspaceId={selectedWorkspaceId}
-        onSubmit={(prompt, localTime, timezone) => submitSchedule("task", prompt, localTime, timezone, selectedWorkspaceId)}
-      />
+      {/* 6. Scheduled Tasks */}
+      <View style={ui.card}>
+        <Text style={ui.sectionLabel}>Scheduled Tasks</Text>
+        {schedError ? <Text accessibilityRole="alert" style={ui.error}>{schedError}</Text> : null}
+        {schedules.map((sch) => (
+          <View key={sch.id} style={[styles.row, styles.cardRow]} testID={`schedule-${sch.id}`}>
+            <Text style={[ui.body, styles.rowText]}>
+              localTime: <Text style={ui.mono}>{sch.localTime}</Text> | tz: <Text style={ui.mono}>{sch.timezone}</Text> | enabled: {String(sch.enabled)}
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Toggle schedule ${sch.id}`}
+              testID={`toggle-schedule-${sch.id}`}
+              onPress={() => void toggleScheduleEnabled(sch.id, !sch.enabled)}
+              style={ui.button}
+            >
+              <Text style={ui.buttonLabel}>{sch.enabled ? "Disable" : "Enable"}</Text>
+            </Pressable>
+          </View>
+        ))}
+        <ScheduleForm
+          kind="task"
+          workspaceId={selectedWorkspaceId}
+          onSubmit={(prompt, localTime, timezone) => submitSchedule("task", prompt, localTime, timezone, selectedWorkspaceId)}
+        />
+      </View>
 
-      {/* 6. Bot Routines */}
-      <Text style={styles.sectionHeading}>Bot Routines</Text>
-      {botRoutineError ? <Text accessibilityRole="alert">{botRoutineError}</Text> : null}
-      {selectedBotId ? (
-        <>
-          {botRoutines.map((routine) => (
-            <View key={routine.id} style={styles.row} testID={`bot-routine-${routine.id}`}>
-              <Text>prompt: {routine.prompt.slice(0, 40)}{routine.prompt.length > 40 ? "\u2026" : ""} | localTime: {routine.localTime} | tz: {routine.timezone} | enabled: {String(routine.enabled)}</Text>
-            </View>
-          ))}
-          <ScheduleForm
-            kind="routine"
-            workspaceId={selectedWorkspaceId}
-            botId={selectedBotId}
-            onSubmit={(prompt, localTime, timezone) => submitSchedule("routine", prompt, localTime, timezone, selectedWorkspaceId, selectedBotId)}
-          />
-        </>
-      ) : (
-        <Text>Select a Bot to view its routines.</Text>
-      )}
+      {/* 7. Bot Routines */}
+      <View style={ui.card}>
+        <Text style={ui.sectionLabel}>Bot Routines</Text>
+        {botRoutineError ? <Text accessibilityRole="alert" style={ui.error}>{botRoutineError}</Text> : null}
+        {selectedBotId ? (
+          <>
+            {botRoutines.map((routine) => (
+              <View key={routine.id} style={[styles.row, styles.cardRow]} testID={`bot-routine-${routine.id}`}>
+                <Text style={[ui.body, styles.rowText]}>
+                  prompt: {routine.prompt.slice(0, 40)}{routine.prompt.length > 40 ? "\u2026" : ""} | localTime: <Text style={ui.mono}>{routine.localTime}</Text> | tz: <Text style={ui.mono}>{routine.timezone}</Text> | enabled: {String(routine.enabled)}
+                </Text>
+              </View>
+            ))}
+            <ScheduleForm
+              kind="routine"
+              workspaceId={selectedWorkspaceId}
+              botId={selectedBotId}
+              onSubmit={(prompt, localTime, timezone) => submitSchedule("routine", prompt, localTime, timezone, selectedWorkspaceId, selectedBotId)}
+            />
+          </>
+        ) : (
+          <Text style={ui.body}>Select a Bot to view its routines.</Text>
+        )}
+      </View>
 
-      {/* 7. Needs You */}
-      <Text style={styles.sectionHeading}>Needs you</Text>
-      {inboxError ? <Text accessibilityRole="alert">{inboxError}</Text> : null}
-      <Text testID="needs-you">Open items: {needsYouCount}</Text>
-      {inbox.map((item) => (
-        <View key={item.id} style={styles.row} testID={`inbox-item-${item.id}`}>
-          <Text>{item.title} ({item.kind}) \u2014 {item.state}</Text>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={`Mark inbox item ${item.id} read`}
-            testID={`mark-read-${item.id}`}
-            onPress={() => void handleMarkRead(item.id)}
-            style={styles.smallButton}
-          >
-            <Text style={styles.smallButtonText}>Mark read</Text>
-          </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={`Resolve inbox item ${item.id}`}
-            testID={`resolve-inbox-${item.id}`}
-            onPress={() => void handleResolve(item.id)}
-            style={styles.smallButton}
-          >
-            <Text style={styles.smallButtonText}>Resolve</Text>
-          </Pressable>
-        </View>
-      ))}
-      {inbox.length === 0 && !inboxError ? <Text>No inbox items.</Text> : null}
+      {/* 8. Needs You (Inbox) */}
+      <View style={ui.card}>
+        <Text style={ui.sectionLabel}>Needs you</Text>
+        {inboxError ? <Text accessibilityRole="alert" style={ui.error}>{inboxError}</Text> : null}
+        <Text testID="needs-you" style={ui.body}>Open items: {needsYouCount}</Text>
+        {inbox.map((item) => (
+          <View key={item.id} style={[styles.row, styles.cardRow]} testID={`inbox-item-${item.id}`}>
+            <Text style={[ui.body, styles.rowText]}>{item.title} ({item.kind}) \u2014 {item.state}</Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Mark inbox item ${item.id} read`}
+              testID={`mark-read-${item.id}`}
+              onPress={() => void handleMarkRead(item.id)}
+              style={ui.button}
+            >
+              <Text style={ui.buttonLabel}>Mark read</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Resolve inbox item ${item.id}`}
+              testID={`resolve-inbox-${item.id}`}
+              onPress={() => void handleResolve(item.id)}
+              style={ui.button}
+            >
+              <Text style={ui.buttonLabel}>Resolve</Text>
+            </Pressable>
+          </View>
+        ))}
+        {inbox.length === 0 && !inboxError ? <Text style={ui.body}>No inbox items.</Text> : null}
+      </View>
     </ScrollView>
   );
 }
@@ -525,21 +550,21 @@ function ScheduleForm({ kind, workspaceId, botId, onSubmit }: { kind: "task" | "
         value={prompt}
         onChangeText={setPrompt}
         placeholder="Prompt"
-        style={styles.input}
+        style={ui.input}
       />
       <TextInput
         accessibilityLabel="Local time"
         value={localTime}
         onChangeText={setLocalTime}
         placeholder="HH:MM"
-        style={styles.input}
+        style={ui.input}
       />
       <TextInput
         accessibilityLabel="Timezone"
         value={timezone}
         onChangeText={setTimezone}
         placeholder="IANA timezone"
-        style={styles.input}
+        style={ui.input}
       />
       <Pressable
         accessibilityRole="button"
@@ -555,27 +580,44 @@ function ScheduleForm({ kind, workspaceId, botId, onSubmit }: { kind: "task" | "
             setCreating(false);
           })();
         }}
-        style={styles.smallButton}
+        style={[ui.buttonPrimary, (creating || !prompt.trim() || !workspaceId) && ui.buttonDisabled]}
       >
-        <Text style={styles.smallButtonText}>Create {kind} schedule</Text>
+        <Text style={ui.buttonLabelPrimary}>Create {kind} schedule</Text>
       </Pressable>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  panel: { flex: 1, padding: 12, gap: 8 },
-  heading: { color: "#183337", fontSize: 18, fontWeight: "700" },
-  sectionHeading: { color: "#183337", fontSize: 14, fontWeight: "700", marginTop: 8 },
-  subheading: { color: "#183337", fontSize: 12, fontWeight: "700" },
-  row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 6, borderTopColor: "#e3ebe7", borderTopWidth: 1 },
-  listItem: { padding: 8, borderRadius: 6, minHeight: 40, justifyContent: "center" },
-  listItemSelected: { backgroundColor: "#e8f0ed" },
-  messages: { paddingLeft: 8, gap: 4 },
-  msgRow: { paddingVertical: 2 },
-  smallButton: { paddingHorizontal: 10, paddingVertical: 6, backgroundColor: "#126b54", borderRadius: 8, minHeight: 36, justifyContent: "center" },
-  smallButtonText: { color: "#fff", fontSize: 12, fontWeight: "750" },
-  denyButton: { backgroundColor: "#a52d20" },
-  form: { gap: 6, paddingVertical: 8 },
-  input: { borderColor: "#c9d9d2", borderRadius: 9, borderWidth: 1, minHeight: 42, paddingHorizontal: 12 },
+  panel: { flex: 1 },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: space.sm,
+    borderTopColor: color.line,
+    borderTopWidth: 1,
+  },
+  cardRow: {
+    flexShrink: 1,
+    minWidth: 0,
+    paddingVertical: space.sm,
+    borderTopColor: color.line,
+    borderTopWidth: 1,
+  },
+  rowText: {
+    flexShrink: 1,
+    minWidth: 0,
+  },
+  msgRow: {
+    paddingVertical: space.xs,
+  },
+  msgRowText: {
+    flexShrink: 1,
+    minWidth: 0,
+  },
+  form: {
+    gap: space.sm,
+    paddingVertical: space.sm,
+  },
 });

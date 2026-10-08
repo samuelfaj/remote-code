@@ -1,0 +1,97 @@
+:root {
+  --rc-bg: #0f1419;
+  --rc-surface: #171d24;
+  --rc-surface-raised: #1b222b;
+  --rc-line: #2a3440;
+  --rc-text: #e7edf3;
+  --rc-text-secondary: #9da9b5;
+  --rc-text-tertiary: #6b7785;
+  --rc-accent: #7cc7ff;
+  --rc-on-accent: #0a0e13;
+  --rc-danger: #ff8f8f;
+  --rc-success: #8ee6a8;
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  min-height: 100%;
+  margin: 0;
+  background: var(--rc-bg);
+  color: var(--rc-text);
+}
+
+body {
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+input,
+textarea,
+select {
+  background: var(--rc-surface-raised);
+  border: 1px solid var(--rc-line);
+  border-radius: 5px;
+  color: var(--rc-text);
+  padding: 6px 8px;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--rc-text-tertiary);
+}
+
+:focus-visible {
+  outline: 2px solid var(--rc-accent);
+  outline-offset: 2px;
+}
+
+a {
+  color: var(--rc-accent);
+}
+
+/* React Native Web's Text carries an explicit black default, which is unreadable
+   on the dark canvas. Text that carries no colour of its own takes the app's
+   primary text colour; anything with its own colour class keeps it. */
+[class^="css-text"]:not([class*="r-color-"]) {
+  color: var(--rc-text);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #2a3440;
+  border: 2px solid var(--rc-bg);
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #394654;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Terminal screen keeps the app's dark canvas. */
+.terminal-panel .terminal-screen {
+  background: var(--rc-bg);
+}

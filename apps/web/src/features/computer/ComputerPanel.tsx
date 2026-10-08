@@ -7,6 +7,7 @@ import {
   takeScreenPossession,
   type ScreenPossessionState,
 } from "@remotecode/client";
+import { color, space, font, ui } from "../../design/tokens";
 
 type Props = {
   selectedWorkspaceId: string | null;
@@ -151,22 +152,35 @@ export function ComputerPanel({ selectedWorkspaceId, selectedBotId, userId }: Pr
   const canReturn = possession?.state === "holder" && isOnline;
 
   return (
-    <View testID="computer-panel" style={styles.panel}>
-      <Text style={styles.heading}>Computer Panel</Text>
-      {selectedBotId && <Text style={styles.info}>Bot: {selectedBotId}</Text>}
-      {selectedWorkspaceId && <Text style={styles.info}>Workspace: {selectedWorkspaceId}</Text>}
-      <Text testID="computer-owner" style={styles.info}>Owner: {ownerLabel}</Text>
-      <Text testID="computer-state" style={styles.info}>State: {possession?.state ?? "none"}</Text>
-      <Text testID="computer-connection" style={styles.info}>
-        {isOnline ? "Connected" : "Connection dropped"}
-      </Text>
-      {sinceLabel ? <Text style={styles.info}>{sinceLabel}</Text> : null}
-      {takeError ? <Text testID="computer-error" style={styles.error}>{takeError}</Text> : null}
-      {returnStatus === "returned" && <Text testID="return-result" style={styles.success}>returned</Text>}
-      {returnStatus === "unknown" && <Text style={styles.error}>Outcome unknown — no retry sent.</Text>}
-      {returnStatus === "returning" && <Text style={styles.info}>Returning…</Text>}
+    <View testID="computer-panel" style={ui.panel}>
+      <Text style={ui.heading}>Computer Panel</Text>
+      {selectedBotId && <Text style={ui.body}>Bot: {selectedBotId}</Text>}
+      {selectedWorkspaceId && <Text style={ui.body}>Workspace: {selectedWorkspaceId}</Text>}
+      <View style={styles.keyValueRow}>
+        <Text testID="computer-owner" style={ui.body}>
+          <Text style={ui.meta}>Owner: </Text>
+          {ownerLabel}
+        </Text>
+      </View>
+      <View style={styles.keyValueRow}>
+        <Text testID="computer-state" style={ui.body}>
+          <Text style={ui.meta}>State: </Text>
+          {possession?.state ?? "none"}
+        </Text>
+      </View>
+      <View style={styles.keyValueRow}>
+        <Text style={ui.meta}>Connection:</Text>
+        <Text testID="computer-connection" style={ui.body}>
+          {isOnline ? "Connected" : "Connection dropped"}
+        </Text>
+      </View>
+      {sinceLabel ? <Text style={ui.body}>{sinceLabel}</Text> : null}
+      {takeError ? <Text testID="computer-error" style={ui.error}>{takeError}</Text> : null}
+      {returnStatus === "returned" && <Text testID="return-result" style={ui.success}>returned</Text>}
+      {returnStatus === "unknown" && <Text style={ui.error}>Outcome unknown — no retry sent.</Text>}
+      {returnStatus === "returning" && <Text style={ui.body}>Returning…</Text>}
       {possession?.state === "holder" && (
-        <Text testID="computer-heartbeat" style={styles.info}>
+        <Text testID="computer-heartbeat" style={ui.body}>
           Heartbeat: {heartbeatStatus === "confirmed" ? "confirmed" : heartbeatStatus === "failed" ? "not confirmed" : "pending"}
           {heartbeatAt ? ` (last ${new Date(heartbeatAt).toLocaleTimeString()})` : null}
         </Text>
@@ -175,29 +189,26 @@ export function ComputerPanel({ selectedWorkspaceId, selectedBotId, userId }: Pr
         testID="take-control"
         onPress={handleTakeControl}
         disabled={!canTake}
-        style={[styles.button, !canTake && styles.buttonDisabled]}
+        style={[ui.buttonPrimary, !canTake && ui.buttonDisabled]}
       >
-        <Text style={styles.buttonText}>Take control</Text>
+        <Text style={ui.buttonLabelPrimary}>Take control</Text>
       </Pressable>
       <Pressable
         testID="return-control"
         onPress={handleReturnControl}
         disabled={!canReturn || returnStatus === "returning"}
-        style={[styles.button, (!canReturn || returnStatus === "returning") && styles.buttonDisabled]}
+        style={[ui.button, (!canReturn || returnStatus === "returning") && ui.buttonDisabled]}
       >
-        <Text style={styles.buttonText}>Return control</Text>
+        <Text style={ui.buttonLabel}>Return control</Text>
       </Pressable>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  panel: { padding: 12, gap: 6, borderBottomWidth: 1, borderBottomColor: "#d9e5e0", backgroundColor: "#fff" },
-  heading: { color: "#183337", fontSize: 14, fontWeight: "700" },
-  info: { color: "#183337", fontSize: 13 },
-  error: { color: "#a52d20", fontSize: 13 },
-  success: { color: "#0d7056", fontSize: 13, fontWeight: "600" },
-  button: { padding: 10, borderRadius: 6, backgroundColor: "#14735a", minHeight: 44, alignItems: "center" },
-  buttonDisabled: { opacity: 0.5 },
-  buttonText: { color: "#fff", fontSize: 14, fontWeight: "600" },
+  keyValueRow: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    gap: space.sm,
+  },
 });

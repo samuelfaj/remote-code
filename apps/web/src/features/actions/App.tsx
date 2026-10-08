@@ -4,6 +4,7 @@ import { actionReceiptFromResponse, isDefinitiveActionRejection, isUnknownOutcom
 import type { ActionEventState } from "@remotecode/client";
 import { getWebHealth } from "../health/api";
 import { NavigationShell } from "../navigation/NavigationShell";
+import { color, space, radius, font, ui } from "../../design/tokens";
 
 // Bounded post-timeout receipt reads: two attempts, the second after an
 // increasing, jittered wait, both inside the ten-second window.
@@ -90,8 +91,8 @@ function HostHealth() {
   return (
     <View style={styles.card}>
       <Text accessibilityRole="text" aria-live="polite" testID="host-health-status">{label}</Text>
-      <Pressable accessibilityRole="button" onPress={() => setAttempt((value) => value + 1)} style={styles.button}>
-        <Text style={styles.buttonText}>Refresh host health</Text>
+      <Pressable accessibilityRole="button" onPress={() => setAttempt((value) => value + 1)} style={ui.button}>
+        <Text style={ui.buttonLabel}>Refresh host health</Text>
       </Pressable>
     </View>
   );
@@ -800,8 +801,8 @@ export function App() {
         <View style={styles.shell}>
           <Text style={styles.eyebrow}>REMOTE CODE HOST</Text>
           <Text accessibilityRole="header" style={styles.title}>Sign in to your host</Text>
-          <View style={styles.card}>
-            <Text style={styles.label}>Host passphrase</Text>
+          <View style={ui.panel}>
+            <Text style={ui.sectionLabel}>Host passphrase</Text>
             <input
               aria-label="Host passphrase"
               className="host-passphrase"
@@ -814,17 +815,17 @@ export function App() {
               accessibilityState={{ disabled: authWorking || Boolean(pendingAuth) || !authStorageReady || !authCompatible }}
               disabled={authWorking || Boolean(pendingAuth) || !authStorageReady || !authCompatible}
               onPress={() => void mutateAuth("login")}
-              style={styles.button}
+              style={ui.buttonPrimary}
             >
-              <Text style={styles.buttonText}>Sign in</Text>
+              <Text style={ui.buttonLabelPrimary}>Sign in</Text>
             </Pressable>
             {pendingAuth ? <View style={styles.recovery}>
               <Text style={styles.empty}>An auth operation is awaiting confirmation. Checking does not resend it.</Text>
-              <Pressable accessibilityRole="button" disabled={authWorking || !authStorageReady} accessibilityState={{ disabled: authWorking || !authStorageReady }} onPress={() => void checkAuthReceipt()} style={styles.button}>
-                <Text style={styles.buttonText}>{authWorking ? "Checking auth…" : "Check auth receipt"}</Text>
+              <Pressable accessibilityRole="button" disabled={authWorking || !authStorageReady} accessibilityState={{ disabled: authWorking || !authStorageReady }} onPress={() => void checkAuthReceipt()} style={ui.button}>
+                <Text style={ui.buttonLabel}>{authWorking ? "Checking auth…" : "Check auth receipt"}</Text>
               </Pressable>
-              {pendingAuth.kind === "login" ? <Pressable accessibilityRole="button" disabled={authWorking || !authStorageReady || !authCompatible} accessibilityState={{ disabled: authWorking || !authStorageReady || !authCompatible }} onPress={() => void mutateAuth("revoke_login")} style={styles.button}>
-                <Text style={styles.buttonText}>Revoke old login</Text>
+              {pendingAuth.kind === "login" ? <Pressable accessibilityRole="button" disabled={authWorking || !authStorageReady || !authCompatible} accessibilityState={{ disabled: authWorking || !authStorageReady || !authCompatible }} onPress={() => void mutateAuth("revoke_login")} style={ui.button}>
+                <Text style={ui.buttonLabel}>Revoke old login</Text>
               </Pressable> : null}
             </View> : null}
             {authMessage ? <Text testID="auth-recovery-status" aria-live="polite" style={styles.empty}>{authMessage}</Text> : null}
@@ -837,127 +838,150 @@ export function App() {
 
   const panelUserId = workspacePanelUserId(sessionUserId, authenticated);
 
-  return (
-    <ScrollView contentContainerStyle={styles.page}>
-      <View style={styles.shell}>
-        <Text style={styles.eyebrow}>LINUX HOST PROOF</Text>
-        <Text accessibilityRole="header" style={styles.title}>One backend, two browsers</Text>
-        <Text style={styles.intro}>
-          This React Native Web screen records actions through the Elysia service running in the Linux container.
+  const hostDiagnostics = (
+    <View style={styles.diagnostics}>
+      <Text style={styles.eyebrow}>HOST DIAGNOSTICS</Text>
+      <Text accessibilityRole="header" style={styles.title}>One backend, two browsers</Text>
+      <Text style={styles.intro}>
+        This React Native Web screen records actions through the Elysia service running in the Linux container.
+      </Text>
+
+      <HostHealth />
+
+      <Pressable accessibilityRole="button" disabled={authWorking || !authStorageReady || !authCompatible} accessibilityState={{ disabled: authWorking || !authStorageReady || !authCompatible }} onPress={() => void mutateAuth("logout")} style={ui.button}>
+        <Text style={ui.buttonLabel}>Sign out</Text>
+      </Pressable>
+
+      {authMessage ? <Text testID="auth-recovery-status" aria-live="polite" style={styles.empty}>{authMessage}</Text> : null}
+      <View style={styles.statusRow}>
+        <View style={[styles.dot, connected ? styles.online : styles.offline]} />
+        <Text accessibilityRole="text" aria-live="polite" testID="connection-status" style={styles.status}>
+          {connected ? "Live updates connected" : connectionFailed ? "Live updates disconnected" : "Synchronizing with Linux backend…"}
         </Text>
-
-        <HostHealth />
-
-        <Pressable accessibilityRole="button" disabled={authWorking || !authStorageReady || !authCompatible} accessibilityState={{ disabled: authWorking || !authStorageReady || !authCompatible }} onPress={() => void mutateAuth("logout")} style={styles.button}>
-          <Text style={styles.buttonText}>Sign out</Text>
-        </Pressable>
-
-        {authMessage ? <Text testID="auth-recovery-status" aria-live="polite" style={styles.empty}>{authMessage}</Text> : null}
-        <View style={styles.statusRow}>
-          <View style={[styles.dot, connected ? styles.online : styles.offline]} />
-          <Text accessibilityRole="text" aria-live="polite" testID="connection-status" style={styles.status}>
-            {connected ? "Live updates connected" : connectionFailed ? "Live updates disconnected" : "Synchronizing with Linux backend…"}
-          </Text>
-          {connectionFailed ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityState={{ disabled: reconnecting }}
-              disabled={reconnecting}
-              onPress={() => void reconnectLiveUpdates()}
-              style={styles.button}
-            >
-              <Text style={styles.buttonText}>{reconnecting ? "Checking session…" : "Reconnect live updates"}</Text>
-            </Pressable>
-          ) : null}
-        </View>
-
-        <View style={styles.card}>
-          <Text style={styles.label}>Action sent to the backend</Text>
-          <TextInput
-            accessibilityLabel="Action description"
-            onChangeText={setAction}
-            placeholder="Describe the action"
-            style={styles.input}
-            value={action}
-          />
+        {connectionFailed ? (
           <Pressable
             accessibilityRole="button"
-            accessibilityState={{ disabled: submitting || !connected || Boolean(pendingRequestId) || !recoveryStorageReady }}
-            disabled={submitting || !connected || Boolean(pendingRequestId) || !recoveryStorageReady}
-            onPress={recordAction}
-            style={({ pressed }) => [styles.button, pressed && styles.pressed, (submitting || !connected || Boolean(pendingRequestId) || !recoveryStorageReady) && styles.disabled]}
+            accessibilityState={{ disabled: reconnecting }}
+            disabled={reconnecting}
+            onPress={() => void reconnectLiveUpdates()}
+            style={ui.button}
           >
-            <Text style={styles.buttonText}>{actionPhase === "sending" ? "Saving…" : "Write backend receipt"}</Text>
+            <Text style={ui.buttonLabel}>{reconnecting ? "Checking session…" : "Reconnect live updates"}</Text>
           </Pressable>
-          {pendingRequestId ? (
-            <View testID="pending-action" style={styles.recovery}>
-              <Text style={styles.empty}>An action is awaiting confirmation. Check its receipt; this will not resend it.</Text>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityState={{ disabled: submitting || !connected }}
-                disabled={submitting || !connected}
-                onPress={() => void checkActionReceipt()}
-                style={[styles.button, (submitting || !connected) && styles.disabled]}
-              >
-                <Text style={styles.buttonText}>{actionPhase === "checking" ? "Checking receipt…" : "Check action receipt"}</Text>
-              </Pressable>
-            </View>
-          ) : null}
-          {recoveryMessage ? <Text testID="action-recovery-status" accessibilityRole="text" aria-live="polite" style={styles.empty}>{recoveryMessage}</Text> : null}
-          {error ? <Text accessibilityRole="text" aria-live="assertive" style={styles.error}>{error}</Text> : null}
-        </View>
-
-        <View style={styles.card}>
-          <Text style={styles.label}>Confirmed backend receipt</Text>
-          {receipt ? (
-            <View testID="latest-receipt">
-              <Text style={styles.receiptAction}>{receipt.action}</Text>
-              <Text selectable style={styles.receiptId}>Receipt {receipt.id}</Text>
-              <Text style={styles.timestamp}>{String(receipt.createdAt)}</Text>
-            </View>
-          ) : <Text style={styles.empty}>No action has been recorded in this session.</Text>}
-        </View>
-
-        <View style={styles.card}>
-          <Text style={styles.label}>Shared action history</Text>
-          {actions.length ? actions.map((item) => (
-            <View key={item.id} style={styles.historyRow}>
-              <Text style={styles.historyAction}>{item.action}</Text>
-              <Text selectable style={styles.historyId}>{item.id}</Text>
-            </View>
-          )) : <Text style={styles.empty}>The backend has no receipts yet.</Text>}
-        </View>
-        {panelUserId ? <NavigationShell userId={panelUserId} onUnauthorized={hideSession} eventCursor={eventState.cursor} /> : null}
+        ) : null}
       </View>
-    </ScrollView>
+
+      <View style={styles.card}>
+        <Text style={ui.sectionLabel}>Action sent to the backend</Text>
+        <TextInput
+          accessibilityLabel="Action description"
+          onChangeText={setAction}
+          placeholder="Describe the action"
+          style={ui.input}
+          value={action}
+        />
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ disabled: submitting || !connected || Boolean(pendingRequestId) || !recoveryStorageReady }}
+          disabled={submitting || !connected || Boolean(pendingRequestId) || !recoveryStorageReady}
+          onPress={recordAction}
+          style={({ pressed }) => [ui.button, pressed && styles.pressed, (submitting || !connected || Boolean(pendingRequestId) || !recoveryStorageReady) && styles.disabled]}
+        >
+          <Text style={ui.buttonLabel}>{actionPhase === "sending" ? "Saving…" : "Write backend receipt"}</Text>
+        </Pressable>
+        {pendingRequestId ? (
+          <View testID="pending-action" style={styles.recovery}>
+            <Text style={styles.empty}>An action is awaiting confirmation. Check its receipt; this will not resend it.</Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ disabled: submitting || !connected }}
+              disabled={submitting || !connected}
+              onPress={() => void checkActionReceipt()}
+              style={[ui.button, (submitting || !connected) && styles.disabled]}
+            >
+              <Text style={ui.buttonLabel}>{actionPhase === "checking" ? "Checking receipt…" : "Check action receipt"}</Text>
+            </Pressable>
+          </View>
+        ) : null}
+        {recoveryMessage ? <Text testID="action-recovery-status" accessibilityRole="text" aria-live="polite" style={styles.empty}>{recoveryMessage}</Text> : null}
+        {error ? <Text accessibilityRole="text" aria-live="assertive" style={styles.error}>{error}</Text> : null}
+      </View>
+
+      <View style={styles.card}>
+        <Text style={ui.sectionLabel}>Confirmed backend receipt</Text>
+        {receipt ? (
+          <View testID="latest-receipt">
+            <Text style={styles.receiptAction}>{receipt.action}</Text>
+            <Text selectable style={styles.receiptId}>Receipt {receipt.id}</Text>
+            <Text style={styles.timestamp}>{String(receipt.createdAt)}</Text>
+          </View>
+        ) : <Text style={styles.empty}>No action has been recorded in this session.</Text>}
+      </View>
+
+      <View style={styles.card}>
+        <Text style={ui.sectionLabel}>Shared action history</Text>
+        {actions.length ? actions.map((item) => (
+          <View key={item.id} style={styles.historyRow}>
+            <Text style={styles.historyAction}>{item.action}</Text>
+            <Text selectable style={styles.historyId}>{item.id}</Text>
+          </View>
+        )) : <Text style={styles.empty}>The backend has no receipts yet.</Text>}
+      </View>
+    </View>
+  );
+
+  if (!panelUserId) {
+    return (
+      <ScrollView contentContainerStyle={styles.page}>
+        <View style={styles.shell}>{hostDiagnostics}</View>
+      </ScrollView>
+    );
+  }
+
+  return (
+    <View style={styles.appShell}>
+      <NavigationShell
+        userId={panelUserId}
+        onUnauthorized={hideSession}
+        eventCursor={eventState.cursor}
+        footer={hostDiagnostics}
+      />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  page: { flexGrow: 1, backgroundColor: "#f4f7f5", padding: 24 },
-  shell: { alignSelf: "center", width: "100%", maxWidth: 760, gap: 18, paddingVertical: 28 },
-  eyebrow: { color: "#0d7056", fontSize: 12, fontWeight: "800", letterSpacing: 1.5 },
-  title: { color: "#183337", fontSize: 36, fontWeight: "800", letterSpacing: -1.2 },
-  intro: { color: "#50696b", fontSize: 16, lineHeight: 24, maxWidth: 640 },
-  statusRow: { alignItems: "center", flexDirection: "row", gap: 9, paddingVertical: 4 },
-  dot: { borderRadius: 6, height: 10, width: 10 },
-  online: { backgroundColor: "#16865f" },
-  offline: { backgroundColor: "#bf6d24" },
-  status: { color: "#385354", fontSize: 14, fontWeight: "700" },
-  card: { backgroundColor: "#fff", borderColor: "#d9e5e0", borderRadius: 16, borderWidth: 1, gap: 12, padding: 18 },
-  label: { color: "#304e4e", fontSize: 12, fontWeight: "800", letterSpacing: 0.5, textTransform: "uppercase" },
-  input: { backgroundColor: "#fbfdfc", borderColor: "#c9d8d1", borderRadius: 10, borderWidth: 1, color: "#183337", fontSize: 16, paddingHorizontal: 13, paddingVertical: 12 },
-  button: { alignItems: "center", backgroundColor: "#126b54", borderRadius: 10, justifyContent: "center", minHeight: 46, paddingHorizontal: 16 },
+  page: { alignItems: "center", backgroundColor: color.bg, flexGrow: 1, justifyContent: "center", padding: space.xxl },
+  shell: { gap: space.lg, maxWidth: 520, width: "100%" },
+  appShell: { backgroundColor: color.bg, flex: 1, height: "100vh", overflow: "hidden" },
+  diagnostics: {
+    backgroundColor: color.surface,
+    borderColor: color.line,
+    borderRadius: radius.panel,
+    borderWidth: 1,
+    gap: space.md,
+    padding: space.lg,
+  },
+  eyebrow: { color: color.accent, fontSize: font.caption, fontWeight: "600", letterSpacing: 1.5 },
+  title: { color: color.text, fontSize: font.title, fontWeight: "600", letterSpacing: -0.5 },
+  intro: { color: color.textSecondary, fontSize: font.body, lineHeight: 20, maxWidth: 640 },
+  statusRow: { alignItems: "center", flexDirection: "row", gap: space.sm, paddingVertical: space.xs },
+  dot: { borderRadius: radius.control, height: 10, width: 10 },
+  online: { backgroundColor: color.success },
+  offline: { backgroundColor: color.warning },
+  status: { color: color.textSecondary, fontSize: font.body, fontWeight: "600" },
+  card: { ...ui.card },
+  input: ui.input,
+  button: ui.button,
   pressed: { opacity: 0.84 },
   disabled: { opacity: 0.55 },
-  buttonText: { color: "#fff", fontSize: 15, fontWeight: "750" },
-  error: { color: "#a52d20", fontSize: 14 },
-  recovery: { gap: 12 },
-  receiptAction: { color: "#183337", fontSize: 17, fontWeight: "750" },
-  receiptId: { color: "#476361", fontFamily: "monospace", fontSize: 12 },
-  timestamp: { color: "#647d78", fontSize: 12 },
-  empty: { color: "#6a807c", fontSize: 14 },
-  historyRow: { borderTopColor: "#e8efeb", borderTopWidth: 1, gap: 5, paddingTop: 10 },
-  historyAction: { color: "#244140", fontSize: 14, fontWeight: "650" },
-  historyId: { color: "#748983", fontFamily: "monospace", fontSize: 11 },
+  error: { color: color.danger, fontSize: font.body },
+  recovery: { gap: space.md },
+  receiptAction: { color: color.text, fontSize: font.title3, fontWeight: "600" },
+  receiptId: { color: color.textSecondary, fontFamily: font.mono, fontSize: font.caption },
+  timestamp: { color: color.textTertiary, fontSize: font.caption },
+  empty: { color: color.textTertiary, fontSize: font.body },
+  historyRow: { borderTopColor: color.line, borderTopWidth: 1, gap: space.xs, paddingTop: space.md },
+  historyAction: { color: color.text, fontSize: font.body, fontWeight: "600" },
+  historyId: { color: color.textSecondary, fontFamily: font.mono, fontSize: font.caption },
 });
