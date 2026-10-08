@@ -13,7 +13,7 @@ ENV DISPLAY=:99 \
 VOLUME ["/var/lib/remotecode"]
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends bash ca-certificates chromium curl git imagemagick nodejs openbox python3 wmctrl x11-apps x11-utils xdotool xvfb \
+    && apt-get install -y --no-install-recommends bash ca-certificates chromium curl git imagemagick nodejs openbox python3 wmctrl x11-apps x11-utils x11vnc xdotool xterm xvfb \
     && rm -rf /var/lib/apt/lists/* \
     && arch="$(dpkg --print-architecture)" \
     && case "$arch" in \

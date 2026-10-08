@@ -17,6 +17,8 @@ export { listBots, createBot, readBot } from "./bots";
 export type { Bot } from "./bots";
 export { listSchedules, createSchedule, setScheduleEnabled } from "./routines";
 export type { Schedule } from "./routines";
+export { getMachine, openMachineTerminal } from "./machine";
+export type { MachineState, MachineTerminalResult } from "./machine";
 export type { PendingTerminalStart, TerminalReference, TerminalState, TerminalInputState, TerminalReceipt, TerminalPoll, TerminalInputAck } from "./terminals";
 export type { ActionEventState, ActionReceipt } from "./action-events";
 export { ALL_LIVE_RESOURCES, applyLiveEvent, emptyLiveEventState, resourcesForEvent } from "./live-events";

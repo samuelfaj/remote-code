@@ -6,6 +6,7 @@
     "start": "vite --config vite.config.ts --host 0.0.0.0"
   },
   "dependencies": {
+    "@novnc/novnc": "^1.7.0",
     "@remotecode/client": "workspace:*",
     "@xterm/xterm": "6.0.0",
     "react": "19.2.0",

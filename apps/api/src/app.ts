@@ -22,6 +22,7 @@ import { backupFeature } from "./features/backup";
 import { updateFeature } from "./features/update";
 import { billingFeature } from "./features/billing";
 import { screenFeature } from "./features/screen";
+import { machineFeature } from "./features/machine";
 import { messagesFeature } from "./features/messages";
 import { inboxFeature } from "./features/inbox";
 import { pushFeature } from "./features/push";
@@ -71,6 +72,7 @@ export function createApi(
       : undefined,
   screenConfig: Parameters<typeof screenFeature>[1] = undefined,
   agentProviderConfig: Parameters<typeof agentProviderFeature>[1] = {},
+  machineConfig: Parameters<typeof machineFeature>[1] = undefined,
 ) {
   initializeDatabase(configuredDatabasePath);
   const actions = actionsFeature(configuredDatabasePath, authConfig.webOrigin ?? "http://localhost:5173");
@@ -165,6 +167,10 @@ export function createApi(
     .use(screenFeature(configuredDatabasePath, {
       ...(screenConfig ?? {}),
       onChange: (notice) => actions.broadcastToUser(notice.userId, { type: notice.type, workspaceId: notice.workspaceId }),
+    }))
+    .use(machineFeature(configuredDatabasePath, {
+      ...(machineConfig ?? {}),
+      allowedOrigin: authConfig.webOrigin ?? "http://localhost:5173",
     }))
     .onStop(() => { terminals.stopAll(); runs.stopAll(); schedules.stop(); });
 }

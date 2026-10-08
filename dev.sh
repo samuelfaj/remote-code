@@ -109,7 +109,27 @@ if [ "$(uname)" = "Darwin" ]; then
     exit 1
   fi
 
+  # A Dockerfile edit never reaches a running developer if the image is only
+  # built when missing, so the host image is rebuilt when the file is newer.
+  need_build=0
   if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
+    need_build=1
+  else
+    dockerfile_mtime=$(stat -f %m prototype/Dockerfile 2>/dev/null || stat -c %Y prototype/Dockerfile 2>/dev/null || echo "")
+    image_created=$(docker image inspect --format '{{.Created}}' "$IMAGE" 2>/dev/null || echo "")
+    image_epoch=""
+    if [ -n "$image_created" ]; then
+      # Docker's Created is RFC3339. BSD date rejects fractional seconds and a
+      # colon in the offset, so both are normalized; GNU date takes the raw value.
+      image_created_normalized=$(printf '%s' "$image_created" | sed -E 's/\.[0-9]+//; s/Z$/+0000/; s/([+-][0-9]{2}):([0-9]{2})$/\1\2/')
+      image_epoch=$(date -u -j -f "%Y-%m-%dT%H:%M:%S%z" "$image_created_normalized" +%s 2>/dev/null \
+        || date -u -d "$image_created" +%s 2>/dev/null || echo "")
+    fi
+    if [ -n "$dockerfile_mtime" ] && [ -n "$image_epoch" ] && [ "$dockerfile_mtime" -gt "$image_epoch" ]; then
+      need_build=1
+    fi
+  fi
+  if [ "$need_build" -eq 1 ]; then
     echo "Building host image $IMAGE ..." >&2
     docker build -t "$IMAGE" -f prototype/Dockerfile .
   fi

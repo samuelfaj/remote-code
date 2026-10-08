@@ -3,6 +3,7 @@ import { createApiClient, listBots, listThreads, type Bot, type Thread, type Wor
 import { AgentPanel } from "../agent/AgentPanel";
 import { ComputerPanel } from "../computer/ComputerPanel";
 import { FilePanel } from "../files/FilePanel";
+import { MachinePanel } from "../machine/MachinePanel";
 import { TerminalPanel } from "../terminals/TerminalPanel";
 import { WorkspacePanel } from "../workspaces/WorkspacePanel";
 import { Icon, type IconName } from "../shell/icons";
@@ -16,7 +17,7 @@ type Props = {
   live: LiveSignals;
 };
 
-type SurfaceKind = "workspace" | "agent" | "terminal" | "files" | "computer";
+type SurfaceKind = "workspace" | "agent" | "terminal" | "files" | "computer" | "machine";
 
 const SURFACE_DEFS: Record<SurfaceKind, { icon: IconName; title: string }> = {
   workspace: { icon: "folder", title: "Workspace" },
@@ -24,9 +25,10 @@ const SURFACE_DEFS: Record<SurfaceKind, { icon: IconName; title: string }> = {
   terminal: { icon: "terminal", title: "Terminal" },
   files: { icon: "file", title: "Files" },
   computer: { icon: "monitor", title: "Computer" },
+  machine: { icon: "monitor", title: "Machine" },
 };
 
-const SURFACE_ORDER: SurfaceKind[] = ["workspace", "agent", "terminal", "files", "computer"];
+const SURFACE_ORDER: SurfaceKind[] = ["workspace", "agent", "terminal", "files", "computer", "machine"];
 
 // The macOS app opens a workspace's pane with these three surfaces.
 const DEFAULT_SURFACES: SurfaceKind[] = ["workspace", "agent", "terminal"];
@@ -255,6 +257,12 @@ export function NavigationShell({ userId, onUnauthorized, eventCursor, footer, l
               <Icon name="calendar" size={16} />
             </span>
             Scheduled Tasks
+          </button>
+          <button className="rc-action-row" onClick={() => openSurface("machine")} type="button">
+            <span className="rc-action-row__icon">
+              <Icon name="monitor" size={16} />
+            </span>
+            Machine
           </button>
         </div>
 
@@ -541,6 +549,9 @@ export function NavigationShell({ userId, onUnauthorized, eventCursor, footer, l
                 selectedWorkspaceId={selectedWorkspaceId}
                 userId={userId}
               />
+            </div>
+            <div hidden={!panelVisible("machine")}>
+              <MachinePanel live={live} userId={userId} />
             </div>
           </div>
         </div>
