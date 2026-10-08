@@ -119,8 +119,8 @@ for _ in $(seq 1 30); do
     --jq "[.[] | select(.name == \"rc054-windows-client\")][0].databaseId" 2>/dev/null || true)
   [[ -n "$RUN_ID" && "$RUN_ID" != "null" ]] && break
 done
-gh variable delete RC054_BACKEND_ORIGIN --repo "$REPO" >/dev/null 2>&1 || true
 if [[ -z "$RUN_ID" || "$RUN_ID" == "null" ]]; then
+  gh variable delete RC054_BACKEND_ORIGIN --repo "$REPO" >/dev/null 2>&1 || true
   say "FAIL the push never produced a windows-client run"
   exit 1
 fi
@@ -128,6 +128,10 @@ say "run ${RUN_ID}: https://github.com/${REPO}/actions/runs/${RUN_ID}"
 
 STATUS=0
 gh run watch "$RUN_ID" --repo "$REPO" --exit-status >/dev/null 2>&1 || STATUS=1
+# Only now: a job decides its own gate when it starts, so clearing the origin
+# earlier would skip the run this script just armed.
+gh variable delete RC054_BACKEND_ORIGIN --repo "$REPO" >/dev/null 2>&1 || true
+say "run outcome: $(gh run view "$RUN_ID" --repo "$REPO" --json conclusion --jq .conclusion)"
 gh run view "$RUN_ID" --repo "$REPO" --log > "$OUT/windows-job.log" 2>&1 || true
 gh run download "$RUN_ID" --repo "$REPO" -n rc054-windows-evidence -D "$OUT/evidence" 2>/dev/null || true
 
