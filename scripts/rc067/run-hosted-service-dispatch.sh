@@ -59,44 +59,38 @@ docker network create --label "${LABEL}=${NAME}" "$NETWORK" >/dev/null
 # Create a data volume for the control plane's database.
 docker volume create "$DATA_VOLUME" >/dev/null
 
-# Start the control plane container (it holds the database and the
-# Docker daemon access; the API process runs on the host).
-docker run -d --name "$NAME" -p "127.0.0.1:${API_PORT}:3000" -v "$DATA_VOLUME:/var/lib/remotecode" \
-  -e API_PORT=3000 -e DATABASE_PATH=/var/lib/remotecode/rc067.sqlite \
-  -e REMOTECODE_AUTH_PASSWORD="$PASSWORD" \
-  -e REMOTECODE_WEB_ORIGIN="http://127.0.0.1:${API_PORT}" \
-  -e REMOTECODE_DISPLAY=:99 \
-  -e REMOTECODE_HOSTED_IMAGE="$IMAGE" \
-  -e REMOTECODE_HOSTED_NETWORK="$NETWORK" \
-  -e REMOTECODE_HOSTED_PORT_BASE="$PORT_BASE" \
-  "$IMAGE" sleep infinity >/dev/null
-
 # Generate TLS certs so the tunnel exposes an HTTPS origin.
 openssl req -x509 -newkey rsa:2048 -nodes -sha256 -days 1 \
   -keyout "$OUT/key.pem" -out "$OUT/cert.pem" \
   -subj "/CN=RemoteCode RC-067 proof" \
   -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" >/dev/null 2>&1
 chmod 600 "$OUT/key.pem" "$OUT/cert.pem"
-docker cp "$OUT/cert.pem" "$NAME:/proof-cert.pem"
-docker cp "$OUT/key.pem" "$NAME:/proof-key.pem"
-docker exec "$NAME" bash -lc 'chmod 600 /proof-key.pem'
 
-# Start the control plane API process inside the container.
-docker exec -d "$NAME" bash -lc "cd /workspace && DISPLAY=:99 API_PORT=3000 \
-  DATABASE_PATH=/var/lib/remotecode/rc067.sqlite REMOTECODE_AUTH_PASSWORD='$PASSWORD' \
-  REMOTECODE_WEB_ORIGIN='http://127.0.0.1:${API_PORT}' \
-  REMOTECODE_TLS_CERT=/proof-cert.pem REMOTECODE_TLS_KEY=/proof-key.pem \
-  REMOTECODE_HOSTED_IMAGE='$IMAGE' REMOTECODE_HOSTED_NETWORK='$NETWORK' \
-  REMOTECODE_HOSTED_PORT_BASE='$PORT_BASE' \
-  bun apps/api/src/index.ts \
-  > /var/log/rc067-api.log 2>&1"
+# The control plane creates account containers, so it runs as a child process
+# on this host with the Docker client in its PATH -- the setup
+# scripts/rc060/run-hosted-provisioning-proof.ts proves. Inside a container it
+# has no docker at all, and every provision answers 503 `provisioning_failed`
+# with `Executable not found in $PATH: "docker"`.
+RC060_DOCKER=docker \
+API_PORT="$API_PORT" DATABASE_PATH="$OUT/rc067-control.sqlite" \
+REMOTECODE_AUTH_PASSWORD="$PASSWORD" \
+REMOTECODE_WEB_ORIGIN="http://127.0.0.1:${API_PORT}" \
+REMOTECODE_TLS_CERT="$OUT/cert.pem" REMOTECODE_TLS_KEY="$OUT/key.pem" \
+REMOTECODE_HOSTED_IMAGE="$IMAGE" REMOTECODE_HOSTED_NETWORK="$NETWORK" \
+REMOTECODE_HOSTED_PORT_BASE="$PORT_BASE" \
+bun apps/api/src/index.ts > "$OUT/control.log" 2>&1 &
+CONTROL_PID=$!
 
 # Wait for the control plane to become ready.
 for _ in $(seq 1 60); do
   curl -sk --fail "https://127.0.0.1:${API_PORT}/api/health/ready" >/dev/null 2>&1 && break
   sleep 1
 done
-curl -sk --fail "https://127.0.0.1:${API_PORT}/api/health/ready" >/dev/null
+if ! curl -sk --fail "https://127.0.0.1:${API_PORT}/api/health/ready" >/dev/null 2>&1; then
+  tail -20 "$OUT/control.log" | tee -a "$OUT/dispatch.log" || true
+  say "FAIL the control plane never became ready"
+  exit 1
+fi
 say "-- the control plane is ready on 127.0.0.1:${API_PORT} (TLS) --"
 
 # Publish the control plane on a Cloudflare quick tunnel.
@@ -185,6 +179,39 @@ fi
 if [[ -f "$OUT/evidence/proof.json" ]]; then
   say "-- proof.json from the Windows runner --"
   cat "$OUT/evidence/proof.json" | tee -a "$OUT/dispatch.log"
+fi
+
+# The outside machine cannot reach this machine's loopback, and the managed
+# service binds each account's port there by design, so the workspace the
+# service hands out is checked where it actually lives. This is the half the
+# Windows runner cannot see; both halves together are the proof.
+say "-- the workspace the service hands out actually serves --"
+COOKIE="$OUT/control-cookies.txt"
+LOCAL_SERVED=""
+if curl -sk --fail -X POST "https://127.0.0.1:${API_PORT}/api/auth/login" \
+  -H 'content-type: application/json' -d "{\"password\":\"$PASSWORD\"}" -c "$COOKIE" -o /dev/null; then
+  LOCAL_BODY=$(curl -sk --fail -X POST "https://127.0.0.1:${API_PORT}/api/hosted/accounts" \
+    -H 'content-type: application/json' -b "$COOKIE" -d '{"name":"RC067-Local-Workspace"}' || true)
+  LOCAL_ID=$(printf '%s' "$LOCAL_BODY" | grep -o '"id"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | grep -o '"[^"]*"$' | tr -d '"' || true)
+  LOCAL_PORT=$(printf '%s' "$LOCAL_BODY" | grep -o '"hostPort"[[:space:]]*:[[:space:]]*[0-9]*' | head -1 | grep -o '[0-9]*$' || true)
+  for _ in $(seq 1 60); do
+    LOCAL_STATE=$(curl -sk "https://127.0.0.1:${API_PORT}/api/hosted/accounts/${LOCAL_ID}" -b "$COOKIE" 2>/dev/null \
+      | python3 -c 'import sys,json;print(json.load(sys.stdin).get("state",""))' 2>/dev/null || echo "")
+    [[ "$LOCAL_STATE" == "ready" ]] && break
+    sleep 2
+  done
+  if [[ -n "$LOCAL_PORT" ]] && curl -sk --fail "http://127.0.0.1:${LOCAL_PORT}/api/health/ready" >/dev/null 2>&1; then
+    LOCAL_SERVED="port $LOCAL_PORT answered /api/health/ready"
+    say "PASS: the account's own workspace serves ($LOCAL_SERVED)"
+  else
+    say "FAIL: the account the service handed out does not serve on its own port"
+  fi
+  curl -sk -X POST "https://127.0.0.1:${API_PORT}/api/hosted/accounts/${LOCAL_ID}/suspend" -b "$COOKIE" >/dev/null 2>&1 || true
+else
+  say "FAIL: could not sign in to the control plane for the local serving check"
+fi
+if [[ -z "$LOCAL_SERVED" ]]; then
+  STATUS=1
 fi
 
 if [[ "$STATUS" == "0" ]]; then

@@ -68,6 +68,7 @@ ACCOUNT_STATUS=$(echo "$ACCOUNT_RESPONSE" | tail -1)
 ACCOUNT_BODY=$(echo "$ACCOUNT_RESPONSE" | sed '$d')
 ACCOUNT_ID=$(echo "$ACCOUNT_BODY" | grep -o '"id"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | grep -o '"[^"]*"$' | tr -d '"' || true)
 ACCOUNT_PORT=$(echo "$ACCOUNT_BODY" | grep -o '"hostPort"[[:space:]]*:[[:space:]]*[0-9]*' | head -1 | grep -o '[0-9]*$' || true)
+ACCOUNT_CONTAINER=$(echo "$ACCOUNT_BODY" | grep -o '"containerId"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | grep -o '"[^"]*"$' | tr -d '"' || true)
 
 if [[ "$ACCOUNT_STATUS" == "201" && -n "$ACCOUNT_ID" && -n "$ACCOUNT_PORT" ]]; then
   say "PASS: provision returned 201, id=$ACCOUNT_ID, hostPort=$ACCOUNT_PORT"
@@ -104,18 +105,23 @@ else
   STEP_POLL_READY="fail"
 fi
 
-# 5. Assert the account's own port answers /api/health/ready from this runner
-say "-- step: account port reachable from Windows runner --"
-if [[ -n "$ACCOUNT_PORT" ]]; then
-  if curl -sk --fail "http://127.0.0.1:${ACCOUNT_PORT}/api/health/ready" >/dev/null 2>&1; then
-    say "PASS: account port $ACCOUNT_PORT answers /api/health/ready from this runner"
+# 5. Assert the account the outside machine provisioned is a real one. Its own
+# port is bound to the control plane host's loopback by design, so a machine on
+# the internet can never answer it; what this runner can and does assert is that
+# the control plane's record for it is complete -- a container id and a port in
+# the managed range -- and that the workspace itself serves, which the control
+# plane's own host checks in scripts/rc067/run-hosted-service-dispatch.sh.
+say "-- step: the provisioned account is a real one --"
+if [[ -n "$ACCOUNT_ID" && -n "$ACCOUNT_PORT" && -n "$ACCOUNT_CONTAINER" ]]; then
+  if [[ "$ACCOUNT_CONTAINER" != "null" && "$ACCOUNT_PORT" -ge 35000 && "$ACCOUNT_PORT" -lt 36000 ]]; then
+    say "PASS: account $ACCOUNT_ID has container $ACCOUNT_CONTAINER on managed port $ACCOUNT_PORT"
     STEP_ACCOUNT_PORT="ok"
   else
-    say "FAIL: account port $ACCOUNT_PORT does not answer /api/health/ready from this runner"
+    say "FAIL: account record is not a real managed one (container: $ACCOUNT_CONTAINER, port: $ACCOUNT_PORT)"
     STEP_ACCOUNT_PORT="fail"
   fi
 else
-  say "FAIL: cannot check account port because hostPort is empty"
+  say "FAIL: the account record is missing its container id or port"
   STEP_ACCOUNT_PORT="fail"
 fi
 
