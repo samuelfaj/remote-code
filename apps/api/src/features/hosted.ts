@@ -133,6 +133,30 @@ export function hostedFeature(
     };
   }
 
+  function containerRunning(id: string): boolean {
+    const proc = Bun.spawnSync([docker, "inspect", "--format", "{{.State.Running}}", id], {
+      stdout: "pipe",
+      stderr: "pipe",
+      timeout: 5_000,
+    });
+    return proc.exitCode === 0 && proc.stdout.toString().trim() === "true";
+  }
+
+  // A row records what this control plane intended; the container is what is
+  // true. An account whose container died must not keep reading as ready, and
+  // the correction is written down so every later reader agrees. A suspended
+  // account is stopped by definition, so only `ready` is reconciled.
+  function reconcile<T extends { id: string; state: string; error: string | null; updated_at: string }>(row: T): T {
+    if (row.state !== "ready" || containerRunning(row.id)) return row;
+    const updatedAt = new Date().toISOString();
+    db((database) => {
+      database.query(
+        "UPDATE hosted_accounts SET state = 'failed', error = 'container_not_running', updated_at = ? WHERE id = ?",
+      ).run(updatedAt, row.id);
+    });
+    return { ...row, state: "failed", error: "container_not_running", updated_at: updatedAt };
+  }
+
   return new Elysia()
     .onError(({ code, set }) => {
       if (code === "VALIDATION") {
@@ -287,7 +311,7 @@ export function hostedFeature(
             [string]
           >("SELECT * FROM hosted_accounts WHERE user_id = ? ORDER BY created_at DESC").all(userId);
         });
-        return { accounts: rows.map(viewAccount) };
+        return { accounts: rows.map((row) => viewAccount(reconcile(row))) };
       } catch {
         set.status = 503;
         return { error: "storage_unavailable" as const };
@@ -310,7 +334,7 @@ export function hostedFeature(
           >("SELECT * FROM hosted_accounts WHERE id = ? AND user_id = ?").get(params.id, userId);
         });
         if (!row) { set.status = 404; return { error: "account_not_found" as const }; }
-        return viewAccount(row);
+        return viewAccount(reconcile(row));
       } catch {
         set.status = 503;
         return { error: "storage_unavailable" as const };

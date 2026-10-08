@@ -39,6 +39,12 @@ if [ "\$1" = "exec" ] && echo "\$*" | grep -q "curl"; then
 fi
 if [ "\$1" = "container" ] && [ "\$2" = "create" ] && [ "\$CREATE_FAIL" = "true" ]; then exit 1; fi
 if [ "\$1" = "container" ] && [ "\$2" = "start" ] && [ "\$START_FAIL" = "true" ]; then exit 1; fi
+if [ "\$1" = "inspect" ]; then
+  RUNNING=\$(grep '^running=' "\$MODE_FILE" 2>/dev/null | cut -d= -f2)
+  [ -z "\$RUNNING" ] && RUNNING=true
+  echo "\$RUNNING"
+  exit 0
+fi
 exit 0
 `,
   );
@@ -180,6 +186,37 @@ describe("Hosted routes", () => {
 
     // Gateway token must not appear in container create argv
     expect(containerCreateLine).not.toContain(body.gatewayToken);
+  });
+
+  it("an account whose container died stops reading as ready", async () => {
+    const { app, modePath } = setup();
+    setMode(modePath, { ready: "true" });
+
+    const created = await request(app, "http://localhost/api/hosted/accounts", {
+      method: "POST",
+      headers: { cookie: `remotecode_session=${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ name: "crash" }),
+    });
+    expect(created.status).toBe(201);
+    const account = await created.json() as { id: string; state: string };
+    expect(account.state).toBe("ready");
+
+    // The container dies outside the control plane's knowledge.
+    setMode(modePath, { ready: "true", running: "false" });
+
+    const read = await request(app, `http://localhost/api/hosted/accounts/${account.id}`, {
+      headers: { cookie: `remotecode_session=${ownerToken}` },
+    });
+    expect(read.status).toBe(200);
+    const record = await read.json() as { state: string; error: string | null };
+    expect(record.state).toBe("failed");
+    expect(record.error).toBe("container_not_running");
+
+    const listed = await request(app, "http://localhost/api/hosted/accounts", {
+      headers: { cookie: `remotecode_session=${ownerToken}` },
+    });
+    const list = await listed.json() as { accounts: Array<{ id: string; state: string }> };
+    expect(list.accounts.find((entry) => entry.id === account.id)?.state).toBe("failed");
   });
 
   it("provisioning failure leaves row as failed, never ready", async () => {
