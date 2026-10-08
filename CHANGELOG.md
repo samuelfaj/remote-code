@@ -1,4 +1,8 @@
 # Changelog
+## RC-015's isolation proof diagnosed — the container image, its config, and the provider call 2026-10-08 (UTC)
+- RC-065's one failing case is split in two: the isolation half holds (the agent runs as `rcagent` and cannot read the database, gateway token or backend environment), and the authorized-task half fails inside the container.
+- Three measured findings: the proof's image carried Distill 2.0.33 while this host's credential is 2.0.35 (the proof now takes `RC015_DISTILL_VERSION`/`RC015_DISTILL_SHA256_AARCH64`); the proof copied only `auth.json`, so without the host's `config.toml` the agent never finished a turn (it now copies the config); and with both in place the run ends in a definite `stopReason=provider_failed`, `error="Internal error"`, which is where the next attempt starts.
+- The proof now prints the run's own record on failure and takes `RC015_RUN_WINDOW` instead of a hidden 240 s; the RC-065 matrix pins the matching Distill version for that row.
 ## RC-065 matrix executed — 17 of 18 failure cases pass, one reproducible failure found 2026-10-08 (UTC)
 - New `scripts/rc065/run-failure-matrix.sh <fresh dir>`: runs 18 failure cases in turn, one transcript per case (`meta/<case>/transcript.log`, `exit`, `command`) and a `matrix.json`; each proof insists on creating its own output directory, which the runner now respects.
 - Observed: 17 exited 0 (network before acceptance and after a lost response, provider 401/429, stalled-run watchdog, run reconciliation after a host restart, Docker host supervisor, linux-use first session and revoked target, crossed cookie, input after revocation, GUI restart, event gap, ownership audit, routines, push, webhooks, restore, version refusal).

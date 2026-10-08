@@ -26,7 +26,15 @@ as_agent() { docker exec -u rcagent "$NAME" "$@"; }
 
 say "== RC-015 backend/agent identity isolation =="
 say "-- build image (adds the unprivileged rcagent user and wrapper) --"
-docker build -q -t "$IMAGE" -f "$ROOT/prototype/Dockerfile" "$ROOT" | tee -a "$TRANSCRIPT"
+# The image carries the Distill binary the agent runs, and the proof copies this
+# host's credential into the container: an image built with a different Distill
+# version than the host's credential leaves the agent unable to finish its turn.
+# The versions can be pinned here so the two match.
+BUILD_ARGS=()
+[[ -n "${RC015_DISTILL_VERSION:-}" ]] && BUILD_ARGS+=(--build-arg "DISTILL_VERSION=$RC015_DISTILL_VERSION")
+[[ -n "${RC015_DISTILL_SHA256_AARCH64:-}" ]] && BUILD_ARGS+=(--build-arg "DISTILL_SHA256_AARCH64=$RC015_DISTILL_SHA256_AARCH64")
+[[ -n "${RC015_DISTILL_SHA256_X86_64:-}" ]] && BUILD_ARGS+=(--build-arg "DISTILL_SHA256_X86_64=$RC015_DISTILL_SHA256_X86_64")
+docker build -q -t "$IMAGE" -f "$ROOT/prototype/Dockerfile" ${BUILD_ARGS[@]+"${BUILD_ARGS[@]}"} "$ROOT" | tee -a "$TRANSCRIPT"
 
 docker rm -f "$NAME" >/dev/null 2>&1 || true
 docker run -d --name "$NAME" "$IMAGE" sleep infinity >/dev/null
@@ -35,6 +43,13 @@ say "-- provision the backend secret store and the agent workspace --"
 run bash -lc "install -d -m 700 /var/lib/remotecode && printf '%s' '$TOKEN' > /var/lib/remotecode/gateway-token && chmod 600 /var/lib/remotecode/gateway-token"
 run bash -lc "install -d -o rcagent -g rcagent -m 700 /workspace/rc015-workspace && install -d -o rcagent -g rcagent -m 700 /home/rcagent/.distill"
 docker cp "$AUTH" "$NAME:/home/rcagent/.distill/auth.json"
+# The credential alone is not the whole state: the agent also needs the host's
+# Distill configuration, or it runs with defaults it cannot reach a model with.
+CONFIG="${RC015_CONFIG:-$HOME/.distill/config.toml}"
+if [[ -f "$CONFIG" ]]; then
+  docker cp "$CONFIG" "$NAME:/home/rcagent/.distill/config.toml"
+  run bash -lc "chown rcagent:rcagent /home/rcagent/.distill/config.toml && chmod 600 /home/rcagent/.distill/config.toml"
+fi
 run bash -lc "chown rcagent:rcagent /home/rcagent/.distill/auth.json && chmod 600 /home/rcagent/.distill/auth.json"
 say "rcagent uid=$(run id -u rcagent)  backend uid=$(run id -u)"
 
@@ -73,14 +88,24 @@ done
 AGENT_USER=$(run ps -o user= -p "$AGENT_PID" 2>/dev/null | tr -d '[:space:]')
 say "agent process pid=$AGENT_PID runs as user='$AGENT_USER'"
 [ "$AGENT_USER" = "rcagent" ] || { say "FAIL agent process ran as '$AGENT_USER', expected rcagent"; exit 1; }
+# The run itself is the authority; this window only decides how long the proof
+# waits for a real agent turn on this host (a slower host or model needs more).
+WINDOW="${RC015_RUN_WINDOW:-240}"
 STATE=""
-for _ in $(seq 1 240); do
+for _ in $(seq 1 "$WINDOW"); do
   STATE=$(run curl -fsS -b /tmp/c015.txt "http://127.0.0.1:3223/api/runs/$RUN" | python3 -c 'import sys,json;print(json.load(sys.stdin)["state"])')
   [ "$STATE" = "completed" ] || [ "$STATE" = "failed" ] || [ "$STATE" = "interrupted" ] && break
   sleep 1
 done
 say "run state=$STATE"
-if [ "$STATE" != "completed" ]; then say "FAIL authorized task $STATE"; run tail -20 /workspace/rc015-api.log | tee -a "$TRANSCRIPT"; exit 1; fi
+if [ "$STATE" != "completed" ]; then
+  say "FAIL authorized task $STATE within ${WINDOW}s"
+  # The run's own record is what explains the outcome, so it is printed.
+  run curl -fsS -b /tmp/c015.txt "http://127.0.0.1:3223/api/runs/$RUN" | tee -a "$TRANSCRIPT" || true
+  say ""
+  run tail -20 /workspace/rc015-api.log | tee -a "$TRANSCRIPT"
+  exit 1
+fi
 
 IDENTITY=$(run cat /workspace/rc015-workspace/rc015-identity.txt)
 say "agent identity file: $(printf '%s' "$IDENTITY" | tr '\n' '|')"

@@ -78,3 +78,14 @@ Observed on this machine: **17 of 18 cases exited 0**, each with its own transcr
 One case failed twice: **linux-use-command-failure-and-isolation** (`scripts/rc015/run-isolation-proof.sh`) — the agent process does start as `rcagent`, but the run stays `running` past the proof's own 240 s window, so the proof prints `FAIL authorized task running`. The credential it copies into the container (`~/.distill/auth.json`) exists and is current, so this is either the proof's window being too short for a real agent turn here or a stall in the agent inside the container; it needs the maintainer's eye, and it means RC-015's evidence is not reproducible on this host today.
 
 Still outside this matrix, and why RC-065 is not accepted: no injected-failure run in a hosted account, no sanitized-log and UI-after-restart comparison, no swapped-window stream (only the crossed-cookie refusal), and no Android storage-failure modes.
+
+### The one failing case, diagnosed — 2026-10-08 (UTC)
+
+`linux-use-command-failure-and-isolation` splits in two, and only the second half fails:
+
+- **Isolation holds**: the agent process runs as `rcagent` and the proof shows it cannot read the database, the gateway token or the backend environment, while the backend can.
+- **The authorized task does not finish.** Three findings, each measured:
+  1. The image the proof builds carries Distill **2.0.33** while this host's credential is for **2.0.35**; the proof now takes `RC015_DISTILL_VERSION`/`RC015_DISTILL_SHA256_AARCH64` so the two can match (2.0.35 Linux aarch64 sha256 `c32fbea7962a54aa4f278fe30a28571149f65154675cd6670d5be2153d1f83ad`).
+  2. The proof copied only `auth.json`; without the host's `config.toml` the agent never finished its turn at all (`run state=running` past the window). It now copies the config too, which the failure branch prints before exiting.
+  3. With both in place the run ends in a definite, reported state: `state=failed`, `stopReason=provider_failed`, `error="Internal error"` — the agent's provider call fails inside the container although this host's own Distill answers with the same credential. That is where the next attempt starts: the container's provider path (endpoint reachability, or a credential the container may need beyond `auth.json`/`config.toml`).
+- The proof now prints the run's own record and `RC015_RUN_WINDOW` makes its wait explicit instead of a hidden 240 s.

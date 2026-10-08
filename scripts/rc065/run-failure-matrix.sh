@@ -26,7 +26,7 @@ CASES=(
   "distill-stalled-run-watchdog|bash $ROOT/scripts/rc027/run-stuck-run-proof.sh {CASE}"
   "distill-run-reconciliation-after-host-restart|bash $ROOT/scripts/rc009/run-runs-proof.sh {CASE}"
   "docker-host-supervisor-restart|bash $ROOT/scripts/rc019/run-supervisor-proof.sh {CASE}"
-  "linux-use-command-failure-and-isolation|bash $ROOT/scripts/rc015/run-isolation-proof.sh {CASE}"
+  "linux-use-command-failure-and-isolation|RC015_DISTILL_VERSION=${RC015_DISTILL_VERSION:-2.0.35} RC015_DISTILL_SHA256_AARCH64=${RC015_DISTILL_SHA256_AARCH64:-c32fbea7962a54aa4f278fe30a28571149f65154675cd6670d5be2153d1f83ad} RC015_RUN_WINDOW=${RC015_RUN_WINDOW:-420} bash $ROOT/scripts/rc015/run-isolation-proof.sh {CASE}"
   "linux-use-first-session-and-revoked-target|bash $ROOT/scripts/rc023/run-first-session-proof.sh {CASE}"
   "visual-channel-crossed-cookie|RC042_PROOF_DIR={CASE} bun $ROOT/scripts/rc042/run-preview-proof.ts"
   "input-after-revocation-and-supersession|RC043_PROOF_DIR={CASE} bun $ROOT/scripts/rc043/run-possession-proof.ts"
