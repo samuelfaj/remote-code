@@ -32,6 +32,11 @@ if [[ ("${RC_NATIVE_TEST_WORKSPACES:-0}" == "1" || "${RC_NATIVE_TEST_PRIVACY_EXP
   exit 2
 fi
 API_ORIGIN="http://127.0.0.1:$API_PORT"
+# A proof can drive a host that is already running (the Linux host behind the
+# RC-057 loopback front) instead of a local API: nothing local is started then.
+if [[ -n "${RC_NATIVE_TEST_EXTERNAL_ORIGIN:-}" ]]; then
+  API_ORIGIN="$RC_NATIVE_TEST_EXTERNAL_ORIGIN"
+fi
 API_PASSWORD="remote-code-native-test-passphrase"
 DATABASE_PATH="$WORK_DIR/remotecode-native.sqlite"
 DEVICE_ID="${RC_NATIVE_TEST_DEVICE:-}"
@@ -272,6 +277,18 @@ if [[ "${RC_NATIVE_TEST_WORKSPACES:-0}" == "1" ]]; then
   SKIP_TEST_ARG=""
   EXTRA_SKIP_ARGS=()
 fi
+if [[ "${RC_NATIVE_TEST_TAKEOVER:-0}" == "1" ]]; then
+  for mode in RC_NATIVE_TEST_RECOVERY RC_NATIVE_TEST_AUTO_ACTION RC_NATIVE_TEST_HEALTH RC_NATIVE_TEST_DEADLINE RC_NATIVE_TEST_POST_DELAY RC_NATIVE_TEST_LOGIN_DEADLINE RC_NATIVE_TEST_LOGIN_PREFLIGHT_DEADLINE RC_NATIVE_TEST_WORKSPACES RC_NATIVE_TEST_PRIVACY_EXPIRY RC_NATIVE_TEST_PRIVACY_BUSY RC_NATIVE_TEST_STORAGE_FAILURE RC_NATIVE_TEST_FILES RC_NATIVE_TEST_NAVIGATION RC_NATIVE_TEST_JOINED_WORKSPACE; do
+    if [[ "${!mode:-0}" == "1" ]]; then
+      echo "RC_NATIVE_TEST_TAKEOVER cannot be combined with $mode." >&2
+      exit 2
+    fi
+  done
+  API_ENTRY="apps/api/src/index.ts"
+  TEST_SELECTION="RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testTakeoverScreenOnHostWithHumanInput"
+  SKIP_TEST_ARG=""
+  EXTRA_SKIP_ARGS=()
+fi
 if [[ "${RC_NATIVE_TEST_NAVIGATION:-0}" == "1" ]]; then
   for mode in RC_NATIVE_TEST_RECOVERY RC_NATIVE_TEST_AUTO_ACTION RC_NATIVE_TEST_HEALTH RC_NATIVE_TEST_DEADLINE RC_NATIVE_TEST_POST_DELAY RC_NATIVE_TEST_LOGIN_DEADLINE RC_NATIVE_TEST_LOGIN_PREFLIGHT_DEADLINE RC_NATIVE_TEST_WORKSPACES RC_NATIVE_TEST_PRIVACY_EXPIRY RC_NATIVE_TEST_PRIVACY_BUSY RC_NATIVE_TEST_STORAGE_FAILURE RC_NATIVE_TEST_FILES; do
     if [[ "${!mode:-0}" == "1" ]]; then
@@ -426,6 +443,11 @@ if [[ "${RC_NATIVE_TEST_FILES:-0}" == "1" ]]; then
 fi
 API_WEB_ORIGIN="http://localhost:5173"
 CLIENT_ORIGIN="http://localhost:5173"
+# A proof can point the app at a host that expects a different client origin
+# (the RC-057 loopback front) without changing the host.
+if [[ -n "${RC_NATIVE_TEST_EXTERNAL_CLIENT_ORIGIN:-}" ]]; then
+  CLIENT_ORIGIN="$RC_NATIVE_TEST_EXTERNAL_CLIENT_ORIGIN"
+fi
 CURL_TLS_ARGS=()
 if [[ "${RC_NATIVE_TEST_FILES:-0}" == "1" ]]; then
   API_WEB_ORIGIN="https://localhost"
@@ -479,6 +501,9 @@ STUB
     chmod +x "$WORK_DIR/rc055-stub-agent.sh"
     export REMOTECODE_DISTILL_BIN="$WORK_DIR/rc055-stub-agent.sh"
   fi
+  if [[ -n "${RC_NATIVE_TEST_EXTERNAL_ORIGIN:-}" ]]; then
+    echo "Using the host at $API_ORIGIN; no local API is started." >&2
+  else
   API_PORT="$API_PORT" \
     DATABASE_PATH="$DATABASE_PATH" \
     RC_NATIVE_TEST_STORAGE_DEVICE_ID="$OWNED_DEVICE_ID" \
@@ -490,6 +515,7 @@ STUB
   API_PID=$!
   if [[ "${RC_NATIVE_TEST_NAVIGATION:-0}" == "1" ]]; then
     unset REMOTECODE_DISTILL_BIN
+  fi
   fi
 fi
 
@@ -661,11 +687,17 @@ PYFILE
   exit 0
 fi
 
-python3 - "$DATABASE_PATH" "${RC_NATIVE_TEST_RECOVERY:-0}" "${RC_NATIVE_TEST_HEALTH:-0}" "${RC_NATIVE_TEST_AUTO_ACTION:-0}" "${RC_NATIVE_TEST_DEADLINE:-0}" "${RC_NATIVE_TEST_POST_DELAY:-0}" "${RC_NATIVE_TEST_LOGIN_DEADLINE:-0}" "${RC_NATIVE_TEST_LOGIN_PREFLIGHT_DEADLINE:-0}" "${RC_NATIVE_TEST_WORKSPACES:-0}" "${RC_NATIVE_TEST_PRIVACY_EXPIRY:-0}" "${RC_NATIVE_TEST_PRIVACY_BUSY:-0}" "${RC_NATIVE_TEST_STORAGE_FAILURE:-0}" "${RC_NATIVE_TEST_STORAGE_SCENARIO:-}" "${RC_NATIVE_TEST_NAVIGATION:-0}" <<'PY'
+python3 - "$DATABASE_PATH" "${RC_NATIVE_TEST_RECOVERY:-0}" "${RC_NATIVE_TEST_HEALTH:-0}" "${RC_NATIVE_TEST_AUTO_ACTION:-0}" "${RC_NATIVE_TEST_DEADLINE:-0}" "${RC_NATIVE_TEST_POST_DELAY:-0}" "${RC_NATIVE_TEST_LOGIN_DEADLINE:-0}" "${RC_NATIVE_TEST_LOGIN_PREFLIGHT_DEADLINE:-0}" "${RC_NATIVE_TEST_WORKSPACES:-0}" "${RC_NATIVE_TEST_PRIVACY_EXPIRY:-0}" "${RC_NATIVE_TEST_PRIVACY_BUSY:-0}" "${RC_NATIVE_TEST_STORAGE_FAILURE:-0}" "${RC_NATIVE_TEST_STORAGE_SCENARIO:-}" "${RC_NATIVE_TEST_NAVIGATION:-0}" "${RC_NATIVE_TEST_TAKEOVER:-0}" <<'PY'
 import json
 import sqlite3
 import sys
 from collections import Counter
+
+if sys.argv[15] == "1":
+    # The takeover journey runs against a host the harness started, so there is
+    # no local proof database to audit; the harness reads the host itself.
+    print(json.dumps({"takeover": "audited on the host by scripts/rc057/run-mobile-takeover-proof.sh"}))
+    sys.exit(0)
 
 connection = sqlite3.connect(sys.argv[1])
 try:
@@ -863,6 +895,11 @@ if sys.argv[3] == "1":
     if len(rows) != 1 or not rows[0][1].startswith("native-health-") or len(health_mappings) != 1 or session_count != 0 or len(auth_rows) != 2 or sorted(row[1] for row in auth_rows) != ["login", "logout"]:
         raise SystemExit(f"Native health proof left unexpected persisted state: actions={rows!r}, mappings={health_mappings!r}, sessions={session_count}, auth={auth_rows!r}")
     print(json.dumps({"healthNativeActions": rows, "requestMapping": health_mappings, "remainingSessions": session_count, "authKinds": [row[1] for row in auth_rows]}))
+    sys.exit(0)
+if sys.argv[15] == "1":
+    # The takeover journey runs against a host the harness started; the host's
+    # own state is read there, not from a local database.
+    print(json.dumps({"takeover": "audited on the host by scripts/rc057/run-mobile-takeover-proof.sh"}))
     sys.exit(0)
 if sys.argv[14] == "1":
     # The navigation journey makes exactly the two actions it asserts on: one

@@ -31,8 +31,9 @@ FRONT_PORT="${RC057_FRONT_PORT:-37132}"
 # to this Mac; the Mac is the loopback peer the API accepts and speaks TLS to
 # the host. That keeps the device out of the certificate-trust question.
 HOST_ORIGIN="http://127.0.0.1:${FRONT_PORT}"
-# A fixed password is allowed so a failing run can be poked at afterwards.
-PASSWORD="${RC057_PASSWORD:-rc057-linux-$(openssl rand -hex 12)}"
+# The native iOS suite carries this passphrase as a constant, so both phases of
+# this proof use it; RC057_PASSWORD can override it for debugging.
+PASSWORD="${RC057_PASSWORD:-remote-code-native-test-passphrase}"
 AVD="${RC057_AVD:-rc056-android}"
 PACKAGE="com.remotecode.mobileproof"
 WORKSPACE_NAME="rc057-takeover"
@@ -358,6 +359,12 @@ wait_enabled_tap "Click screen centre"
 wait_for_text clicked "The host applied the click."
 
 REACHED=1
+# Control is returned through the same service, and the host's own answer is
+# what the panel shows.
+wait_enabled_tap "Return screen"
+wait_for_text returned "Possession: none"
+say "the phone returned control"
+
 # While the human holds the screen the Bot must be refused: an agent input is
 # attempted from this Mac's own session and the host has to say no.
 AGENT_RESULT="$(python3 - "$API_PORT" "$PASSWORD" "$WORKSPACE_ID" <<'PY'
@@ -429,4 +436,21 @@ json.dump({
 }, open(sys.argv[1] + "/proof.json", "w"), indent=2)
 print("proof.json written")
 PY
-say "PASS rc057: the phone took over the screen, sent input and recovered after a drop"
+say "PASS rc057 (android): the phone took over the screen, sent input and recovered after a drop"
+
+say "-- the same journey on an iOS simulator against the same host --"
+IOS_WORK="$OUT/ios"
+mkdir -p "$IOS_WORK"
+set +e
+RC_NATIVE_TEST_WORK_DIR="$IOS_WORK" \
+RC_NATIVE_TEST_TAKEOVER=1 \
+RC_NATIVE_TEST_EXTERNAL_ORIGIN="http://127.0.0.1:${FRONT_PORT}" \
+RC_NATIVE_TEST_EXTERNAL_CLIENT_ORIGIN="http://127.0.0.1:${FRONT_PORT}" \
+  bash "$ROOT/scripts/run-mobile-native-test.sh" >> "$TRANSCRIPT" 2>&1
+IOS_STATUS=$?
+set -e
+if [ "$IOS_STATUS" -ne 0 ]; then
+  say "FAIL: the iOS journey failed (status $IOS_STATUS); see $IOS_WORK/xcodebuild-test.log"
+  exit 1
+fi
+say "PASS rc057 (ios): the same journey passed on the simulator"

@@ -2280,6 +2280,92 @@ final class RemoteCodeMobileProofUITests: XCTestCase {
 
     }
 
+    /// RC-057 on iOS: the phone takes over the Bot's screen on a host that is
+    /// already running (the Linux host behind the RC-057 loopback front), sends
+    /// human input the host applies, is refused nothing while it holds, and
+    /// recovers after the app is killed mid-hold.
+    @MainActor
+    func testTakeoverScreenOnHostWithHumanInput() async throws {
+        let app = XCUIApplication(bundleIdentifier: "com.remotecode.mobileproof")
+        let observer = URLSession(configuration: .ephemeral)
+        app.launch()
+        let host = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Host: ")).firstMatch
+        XCTAssertTrue(host.waitForExistence(timeout: 15), "the app must show the host it was built for")
+        let api = try XCTUnwrap(URL(string: String(host.label.dropFirst("Host: ".count))))
+        signIn(app)
+        try await observer.signIn(at: api, password: password)
+
+        let workspaceName = "ios-takeover-\(UUID().uuidString)"
+        let workspace = try await observer.createWorkspace(at: api, name: workspaceName)
+
+        // The workspace the host holds, then its screen.
+        try tapFileControl("Refresh workspaces", in: app)
+        let open = app.buttons["Open workspace \(workspaceName)"]
+        XCTAssertTrue(open.waitForExistence(timeout: 20), "the workspace the host holds must be listed")
+        open.tap()
+        let possession = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Possession: ")).firstMatch
+        XCTAssertTrue(possession.waitForExistence(timeout: 20), "the session panel must be reachable")
+
+        try tapFileControl("Take over screen", in: app)
+        XCTAssertTrue(possession.waitForLabelContaining("Possession: holder", timeout: 30), "take-over must reach holder")
+        // Human input the host applies: text and a click.
+        let text = app.textFields["Screen text"]
+        XCTAssertTrue(text.waitForExistence(timeout: 20), "the input row appears while this client holds the screen")
+        text.tap()
+        text.typeText("ios-human-input")
+        try tapFileControl("Send screen text", in: app)
+        let status = app.staticTexts["session-status"]
+        XCTAssertTrue(status.waitForLabelContaining("The host applied the text.", timeout: 60),
+                      "the host must apply the text; status: \(status.label)")
+        try tapFileControl("Click screen centre", in: app)
+        XCTAssertTrue(status.waitForLabelContaining("The host applied the click.", timeout: 60),
+                      "the host must apply the click; status: \(status.label)")
+
+        // While the human holds the screen the Bot must be refused.
+        try await assertAgentRefused(observer: observer, api: api, workspaceId: workspace.id)
+
+        // Control is returned through the same service, and the host's answer is
+        // what the panel shows.
+        try tapFileControl("Return screen", in: app)
+        XCTAssertTrue(possession.waitForLabelContaining("Possession: none", timeout: 30),
+                      "the host must confirm the screen was returned: \(possession.label)")
+
+        // Killed mid-hold: the restarted client must hold nothing, and control
+        // must be recoverable.
+        app.terminate()
+        app.launch()
+        signIn(app)
+        try await observer.signIn(at: api, password: password)
+        try tapFileControl("Refresh workspaces", in: app)
+        let reopen = app.buttons["Open workspace \(workspaceName)"]
+        XCTAssertTrue(reopen.waitForExistence(timeout: 20))
+        reopen.tap()
+        let after = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Possession: ")).firstMatch
+        XCTAssertTrue(after.waitForExistence(timeout: 20))
+        XCTAssertFalse(after.label.contains("holder"),
+                       "a client that was killed must not still appear to hold the screen")
+        try tapFileControl("Take over screen", in: app)
+        XCTAssertTrue(after.waitForLabelContaining("Possession: holder", timeout: 30),
+                      "control must be recoverable after the drop")
+    }
+
+    /// The Bot may not act while the human holds the screen.
+    private func assertAgentRefused(observer: URLSession, api: URL, workspaceId: String) async throws {
+        var request = URLRequest(url: URL(string: "/api/workspaces/\(workspaceId)/screen/agent/input", relativeTo: api)!)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "content-type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "stateToken": "ios-takeover-not-an-observation",
+            "event": ["kind": "click", "x": 1, "y": 1],
+        ])
+        let (data, response) = try await observer.data(for: request)
+        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 409,
+                       "the host must refuse the agent while the human holds the screen")
+        let body = String(data: data, encoding: .utf8) ?? ""
+        XCTAssertTrue(body.contains("possession_held_by_user"),
+                      "the refusal must name the human holding the screen: \(body)")
+    }
+
     @MainActor
     private func signIn(_ app: XCUIApplication) {
         let input = app.secureTextFields["Host password"]
