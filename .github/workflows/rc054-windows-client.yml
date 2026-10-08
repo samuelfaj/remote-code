@@ -9,12 +9,27 @@ name: rc054-windows-client
 # and this repository's is not merged there. The `RC054_BACKEND_ORIGIN`
 # repository variable carries the host's origin and is cleared as soon as the
 # run has started, so an ordinary push runs nothing.
+#
+# The `mode` input switches between the existing browser journey (`journey`,
+# default) and the new hosted-service check (`hosted`). When `mode` is
+# `hosted`, the control-plane origin and passphrase are passed through and
+# the Windows runner proves the managed service is reachable from outside.
 on:
   workflow_dispatch:
     inputs:
+      mode:
+        description: "Mode to run: journey or hosted"
+        required: false
+        type: string
+        default: journey
       backend_origin:
         description: HTTPS origin of the Linux RemoteCode host, e.g. https://34.1.2.3:8443
-        required: true
+        required: false
+        type: string
+      hosted_origin:
+        description: HTTPS origin of the control plane for hosted-service proof
+        required: false
+        type: string
       spec:
         description: Playwright spec to drive from the Windows browser
         required: false
@@ -38,7 +53,7 @@ permissions:
 
 jobs:
   windows-client:
-    if: github.event_name != 'pull_request' || vars.RC054_BACKEND_ORIGIN != ''
+    if: github.event_name != 'pull_request' || vars.RC054_BACKEND_ORIGIN != '' || vars.RC067_CONTROL_ORIGIN != ''
     runs-on: windows-latest
     defaults:
       run:
@@ -56,6 +71,7 @@ jobs:
           bunx playwright install "${{ inputs.browser || 'chromium' }}"
 
       - name: Run the journey from the Windows browser
+        if: inputs.mode != 'hosted'
         env:
           RC054_BACKEND_ORIGIN: ${{ inputs.backend_origin || vars.RC054_BACKEND_ORIGIN }}
           RC054_AUTH_PASSWORD: ${{ secrets.RC054_AUTH_PASSWORD }}
@@ -64,10 +80,25 @@ jobs:
           RC051_STUB_AGENT: ${{ inputs.stub_agent || vars.RC051_STUB_AGENT || '0' }}
         run: bash scripts/rc054/run-windows-client-proof.sh "$GITHUB_WORKSPACE/proof-rc054-windows"
 
+      - name: Run the hosted-service proof from the Windows runner
+        if: inputs.mode == 'hosted' || vars.RC067_MODE == 'hosted'
+        env:
+          RC067_CONTROL_ORIGIN: ${{ inputs.hosted_origin || vars.RC067_CONTROL_ORIGIN }}
+          RC067_PASSPHRASE: ${{ secrets.RC067_PASSPHRASE }}
+        run: bash scripts/rc067/run-windows-hosted-service-proof.sh "$GITHUB_WORKSPACE/proof-rc067-windows"
+
       - name: Keep the transcript, the Vite log and the result
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: rc054-windows-evidence
           path: proof-rc054-windows/
+          if-no-files-found: error
+
+      - name: Keep the hosted-service evidence
+        if: always() && (inputs.mode == 'hosted' || vars.RC067_MODE == 'hosted')
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc067-windows-evidence
+          path: proof-rc067-windows/
           if-no-files-found: error
