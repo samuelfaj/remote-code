@@ -23,6 +23,66 @@ if [ ! -d "node_modules" ]; then
   bun install
 fi
 
+# A leftover listener from an earlier run only shows up as a raw bind error from
+# Vite or Docker, so both ports are released before anything starts. Only
+# listeners on these two ports are touched, each one is reported, and the
+# Docker port forwarder is left alone: its port belongs to a container that has
+# to be removed instead, never to a process that can be killed.
+port_pids() {
+  lsof -ti "tcp:$1" -sTCP:LISTEN 2>/dev/null || true
+}
+
+is_port_forwarder() {
+  name=$(ps -o comm= -p "$1" 2>/dev/null || true)
+  case "$name" in
+    "") return 0 ;;
+    *docker*|*Docker*|*OrbStack*|vpnkit|*qemu-system*) return 0 ;;
+  esac
+  return 1
+}
+
+free_port() {
+  port=$1
+  command -v lsof >/dev/null 2>&1 || return 0
+  pids=$(port_pids "$port")
+  [ -n "$pids" ] || return 0
+  killable=""
+  for pid in $pids; do
+    if is_port_forwarder "$pid"; then
+      echo "Port $port is held by the container port forwarder (PID $pid); a stale RemoteCode container is removed instead." >&2
+    else
+      killable="$killable $pid"
+    fi
+  done
+  [ -n "$killable" ] || return 0
+  echo "Port $port is in use by PID(s)$killable; stopping them." >&2
+  # shellcheck disable=SC2086
+  kill $killable 2>/dev/null || true
+  i=0
+  while [ "$i" -lt 20 ]; do
+    [ -n "$(port_pids "$port")" ] || return 0
+    sleep 0.25
+    i=$((i + 1))
+  done
+  stuck=""
+  for pid in $killable; do
+    kill -0 "$pid" 2>/dev/null && stuck="$stuck $pid"
+  done
+  if [ -n "$stuck" ]; then
+    echo "Port $port still held by PID(s)$stuck; killing them." >&2
+    # shellcheck disable=SC2086
+    kill -9 $stuck 2>/dev/null || true
+    sleep 0.5
+  fi
+  if [ -n "$(port_pids "$port")" ]; then
+    echo "Port $port is still in use; stop the process holding it and run again." >&2
+    exit 1
+  fi
+}
+
+free_port "$API_PORT"
+free_port "$WEB_PORT"
+
 if [ "$(uname)" = "Darwin" ]; then
   IMAGE="${REMOTECODE_DEV_HOST_IMAGE:-remotecode/host:dev}"
   DATA_VOLUME="${REMOTECODE_DEV_DATA_VOLUME:-remotecode-dev-data}"
@@ -66,6 +126,14 @@ if [ "$(uname)" = "Darwin" ]; then
   fi
 
   docker rm -f "$CONTAINER" 2>/dev/null || true
+
+  # Another RemoteCode container (a proof run, or this one under an older name)
+  # can hold the API port just like a host process would, and lsof cannot see a
+  # published port on macOS.
+  for stale in $(docker ps --filter "publish=$API_PORT" --format '{{.Names}}' 2>/dev/null | grep '^remotecode' || true); do
+    echo "Container $stale publishes port $API_PORT; removing it." >&2
+    docker rm -f "$stale" >/dev/null
+  done
 
   docker run -d \
     --name "$CONTAINER" \
