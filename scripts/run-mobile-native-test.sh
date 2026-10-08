@@ -602,25 +602,9 @@ if [[ "${RC_NATIVE_TEST_JOINED_WORKSPACE:-0}" == "1" ]]; then
   exit 0
 else
 if [[ "${RC_NATIVE_TEST_ROUTINES:-0}" == "1" ]]; then
-  BOT_NAME="native-routine-bot-$(python3 -c 'import uuid; print(uuid.uuid4())')"
-  ROUTINE_TIME="10:00"
-  ROUTINE_TIMEZONE="America/New_York"
-  curl -s -c "$WORK_DIR/rc-routines-cookies.txt" -X POST "$API_ORIGIN/api/auth/login" \
-    -H "Content-Type: application/json" \
-    -d "{\"password\":\"$API_PASSWORD\"}" >/dev/null
-  WORKSPACE_NAME="native-routine-ws-$(python3 -c 'import uuid; print(uuid.uuid4())')"
-  curl -s -b "$WORK_DIR/rc-routines-cookies.txt" -X POST "$API_ORIGIN/api/workspaces" \
-    -H "Content-Type: application/json" \
-    -d "{\"name\":\"$WORKSPACE_NAME\",\"requestId\":\"$(python3 -c 'import uuid; print(uuid.uuid4())')\"}" >/dev/null
-  BOT_ID="$(curl -s -b "$WORK_DIR/rc-routines-cookies.txt" -X POST "$API_ORIGIN/api/bots" \
-    -H "Content-Type: application/json" \
-    -d "{\"name\":\"$BOT_NAME\",\"instructions\":\"Test bot\"}" | python3 -c 'import sys,json; print(json.load(sys.stdin)["id"])')"
-  curl -s -b "$WORK_DIR/rc-routines-cookies.txt" -X POST "$API_ORIGIN/api/schedules" \
-    -H "Content-Type: application/json" \
-    -d "{\"kind\":\"routine\",\"botId\":\"$BOT_ID\",\"prompt\":\"native-routine-prompt\",\"localTime\":\"$ROUTINE_TIME\",\"timezone\":\"$ROUTINE_TIMEZONE\"}" >/dev/null
-  export RC_NATIVE_TEST_BOT_NAME="$BOT_NAME"
-  export RC_NATIVE_TEST_ROUTINE_TIME="$ROUTINE_TIME"
-  export RC_NATIVE_TEST_ROUTINE_TIMEZONE="$ROUTINE_TIMEZONE"
+  # The journey builds its own Bot and routine through the app's own session, as
+  # every other mode's fixture does, so the runner seeds nothing here.
+  :
 fi
 if ! EXPO_PUBLIC_API_ORIGIN="$API_ORIGIN" \
   EXPO_PUBLIC_CLIENT_ORIGIN="$CLIENT_ORIGIN" \
@@ -633,6 +617,9 @@ if ! EXPO_PUBLIC_API_ORIGIN="$API_ORIGIN" \
     RC_NATIVE_TEST_BOT_NAME="${RC_NATIVE_TEST_BOT_NAME:-}" \
     RC_NATIVE_TEST_ROUTINE_TIME="${RC_NATIVE_TEST_ROUTINE_TIME:-}" \
     RC_NATIVE_TEST_ROUTINE_TIMEZONE="${RC_NATIVE_TEST_ROUTINE_TIMEZONE:-}" \
+    TEST_RUNNER_RC_NATIVE_TEST_BOT_NAME="${RC_NATIVE_TEST_BOT_NAME:-}" \
+    TEST_RUNNER_RC_NATIVE_TEST_ROUTINE_TIME="${RC_NATIVE_TEST_ROUTINE_TIME:-}" \
+    TEST_RUNNER_RC_NATIVE_TEST_ROUTINE_TIMEZONE="${RC_NATIVE_TEST_ROUTINE_TIMEZONE:-}" \
     -skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testInstalledAppJoinsWebCreatedWorkspaceAndSavesSharedLinuxFile \
     -skip-testing:RemoteCodeMobileProofUITests/RemoteCodeMobileProofUITests/testInstalledAppReadsJoinedWorkspaceAfterAPIContainerRecreationWithoutReplay \
     -only-testing:"$TEST_SELECTION" \

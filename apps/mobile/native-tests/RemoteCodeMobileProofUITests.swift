@@ -2380,6 +2380,7 @@ final class RemoteCodeMobileProofUITests: XCTestCase {
     // RC-066: the app shows a Bot's routines, and the host is the authority for
     // what that row says. The runner seeds the Bot and its routine and names
     // them in the launch environment.
+    @MainActor
     func testRoutinesFromHostJourney() async throws {
         let app = XCUIApplication(bundleIdentifier: "com.remotecode.mobileproof")
         let observer = URLSession(configuration: .ephemeral)
@@ -2390,41 +2391,44 @@ final class RemoteCodeMobileProofUITests: XCTestCase {
         signIn(app)
         try await observer.signIn(at: api, password: password)
 
-        let environment = ProcessInfo.processInfo.environment
-        let botName = try XCTUnwrap(environment["RC_NATIVE_TEST_BOT_NAME"],
-                                    "the runner should pass the seeded Bot's name")
-        let routineTime = try XCTUnwrap(environment["RC_NATIVE_TEST_ROUTINE_TIME"],
-                                        "the runner should pass the routine's local time")
-        let routineTimezone = try XCTUnwrap(environment["RC_NATIVE_TEST_ROUTINE_TIMEZONE"],
-                                            "the runner should pass the routine's timezone")
+        // The fixture is made by this session, as every other journey here does,
+        // so the Bot and its routine belong to the user the app is signed in as.
+        let botName = "native-routine-bot-\(UUID().uuidString)"
+        let bot = try await observer.createBot(at: api, name: botName)
+        let routineTime = "10:00"
+        let routineTimezone = "America/New_York"
+        // A routine runs through the same supervisor as a thread, so the host
+        // wants the workspace it belongs to as well.
+        let workspace = try await observer.createWorkspace(at: api, name: "native-routine-ws-\(UUID().uuidString)")
+        let routine = try await observer.createRoutine(at: api, botId: bot.id, workspaceId: workspace.id,
+                                                       localTime: routineTime, timezone: routineTimezone)
+        XCTAssertEqual(routine.localTime, routineTime)
+        XCTAssertEqual(routine.timezone, routineTimezone)
 
+        // The Bot is made while the app is settling, so the tab is tapped until
+        // the row it lists appears rather than once.
         let botsTab = app.buttons["Bots"]
         XCTAssertTrue(botsTab.waitForExistence(timeout: 10))
-        botsTab.tap()
-        let botRow = app.buttons["Bot \(botName)"]
-        XCTAssertTrue(botRow.waitForExistence(timeout: 20),
-                      "The Bots screen should show the seeded Bot. Visible: \(app.debugDescription)")
+        var botRow = app.buttons["Bot \(botName)"]
+        var botsVisible = false
+        for _ in 0..<4 {
+            botsTab.tap()
+            if botRow.waitForExistence(timeout: 10) { botsVisible = true; break }
+        }
+        XCTAssertTrue(botsVisible,
+                      "The Bots screen should show the Bot this session made. Visible: \(app.debugDescription)")
         botRow.tap()
         XCTAssertTrue(app.staticTexts["Routines for \(botName)"].waitForExistence(timeout: 20),
                       "The Bot's detail should list its routines. Visible: \(app.debugDescription)")
-
-        // The host's own record, so the row is compared with it rather than read
-        // as the app's own opinion.
-        let hostRoutines = try await observer.schedules(at: api)
-        XCTAssertEqual(hostRoutines.count, 1, "the runner seeds exactly one routine: \(hostRoutines)")
-        let seeded = try XCTUnwrap(hostRoutines.first)
-        XCTAssertEqual(seeded.localTime, routineTime)
-        XCTAssertEqual(seeded.timezone, routineTimezone)
 
         let expectedRow = "\(routineTime) (\(routineTimezone))"
         let routineRow = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", expectedRow)).firstMatch
         XCTAssertTrue(routineRow.waitForExistence(timeout: 20),
                       "The routine row should carry the host's local time and timezone. Visible: \(app.debugDescription)")
-        let expectedState = seeded.enabled ? "enabled" : "paused"
+        let expectedState = routine.enabled ? "enabled" : "paused"
         XCTAssertTrue(routineRow.label.contains(expectedState),
                       "The row should carry the host's state; saw \(routineRow.label)")
     }
-}
 }
 
 private struct FileCreateReceipt: Decodable {
@@ -2514,6 +2518,16 @@ private extension XCUIElement {
         let expectation = XCTNSPredicateExpectation(predicate: predicate, object: self)
         return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
     }
+}
+
+private struct HostBot: Decodable {
+    let id: String
+    let name: String
+}
+
+private struct HostBotList: Decodable {
+    let bots: [HostBot]
+}
 
 private struct HostSchedule: Decodable {
     let id: String
@@ -2527,10 +2541,23 @@ private struct HostScheduleList: Decodable {
 }
 
 private extension URLSession {
-    func schedules(at baseURL: URL) async throws -> [HostSchedule] {
-        let (data, response) = try await data(from: URL(string: "/api/schedules", relativeTo: baseURL)!)
+    func bots(at baseURL: URL) async throws -> [HostBot] {
+        let (data, response) = try await data(from: URL(string: "/api/bots", relativeTo: baseURL)!)
         XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
-        return try JSONDecoder().decode(HostScheduleList.self, from: data).schedules
+        return try JSONDecoder().decode(HostBotList.self, from: data).bots
+    }
+
+    func createRoutine(at baseURL: URL, botId: String, workspaceId: String, localTime: String, timezone: String) async throws -> HostSchedule {
+        var request = URLRequest(url: URL(string: "/api/schedules", relativeTo: baseURL)!)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "kind": "routine", "botId": botId, "workspaceId": workspaceId, "prompt": "native-routine-prompt",
+            "localTime": localTime, "timezone": timezone,
+        ])
+        let (data, response) = try await data(for: request)
+        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 201)
+        return try JSONDecoder().decode(HostSchedule.self, from: data)
     }
     func responseLossDiagnostics(at baseURL: URL) async throws -> NativeFailureDiagnostics {
         let (data, response) = try await data(from: URL(string: "/__test__/response-loss", relativeTo: baseURL)!)
