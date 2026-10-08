@@ -75,10 +75,11 @@ export function SessionPanel({ origin, userId, workspace, blocked, onUnauthorize
         await refreshPossession();
       }
     } finally {
-      // This operation always releases its own hold on the panel: a fence that
-      // went stale (the panel polls while the input is in flight) must not leave
-      // the controls disabled for good.
-      if (active.current) { working.current = false; setBusy(false); }
+      // The operation always releases its own hold: the fence can move under it
+      // (another read bumps the epoch, a workspace change re-runs the effect),
+      // and gating this on the fence left every control disabled for good.
+      working.current = false;
+      setBusy(false);
     }
   }
 
@@ -109,7 +110,7 @@ export function SessionPanel({ origin, userId, workspace, blocked, onUnauthorize
       }
     } catch {
       if (current()) setMessage("Possession state unavailable. Outcome remains unknown.");
-    } finally { if (interactive && active.current) { working.current = false; setBusy(false); } }
+    } finally { if (interactive) { working.current = false; setBusy(false); } }
   }
 
   async function handleTakeOver() {
@@ -147,7 +148,13 @@ export function SessionPanel({ origin, userId, workspace, blocked, onUnauthorize
         setMessage("Take-over outcome is unknown. Checking possession state…");
         await consultPossessionState();
       }
-    } finally { if (current()) { working.current = false; setBusy(false); } }
+    } finally {
+      // The operation always releases its own hold: the fence can move under it
+      // (another read bumps the epoch, a workspace change re-runs the effect),
+      // and gating this on the fence left every control disabled for good.
+      working.current = false;
+      setBusy(false);
+    }
   }
 
   async function handleReturnScreen() {
@@ -185,7 +192,13 @@ export function SessionPanel({ origin, userId, workspace, blocked, onUnauthorize
         setMessage("Release outcome is unknown. Checking possession state…");
         await consultPossessionState();
       }
-    } finally { if (current()) { working.current = false; setBusy(false); } }
+    } finally {
+      // The operation always releases its own hold: the fence can move under it
+      // (another read bumps the epoch, a workspace change re-runs the effect),
+      // and gating this on the fence left every control disabled for good.
+      working.current = false;
+      setBusy(false);
+    }
   }
 
   async function consultPossessionState() {

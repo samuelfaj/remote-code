@@ -1,4 +1,8 @@
 # Changelog
+## RC-057 — the emulator reaches the Linux host, takes the screen over and sends text 2026-10-08 (UTC)
+- The device leg now works through a plain-HTTP front on this Mac (`scripts/rc057/http-front.ts`), which is the loopback peer the API accepts and speaks TLS to the host; the app reaches it through `adb reverse`. The front relays the event socket with the app's own cookie and drops the `Secure` attribute only on that one hop.
+- Proven by `scripts/rc057/run-mobile-takeover-proof.sh` on a real emulator: the app signs in to the Linux host, lists the workspace the host holds, takes the screen over (`Possession: holder`) and the host applies a text input (`The host applied the text.`).
+- The session panel's own gate was fixed to release per operation; the remaining legs are blocked by the parent panel's `blocked` flag, which stays set because `WorkspacePanel` clears `busy` only when `duringMutation` is false. That is the next change, recorded in `PIVOT.md` and `plan/next-steps.md`.
 ## RC-057 — the device leg now reaches and takes over the Linux host's screen 2026-10-08 (UTC)
 - The app can send human input: the shared client gained `sendScreenInput` (click, type, key) and the mobile session panel gained text and click controls, enabled only while this client holds the screen, reporting only what the host answers.
 - Two panel defects fixed on the way: an input that finished while the panel's fence had moved left every control disabled for good, and the background possession poll flipped the same gate, so a tap could land on a disabled button.

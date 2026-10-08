@@ -180,6 +180,47 @@ tap_label() {
   adb -s "$DEVICE" shell input tap "$X" "$Y" >> "$TRANSCRIPT" 2>&1
 }
 
+# A control is only tapped once the app itself says it is enabled: the panel
+# disables its controls while a request is in flight, and a tap that lands in
+# that window does nothing.
+wait_enabled_tap() {
+  local label="$1"
+  local attempt
+  for attempt in 1 2 3 4 5 6 7 8; do
+    dump tap
+    python3 - "$OUT/window-tap.xml" "$label" <<'PY' > "$OUT/tap.txt"
+import re, sys
+xml = open(sys.argv[1], encoding="utf-8", errors="replace").read()
+wanted = sys.argv[2]
+root = re.search(r'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', xml)
+_, _, screen_w, screen_h = map(int, root.groups()) if root else (0, 0, 1080, 2400)
+for node in re.finditer(r'<node[^>]*>', xml):
+    tag = node.group(0)
+    values = [m.group(1) for m in re.finditer(r'(?:text|content-desc)="([^"]*)"', tag)]
+    if not any(wanted in value for value in values):
+        continue
+    enabled = re.search(r'enabled="(\w+)"', tag)
+    bounds = re.search(r'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', tag)
+    if not enabled or enabled.group(1) != "true" or not bounds:
+        continue
+    x1, y1, x2, y2 = map(int, bounds.groups())
+    cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
+    if not (0 <= cx <= screen_w and 0 <= cy <= screen_h):
+        continue
+    print(cx, cy)
+    break
+PY
+    if [ -s "$OUT/tap.txt" ]; then
+      read -r X Y < "$OUT/tap.txt" || true
+      adb -s "$DEVICE" shell input tap "$X" "$Y" >> "$TRANSCRIPT" 2>&1
+      return 0
+    fi
+    sleep 2
+  done
+  say "FAIL: '$label' never became enabled"
+  return 1
+}
+
 find_tap() {
   local label="$1"
   python3 - "$OUT/window-tap.xml" "$label" <<'PY' > "$OUT/tap.txt"
@@ -280,15 +321,24 @@ assert_text taken "Possession: holder"
 say "the app's own panel reads holder; this Mac's own session reads $(host_state), as possession is per client"
 
 # Human input into the held screen.
-tap_label "Screen text"
-adb -s "$DEVICE" shell input text "rc057-human-input" >> "$TRANSCRIPT" 2>&1
+# The app only enables the send control once its field holds the text, so the
+# typing is confirmed from the app's own view before anything is sent.
+typed_ok=0
+for attempt in 1 2 3; do
+  tap_label "Screen text"
+  adb -s "$DEVICE" shell input text "rc057-human-input" >> "$TRANSCRIPT" 2>&1
+  sleep 1
+  dump typed-field
+  if grep -q 'text="rc057-human-input' "$OUT/window-typed-field.xml"; then typed_ok=1; break; fi
+done
+[ "$typed_ok" = "1" ] || { say "FAIL: the screen text field never held the typed text"; exit 1; }
 adb -s "$DEVICE" shell input keyevent 4 >> "$TRANSCRIPT" 2>&1
 sleep 1
-tap_label "Send screen text"
+wait_enabled_tap "Send screen text"
 sleep 6
 dump typed
 assert_text typed "The host applied the text."
-tap_label "Click screen centre"
+wait_enabled_tap "Click screen centre"
 sleep 6
 dump clicked
 assert_text clicked "The host applied the click."
