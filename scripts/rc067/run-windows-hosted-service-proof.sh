@@ -37,12 +37,13 @@ fi
 
 # 2. Sign in
 say "-- step: sign in --"
-LOGIN_RESPONSE=$(curl -sk -w "\n%{http_code}" -X POST "$CONTROL_ORIGIN/api/auth/login" \
+# The session cookie is read from a jar: -w only reports the status, and the
+# headers are not in the output at all.
+COOKIE_JAR="$OUT/cookies.txt"
+LOGIN_STATUS=$(curl -sk -o "$OUT/login.json" -w "%{http_code}" -X POST "$CONTROL_ORIGIN/api/auth/login" \
   -H "content-type: application/json" \
-  -d "{\"password\":\"$PASSPHRASE\"}" 2>/dev/null || true)
-LOGIN_STATUS=$(echo "$LOGIN_RESPONSE" | tail -1)
-LOGIN_BODY=$(echo "$LOGIN_RESPONSE" | sed '$d')
-LOGIN_COOKIE=$(echo "$LOGIN_RESPONSE" | grep -i "^set-cookie:" | head -1 | sed 's/^set-cookie: //' | sed 's/;.*//')
+  -d "{\"password\":\"$PASSPHRASE\"}" -c "$COOKIE_JAR" 2>/dev/null || echo "000")
+LOGIN_COOKIE=$(awk '/remotecode/ {print $6"="$7}' "$COOKIE_JAR" 2>/dev/null | head -1)
 
 if [[ "$LOGIN_STATUS" == "200" ]]; then
   say "PASS: login returned 200"
