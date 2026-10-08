@@ -661,7 +661,7 @@ PYFILE
   exit 0
 fi
 
-python3 - "$DATABASE_PATH" "${RC_NATIVE_TEST_RECOVERY:-0}" "${RC_NATIVE_TEST_HEALTH:-0}" "${RC_NATIVE_TEST_AUTO_ACTION:-0}" "${RC_NATIVE_TEST_DEADLINE:-0}" "${RC_NATIVE_TEST_POST_DELAY:-0}" "${RC_NATIVE_TEST_LOGIN_DEADLINE:-0}" "${RC_NATIVE_TEST_LOGIN_PREFLIGHT_DEADLINE:-0}" "${RC_NATIVE_TEST_WORKSPACES:-0}" "${RC_NATIVE_TEST_PRIVACY_EXPIRY:-0}" "${RC_NATIVE_TEST_PRIVACY_BUSY:-0}" "${RC_NATIVE_TEST_STORAGE_FAILURE:-0}" "${RC_NATIVE_TEST_STORAGE_SCENARIO:-}" <<'PY'
+python3 - "$DATABASE_PATH" "${RC_NATIVE_TEST_RECOVERY:-0}" "${RC_NATIVE_TEST_HEALTH:-0}" "${RC_NATIVE_TEST_AUTO_ACTION:-0}" "${RC_NATIVE_TEST_DEADLINE:-0}" "${RC_NATIVE_TEST_POST_DELAY:-0}" "${RC_NATIVE_TEST_LOGIN_DEADLINE:-0}" "${RC_NATIVE_TEST_LOGIN_PREFLIGHT_DEADLINE:-0}" "${RC_NATIVE_TEST_WORKSPACES:-0}" "${RC_NATIVE_TEST_PRIVACY_EXPIRY:-0}" "${RC_NATIVE_TEST_PRIVACY_BUSY:-0}" "${RC_NATIVE_TEST_STORAGE_FAILURE:-0}" "${RC_NATIVE_TEST_STORAGE_SCENARIO:-}" "${RC_NATIVE_TEST_NAVIGATION:-0}" <<'PY'
 import json
 import sqlite3
 import sys
@@ -863,6 +863,14 @@ if sys.argv[3] == "1":
     if len(rows) != 1 or not rows[0][1].startswith("native-health-") or len(health_mappings) != 1 or session_count != 0 or len(auth_rows) != 2 or sorted(row[1] for row in auth_rows) != ["login", "logout"]:
         raise SystemExit(f"Native health proof left unexpected persisted state: actions={rows!r}, mappings={health_mappings!r}, sessions={session_count}, auth={auth_rows!r}")
     print(json.dumps({"healthNativeActions": rows, "requestMapping": health_mappings, "remainingSessions": session_count, "authKinds": [row[1] for row in auth_rows]}))
+    sys.exit(0)
+if sys.argv[14] == "1":
+    # The navigation journey makes exactly the two actions it asserts on: one
+    # through the app's own control and one outside it.
+    names = {row[1] for row in rows}
+    if len(rows) != 2 or not all(name.startswith("native-nav-action-") for name in names):
+        raise SystemExit(f"Expected the navigation journey's two actions, observed: {rows!r}")
+    print(json.dumps({"navigationActions": rows, "sessions": session_count}))
     sys.exit(0)
 expected_count = 3 if sys.argv[2] == "1" else 2
 if len(rows) != expected_count or len({row[1] for row in rows}) != expected_count:

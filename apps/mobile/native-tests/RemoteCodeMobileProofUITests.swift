@@ -190,6 +190,7 @@ final class RemoteCodeMobileProofUITests: XCTestCase {
         signIn(app)
         try await observer.signIn(at: api, password: password)
 
+
         let runID = UUID().uuidString
         let workspaceName = "native-privacy-workspace-\(runID)"
         for _ in 0..<5 where !app.staticTexts["Workspaces"].exists {
@@ -2203,6 +2204,38 @@ final class RemoteCodeMobileProofUITests: XCTestCase {
         signIn(app)
         try await observer.signIn(at: api, password: password)
 
+        // Main actions: the app submits one through its own control while it is
+        // on the workspaces screen, and the host holds it.
+        let actionName = "native-nav-action-\(UUID().uuidString)"
+        let actionInput = app.textFields["Action"]
+        XCTAssertTrue(actionInput.waitForExistence(timeout: 15),
+                      "The workspaces screen should offer the action field. Visible: \(app.debugDescription)")
+        actionInput.tap()
+        for character in actionName { actionInput.typeText(String(character)) }
+        app.keyboards.buttons["Return"].tap()
+        app.staticTexts["Host connection"].firstMatch.tap()
+        let submit = app.buttons["Submit action"]
+        XCTAssertTrue(submit.isEnabled && submit.isHittable, "Submit action must be interactable")
+        submit.tap()
+        XCTAssertTrue(app.staticTexts[actionName].waitForExistence(timeout: 15),
+                      "The app's own submission should appear. Visible: \(app.debugDescription)")
+        let namedReceipts = try await observer.actions(at: api)
+        XCTAssertTrue(namedReceipts.contains(where: { $0.action == actionName }),
+                      "The host should hold the action the app submitted; saw \(namedReceipts.map(\.action))")
+
+        // A second, distinct action submitted outside the app: the host holds
+        // both, and the tab below shows the one the app made.
+        let observerAction = "native-nav-action-note-\(UUID().uuidString)"
+        _ = try await observer.submitAction(at: api, action: observerAction)
+
+        // The Actions tab shows the same receipt while the app holds it.
+        let actionsTab = app.buttons["Actions"]
+        XCTAssertTrue(actionsTab.waitForExistence(timeout: 10))
+        actionsTab.tap()
+        XCTAssertTrue(app.staticTexts[actionName].waitForExistence(timeout: 20),
+                      "The Actions screen should show the submitted action. Visible: \(app.debugDescription)")
+        app.buttons["Workspaces"].tap()
+
         // The host holds one workspace with a Bot, a thread, its message, an
         // Inbox item and an action; every screen below is compared with those
         // rows, not merely checked for being on screen.
@@ -2245,30 +2278,6 @@ final class RemoteCodeMobileProofUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts[inboxItem].waitForExistence(timeout: 20),
                       "The Inbox screen should show the item the host recorded. Visible: \(app.debugDescription)")
 
-        // Actions: the app submits one through its own control and the screen
-        // shows the action the host recorded for it.
-        let actionName = "native-nav-action-\(UUID().uuidString)"
-        let workspacesTab = app.buttons["Workspaces"]
-        XCTAssertTrue(workspacesTab.waitForExistence(timeout: 10))
-        workspacesTab.tap()
-        let actionInput = app.textFields["Action"]
-        for _ in 0..<5 where !actionInput.isHittable { app.scrollViews.firstMatch.swipeDown() }
-        XCTAssertTrue(actionInput.waitForExistence(timeout: 15),
-                      "The workspaces screen should offer the action field. Visible: \(app.debugDescription)")
-        actionInput.tap()
-        actionInput.typeText(actionName)
-        app.keyboards.buttons["Return"].tap()
-        let submit = app.buttons["Submit action"]
-        XCTAssertTrue(submit.waitForExistence(timeout: 10))
-        submit.tap()
-        let receipts = try await observer.actions(at: api)
-        XCTAssertTrue(receipts.contains(where: { $0.action == actionName }),
-                      "The host should hold the action the app submitted; saw \(receipts.map(\.action))")
-        let actionsTab = app.buttons["Actions"]
-        XCTAssertTrue(actionsTab.waitForExistence(timeout: 10))
-        actionsTab.tap()
-        XCTAssertTrue(app.staticTexts[actionName].waitForExistence(timeout: 20),
-                      "The Actions screen should show the submitted action. Visible: \(app.debugDescription)")
     }
 
     @MainActor
