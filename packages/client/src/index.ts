@@ -22,8 +22,8 @@ export type { ActionEventState, ActionReceipt } from "./action-events";
 export { retryAllowed, retryDelayMs } from "./retry";
 export type { RetryPlan } from "./retry";
 export { takeScreenPossession, readScreenPossession, heartbeatScreenPossession,
-  releaseScreenPossession, readRun, readWorkspaceRuns } from "./screen";
-export type { ScreenPossessionResult, ScreenPossessionState, RunChange, WorkspaceRun } from "./screen";
+  releaseScreenPossession, sendScreenInput, readRun, readWorkspaceRuns } from "./screen";
+export type { ScreenPossessionResult, ScreenPossessionState, ScreenInputEvent, RunChange, WorkspaceRun } from "./screen";
 export { runMutation } from "./offline";
 export type { MutationOutcome } from "./offline";
 

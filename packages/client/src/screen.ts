@@ -80,6 +80,29 @@ export async function heartbeatScreenPossession(
   return data as { expiresAt: number };
 }
 
+export type ScreenInputEvent =
+  | { kind: "click"; x: number; y: number }
+  | { kind: "type"; text: string }
+  | { kind: "key"; key: string };
+
+/// Sends one human input event to the held screen. The host refuses it with
+/// possession_lost or possession_superseded once this client no longer holds the
+/// screen, so the caller shows the host's answer rather than its own.
+export async function sendScreenInput(
+  workspaceId: string,
+  token: string,
+  event: ScreenInputEvent,
+  origin: string,
+  options?: ApiClientOptions,
+): Promise<{ applied: boolean }> {
+  const { data, error } = await createApiClient(origin, options)
+    .api.workspaces({ workspaceId })
+    .screen.input.post({ token, event });
+  if (error) throw error;
+  if (!data) throw new Error("Missing screen input result");
+  return data as { applied: boolean };
+}
+
 export async function releaseScreenPossession(
   workspaceId: string,
   token: string,

@@ -1,15 +1,17 @@
 import { useEffect, useRef, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import {
   createApiClient,
   readScreenPossession,
   heartbeatScreenPossession,
   releaseScreenPossession,
   takeScreenPossession,
+  sendScreenInput,
   readRun,
   readRunChanges,
   readWorkspaceRuns,
   runMutation,
+  type ScreenInputEvent,
   type ScreenPossessionState,
   type WorkspaceRun,
 } from "@remotecode/client";
@@ -30,6 +32,7 @@ export function SessionPanel({ origin, userId, workspace, blocked, onUnauthorize
   const [run, setRun] = useState<WorkspaceRun | null>(null);
   const [runChanges, setRunChanges] = useState<{ files: Array<{ path: string; changeKind: string }>; diff: string; truncated: boolean } | null>(null);
   const [message, setMessage] = useState("");
+  const [inputText, setInputText] = useState("");
 
   useEffect(() => {
     let isActive = true;
@@ -50,6 +53,28 @@ export function SessionPanel({ origin, userId, workspace, blocked, onUnauthorize
     const remaining = end - Date.now();
     if (remaining <= 0) throw new Error("Session deadline expired");
     return createApiClient(origin, { timeoutMs: remaining });
+  }
+
+  /// One human input event, sent only while this client holds the screen and
+  /// reported only as the host answers.
+  async function sendInput(event: ScreenInputEvent) {
+    if (!workspace || blocked || working.current || possessionState?.state !== "holder") return;
+    const token = possessionTokenRef.current;
+    if (!token) { setMessage("Take the screen before sending input."); return; }
+    const current = begin();
+    const end = Date.now() + deadlineMs;
+    working.current = true; setBusy(true);
+    try {
+      await sendScreenInput(workspace.id, token, event, origin, { timeoutMs: Math.max(1, end - Date.now()) });
+      if (current()) setMessage(event.kind === "type" ? "The host applied the text." : `The host applied the ${event.kind}.`);
+    } catch {
+      if (current()) {
+        // A refused input means the host no longer counts us as the holder; the
+        // panel asks again instead of assuming either way.
+        setMessage("The host refused the input or its outcome is unknown. Nothing was resent.");
+        await refreshPossession();
+      }
+    } finally { if (current()) { working.current = false; setBusy(false); } }
   }
 
   async function refreshPossession() {
@@ -225,6 +250,38 @@ export function SessionPanel({ origin, userId, workspace, blocked, onUnauthorize
       <Pressable accessibilityRole="button" accessibilityLabel="Return screen" disabled={disabled || possessionState?.state !== "holder"} onPress={() => void handleReturnScreen()} style={[styles.secondary, disabled && styles.disabled]} testID="return-screen">
         <Text>Return screen</Text>
       </Pressable>
+
+      {possessionState?.state === "holder" ? (
+        <View style={styles.inputRow}>
+          <TextInput
+            accessibilityLabel="Screen text"
+            value={inputText}
+            onChangeText={setInputText}
+            placeholder="Text to type on the screen"
+            style={styles.input}
+          />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Send screen text"
+            testID="send-screen-text"
+            disabled={disabled || !inputText.trim()}
+            onPress={() => void sendInput({ kind: "type", text: inputText })}
+            style={[styles.button, (disabled || !inputText.trim()) && styles.disabled]}
+          >
+            <Text style={styles.buttonText}>Send text</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Click screen centre"
+            testID="click-screen-centre"
+            disabled={disabled}
+            onPress={() => void sendInput({ kind: "click", x: 640, y: 450 })}
+            style={[styles.secondary, disabled && styles.disabled]}
+          >
+            <Text>Click centre</Text>
+          </Pressable>
+        </View>
+      ) : null}
     </View>
     <Text testID="session-status" accessibilityLiveRegion="polite" style={styles.status}>{message || "No session activity yet."}</Text>
     <View testID="session-result">
@@ -242,6 +299,8 @@ export function SessionPanel({ origin, userId, workspace, blocked, onUnauthorize
 }
 
 const styles = StyleSheet.create({
+  inputRow: { gap: 8, marginTop: 8 },
+  input: { borderColor: "#c9d9d2", borderRadius: 9, borderWidth: 1, color: "#183337", minHeight: 44, paddingHorizontal: 12 },
   card: { backgroundColor: "#fff", borderColor: "#d9e5e0", borderRadius: 16, borderWidth: 1, gap: 10, padding: 18 },
   heading: { color: "#183337", fontSize: 18, fontWeight: "700" },
   row: { flexDirection: "row", alignItems: "center", gap: 8 },
