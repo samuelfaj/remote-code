@@ -19,6 +19,9 @@ BACKEND="${RC054_BACKEND_ORIGIN:?set RC054_BACKEND_ORIGIN to the Linux host's HT
 ENGINE="${RC054_BROWSER:-chromium}"
 # RC-066 reuses this leg for other journeys; the default is RC-054's own.
 SPEC="${RC054_SPEC:-apps/web/e2e/macos-linux-client.spec.ts}"
+# A leg keeps its own name in the evidence it leaves behind.
+RC054_SCOPE="$(case "$SPEC" in *rc066*) echo "RC-066 Windows browser: restart-and-re-read";; *) echo "RC-054 Windows browser against a Linux host";; esac)"
+export RC054_SCOPE
 WEB_PORT="${RC054_WEB_PORT:-37124}"
 
 mkdir -p "$OUT"
@@ -60,7 +63,7 @@ RC054_STATUS="$STATUS" RC054_ENGINE="$ENGINE" RC054_OUT="$OUT" bun -e '
 const fs = require("fs");
 fs.writeFileSync(process.env.RC054_OUT + "/proof.json", JSON.stringify({
   result: process.env.RC054_STATUS === "0" ? "verified" : "failed",
-  scope: "RC-054 Windows browser against a Linux host",
+  scope: process.env.RC054_SCOPE || "RC-054 Windows browser against a Linux host",
   engine: process.env.RC054_ENGINE,
   os: "windows",
 }, null, 2) + "\n");

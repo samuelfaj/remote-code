@@ -157,7 +157,7 @@ SEEN=""
 for _ in $(seq 1 120); do
   if docker exec "$NAME" bash -lc "curl -sk https://127.0.0.1:3000/api/health/ready >/dev/null 2>&1"; then :; fi
   NAMES="$(docker exec "$NAME" bash -lc "curl -sk -H 'cookie: $HOST_COOKIE' https://127.0.0.1:3000/api/workspaces" 2>/dev/null || echo '')"
-  if printf '%s' "$NAMES" | grep -q "$MARKER"; then SEEN=1; break; fi
+  if printf '%s' "$NAMES" | grep -q "$MARKER-READY"; then SEEN=1; break; fi
   sleep 5
 done
 if [[ "$SEEN" != "1" ]]; then

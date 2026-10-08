@@ -45,8 +45,15 @@ test("saves a file, survives an API restart and reads it back once", async ({ pa
   await page.getByRole("button", { name: "Save file" }).click();
   await expect(page.getByTestId("file-status")).toContainText(`SAVE receipt confirmed for ${fileName}`, { timeout: 30_000 });
 
-  // The workspace exists now, which is what the driving machine waits for before
-  // it restarts the API. This side watches the host go away and come back: a
+  // The file is saved, so the driving machine is told the restart may begin: a
+  // second workspace carries that signal, because the first one exists long
+  // before the save and would otherwise restart the host mid-preparation.
+  await page.getByLabel("Workspace name", { exact: true }).fill(`${marker}-READY ${stamp}`);
+  await page.getByRole("button", { name: "Create workspace" }).click();
+  await expect(page.getByTestId("workspace-list")).toContainText(`${marker}-READY ${stamp}`, { timeout: 20_000 });
+
+  // The file is saved, and the driving machine waits for that signal before it
+  // restarts the API. This side watches the host go away and come back: a
   // request that fails is the restart beginning, and the same request answering
   // again is the restart over.
   const ready = async () => page.evaluate(async () => {
