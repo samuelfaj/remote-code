@@ -1,4 +1,7 @@
 # Changelog
+## RC-054 macOS leg proven; Windows leg unverified 2026-10-08 (UTC)
+- `bash scripts/rc054/run-macos-browsers-proof.sh <fresh dir>` stands up the repository's Linux host over TLS behind a local Vite and runs `apps/web/e2e/macos-linux-client.spec.ts` on this Mac on two engines. Chromium and WebKit each passed: sign in, create a workspace, prepare its folder, create and save a file through the panel with the host's copy read back, post and read a thread message, take and release the screen with the host as the authority, close the live channel and reconnect.
+- Windows is not run: this machine has no Windows host, VM or browser, so RC-054 stays In progress with that leg named rather than assumed.
 ## RC-056 accepted — the Android app on a real emulator 2026-10-08 (UTC)
 - RC-056 is Complete. `bash scripts/rc056/run-android-proof.sh <fresh dir>` passed twice against a real emulator (Android 15, AVD `rc056-android`): the app signs in through its own fields, the Bots screen shows the host's Bot, the Threads screen offers the host's workspace and then its thread, the Inbox screen shows the item the host recorded for the run, the app submits an action through its own control (the host and the Actions tab both hold it), and the Inbox item is still shown after `am force-stop`.
 - Every assertion reads the app's own view tree through `uiautomator dump`; the release APK is built with the loopback origin that `adb reverse` maps to this Mac.
