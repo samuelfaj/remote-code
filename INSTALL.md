@@ -35,8 +35,8 @@ the `prototype/Dockerfile` the command above builds from: the image is
 reproducible from the tag alone, so there is no separate registry copy that can
 drift from the source you are reading.
 
-- Current release: `v0.1.0` (`9cb2975`). Release notes carry the same commands as
-  this file.
+- Current release: `v0.1.0` (the annotated tag on this line of history). Release
+  notes carry the same commands as this file.
 - The image's Distill version is the `ARG DISTILL_VERSION` in
   `prototype/Dockerfile`. If the credential you copy into the container belongs
   to another Distill release, pin it instead of accepting the default:
