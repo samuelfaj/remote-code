@@ -68,3 +68,13 @@ recorded run with its observed outcome.
 
 Another agent can take this inventory, run the rows that this machine supports,
 and fill in the gaps above without rediscovering which proof covers which case.
+
+## Executed matrix — 2026-10-08 (UTC)
+
+`bash scripts/rc065/run-failure-matrix.sh <fresh dir>` runs each case below in turn and keeps one transcript per case (`meta/<case>/transcript.log`, `exit`, `command`) plus `matrix.json`.
+
+Observed on this machine: **17 of 18 cases exited 0**, each with its own transcript — network before acceptance and after a lost response, Distill provider 401/429, the stalled-run watchdog, run reconciliation after a host restart, the Docker host supervisor, the linux-use first session and revoked target, the visual channel crossed cookie, input after revocation and supersession, the GUI restart, the event gap, the ownership audit, routines, push, webhooks, restore and the version refusal.
+
+One case failed twice: **linux-use-command-failure-and-isolation** (`scripts/rc015/run-isolation-proof.sh`) — the agent process does start as `rcagent`, but the run stays `running` past the proof's own 240 s window, so the proof prints `FAIL authorized task running`. The credential it copies into the container (`~/.distill/auth.json`) exists and is current, so this is either the proof's window being too short for a real agent turn here or a stall in the agent inside the container; it needs the maintainer's eye, and it means RC-015's evidence is not reproducible on this host today.
+
+Still outside this matrix, and why RC-065 is not accepted: no injected-failure run in a hosted account, no sanitized-log and UI-after-restart comparison, no swapped-window stream (only the crossed-cookie refusal), and no Android storage-failure modes.
