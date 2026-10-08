@@ -65,7 +65,12 @@ if [[ "${RC054_HOST_MODE:-journey}" == "panel" ]]; then
   EXTRA_ENV="REMOTECODE_DISTILL_BIN=/usr/local/bin/rc051-agent"
   say "-- the host runs the repository's runs stub as its agent --"
 fi
-docker exec -d "$NAME" bash -lc "cd /workspace && DISPLAY=:99 API_PORT=3000 \
+# The API listens on 3001 and a forwarder holds the published 3000 open, so a
+# restart of the API does not close the port the runner's proxy is pooled to.
+docker cp "$HERE/cdp-forward.mjs" "$NAME:/tmp/rc066-tcp-forward.mjs"
+docker exec -d "$NAME" bash -lc "cd /tmp && FORWARD_TARGET_PORT=3001 FORWARD_LISTEN_PORT=3000 bun rc066-tcp-forward.mjs > /var/log/rc066-forward.log 2>&1"
+sleep 1
+docker exec -d "$NAME" bash -lc "cd /workspace && DISPLAY=:99 API_PORT=3001 \
   DATABASE_PATH=/var/lib/remotecode/rc054.sqlite REMOTECODE_AUTH_PASSWORD='$PASSWORD' \
   REMOTECODE_WEB_ORIGIN='$WEB_ORIGIN' REMOTECODE_TLS_CERT=/proof-cert.pem \
   REMOTECODE_TLS_KEY=/proof-key.pem $EXTRA_ENV bun apps/api/src/index.ts \
@@ -155,7 +160,6 @@ if [[ -z "$HOST_COOKIE" ]]; then
 fi
 SEEN=""
 for _ in $(seq 1 120); do
-  if docker exec "$NAME" bash -lc "curl -sk https://127.0.0.1:3000/api/health/ready >/dev/null 2>&1"; then :; fi
   NAMES="$(docker exec "$NAME" bash -lc "curl -sk -H 'cookie: $HOST_COOKIE' https://127.0.0.1:3000/api/workspaces" 2>/dev/null || echo '')"
   if printf '%s' "$NAMES" | grep -q "$MARKER-READY"; then SEEN=1; break; fi
   sleep 5
@@ -168,7 +172,9 @@ else
   # inside the container and take the rest of the script down with it.
   docker exec "$NAME" bash -lc 'pkill -x bun || true' >/dev/null 2>&1 || true
   sleep 3
-  docker exec -d "$NAME" bash -lc "cd /workspace && DISPLAY=:99 API_PORT=3000 \
+  # Only the API restarts; the forwarder on 3000 keeps the published port open,
+  # which is what the runner's pooled proxy needs.
+  docker exec -d "$NAME" bash -lc "cd /workspace && DISPLAY=:99 API_PORT=3001 \
     DATABASE_PATH=/var/lib/remotecode/rc054.sqlite REMOTECODE_AUTH_PASSWORD='$PASSWORD' \
     REMOTECODE_WEB_ORIGIN='$WEB_ORIGIN' REMOTECODE_TLS_CERT=/proof-cert.pem \
     REMOTECODE_TLS_KEY=/proof-key.pem $EXTRA_ENV bun apps/api/src/index.ts \
