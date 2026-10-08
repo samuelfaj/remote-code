@@ -3,34 +3,34 @@
 Latest confirmed state: the RC-067 acceptance checkpoint on
 `checkpoint/rc002-linux-runtime-evidence`, pushed. Plan status:
 **67 complete / 0 in progress / 0 blocked / 1 to do** of the 68 tasks in
-`plan/tasks.html`. Exactly one task is open: **RC-066**.
+`plan/tasks.html`. Exactly one task is open: **RC-066**, and it is two cells
+short. `plan/acceptance-matrix.md` names both with the step each needs.
 
-Do this next:
-
-**RC-066 — the acceptance matrix.** `plan/acceptance-matrix.md` states, per
-client and journey, what is proven and what is `not run`. The cells still
-`not run` are, in the order worth attacking:
-
-1. **Panel journeys from the container's own browser** (Scheduled Bot, and the
-   cut-and-reconnect journey). `scripts/rc066/run-container-browser-panel-proof.sh`
-   exists but is **unverified and needs its driver rewritten**: it should start
-   the host with the runs stub the way `scripts/rc051/run-linux-web-proof.sh`
-   does, start the container's guest Chromium with `--remote-debugging-port`
-   published on a loopback port (the pattern in `scripts/rc042/run-preview-proof.ts`),
-   and drive it with a standalone script that calls
-   `chromium.connectOverCDP`, not the Playwright test runner's own browser
-   fixture. Reuse `apps/web/e2e/agent-activity.spec.ts`'s selectors.
-2. **Bot routines from the iOS and Android apps.** `apps/mobile/src/screens/BotsScreen.tsx`
-   shows a Bot's routines, so this is drivable; a native-test mode that opens
-   the Bots screen and asserts a routine against `GET /api/schedules` is what is
-   missing on each platform (`RC_NATIVE_TEST_*` modes live in
-   `scripts/run-mobile-native-test.sh`, and `scripts/rc056/run-android-proof.sh`
-   shows the Android side).
-3. **The remaining browser-on-Linux cells** — human login on its own and
-   screen take-over from the container's own browser.
+1. **Windows browser, the injected-failure column.**
+   `bash scripts/rc066/run-windows-restart-proof.sh <fresh dir>` drives it end
+   to end except the last part: the restart happens, the host's public path
+   answers again (`the public path answers again through the tunnel`), and the
+   Windows browser still does not see it recover within 240 s. The host already
+   runs the API behind a forwarding port so a restart cannot close the published
+   port; the next thing to look at is the **runner's own proxy pool** — Vite's
+   proxy on the Windows side is the only part of the path that stays broken.
+   Either make the proxy reconnect (or bypass it for the readiness probe), then
+   run the script twice and fill that cell.
+2. **iOS, a Bot's routine.** `RC_NATIVE_TEST_ROUTINES=1` is wired in
+   `scripts/run-mobile-native-test.sh` — mode exclusivity, seeding a Bot and a
+   routine, the launch environment and the audit argument are all in place — and
+   it exits 3 with a clear message because the Swift test
+   `testRoutinesFromHostJourney` does not exist yet. Write it in
+   `apps/mobile/native-tests/RemoteCodeMobileProofUITests.swift`, copying
+   `testNavigationAcrossScreensJourney`'s Bots assertions and reading the seeded
+   Bot name, time and timezone from the launch environment, then run
+   `RC_NATIVE_TEST_ROUTINES=1 RC_NATIVE_TEST_WORK_DIR=<fresh dir> bash scripts/run-mobile-native-test.sh`
+   twice. Add the audit block the runner passes as its 16th argument so the
+   host's own `schedules` row is compared too.
 
 Push delivery on iOS and Android is a **documented ceiling, not a gap**: no
-APNs, FCM or Expo push project id exists here.
+APNs, FCM or Expo push project id exists here, and `plan/acceptance-matrix.md`
+records that with the reason.
 
 Read, in this order: `plan/acceptance-matrix.md` (RC-066's artifact and the
 exact cells still missing), `plan/tasks.html` (per-task status), `CHANGELOG.md`

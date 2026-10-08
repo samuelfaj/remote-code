@@ -302,6 +302,13 @@ if [[ "${RC_NATIVE_TEST_NAVIGATION:-0}" == "1" ]]; then
   EXTRA_SKIP_ARGS=()
 fi
 if [[ "${RC_NATIVE_TEST_ROUTINES:-0}" == "1" ]]; then
+  # This mode is wired but its Swift test is not written yet; saying so here is
+  # better than letting xcodebuild report "no tests matched" and leaving the
+  # reader to guess. plan/next-steps.md carries the remaining steps.
+  if ! grep -q "func testRoutinesFromHostJourney" "$ROOT_DIR/apps/mobile/native-tests/RemoteCodeMobileProofUITests.swift"; then
+    echo "RC_NATIVE_TEST_ROUTINES is wired in this runner but its Swift test does not exist yet (see plan/next-steps.md)." >&2
+    exit 3
+  fi
   for mode in RC_NATIVE_TEST_RECOVERY RC_NATIVE_TEST_AUTO_ACTION RC_NATIVE_TEST_HEALTH RC_NATIVE_TEST_DEADLINE RC_NATIVE_TEST_POST_DELAY RC_NATIVE_TEST_LOGIN_DEADLINE RC_NATIVE_TEST_LOGIN_PREFLIGHT_DEADLINE RC_NATIVE_TEST_WORKSPACES RC_NATIVE_TEST_PRIVACY_EXPIRY RC_NATIVE_TEST_PRIVACY_BUSY RC_NATIVE_TEST_STORAGE_FAILURE RC_NATIVE_TEST_FILES RC_NATIVE_TEST_NAVIGATION RC_NATIVE_TEST_TAKEOVER RC_NATIVE_TEST_JOINED_WORKSPACE; do
     if [[ "${!mode:-0}" == "1" ]]; then
       echo "RC_NATIVE_TEST_ROUTINES cannot be combined with $mode." >&2
