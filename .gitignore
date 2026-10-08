@@ -13,3 +13,4 @@ test-results/
 
 # local proof transcripts and throwaway artifacts
 /scratch/
+.dev/

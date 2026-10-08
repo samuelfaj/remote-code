@@ -8,6 +8,10 @@ The project is intended to be open source and self-hostable, with paid hosting f
 
 [INSTALL.md](INSTALL.md) is the public, self-managed installation guide: build the host image, create the data volume, start the container, run the external supervisor, and back up or restore. It needs no paid account and no access to any internal service.
 
+## Develop locally
+
+Bun 1.4 or later is required; see https://bun.sh. Run `bash dev.sh` from the repository root to start the API on port 3000 and the web app on http://localhost:5173. The development login password is `remote-code-local-dev`; set `REMOTECODE_AUTH_PASSWORD` to override it. You can also override `API_PORT`, `WEB_PORT`, and `DATABASE_PATH` as environment variables. State and the API log live in the untracked `.dev` directory. Press Ctrl-C to stop both processes. The mobile app is not started by this script.
+
 ## Read the plan
 
 - [Product and architecture](plan/index.html): how the Linux host, clients, GUI, Distill, and recovery paths fit together.
