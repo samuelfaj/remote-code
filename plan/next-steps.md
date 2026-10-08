@@ -1,126 +1,44 @@
 # Where to resume
 
-Latest confirmed state: the RC-067 acceptance checkpoint on
-`checkpoint/rc002-linux-runtime-evidence`, pushed. Plan status:
-**67 complete / 0 in progress / 0 blocked / 1 to do** of the 68 tasks in
-`plan/tasks.html`. Exactly one task is open: **RC-066**, and it is two cells
-short. `plan/acceptance-matrix.md` names both with the step each needs.
+Latest confirmed state: the RC-066 acceptance checkpoint on
+`checkpoint/rc002-linux-runtime-evidence`, pushed. **All 68 tasks in
+`plan/tasks.html` are complete** and every cell of `plan/acceptance-matrix.md`
+names a command and a result.
 
-1. **Windows browser, the injected-failure column.**
-   `bash scripts/rc066/run-windows-restart-proof.sh <fresh dir>` drives it end
-   to end except the last part: the restart happens, the host's public path
-   answers again (`the public path answers again through the tunnel`), and the
-   Windows browser still does not see it recover within 240 s. The host already
-   runs the API behind a forwarding port so a restart cannot close the published
-   port; the next thing to look at is the **runner's own proxy pool** — Vite's
-   proxy on the Windows side is the only part of the path that stays broken.
-   Either make the proxy reconnect (or bypass it for the readiness probe), then
-   run the script twice and fill that cell.
-2. **iOS, a Bot's routine.** `RC_NATIVE_TEST_ROUTINES=1` is wired in
-   `scripts/run-mobile-native-test.sh` — mode exclusivity, seeding a Bot and a
-   routine, the launch environment and the audit argument are all in place — and
-   it exits 3 with a clear message because the Swift test
-   `testRoutinesFromHostJourney` does not exist yet. Write it in
-   `apps/mobile/native-tests/RemoteCodeMobileProofUITests.swift`, copying
-   `testNavigationAcrossScreensJourney`'s Bots assertions and reading the seeded
-   Bot name, time and timezone from the launch environment, then run
-   `RC_NATIVE_TEST_ROUTINES=1 RC_NATIVE_TEST_WORK_DIR=<fresh dir> bash scripts/run-mobile-native-test.sh`
-   twice. Add the audit block the runner passes as its 16th argument so the
-   host's own `schedules` row is compared too.
+Read, in this order: `plan/tasks.html` (per-task status), `CHANGELOG.md`
+(newest-first acceptance log), `plan/checkpoint-evidence.md` (the command, the
+observed result and the failure-if check for every accepted task),
+`plan/acceptance-matrix.md` (the client-by-journey matrix, including the two
+recorded ceilings), `PIVOT.md` (why a route changed), `plan/failure-matrix.md`
+(RC-065's 22 cases) and `plan/capacity.md` / `plan/failure-state-contract.md`
+(measured limits and the per-operation failure table).
 
-Push delivery on iOS and Android is a **documented ceiling, not a gap**: no
-APNs, FCM or Expo push project id exists here, and `plan/acceptance-matrix.md`
-records that with the reason.
+## What is proven and how to re-run it
 
-Read, in this order: `plan/acceptance-matrix.md` (RC-066's artifact and the
-exact cells still missing), `plan/tasks.html` (per-task status), `CHANGELOG.md`
-(newest-first acceptance log), `plan/checkpoint-evidence.md` (command,
-environment, observed result and failure-if check for every accepted task),
-`plan/failure-matrix.md` (RC-065's 22 executed cases and how to run them),
-`PIVOT.md` (why a route changed), and `plan/capacity.md` /
-`plan/failure-state-contract.md`.
+The heavy proofs each take one command and a fresh absolute output directory:
 
-## Accepted since the previous resume page
+- `bash scripts/rc065/run-failure-matrix.sh <fresh dir>` — 22 failure cases, one transcript each.
+- `bash scripts/rc054/run-macos-browsers-proof.sh <fresh dir>` and `bash scripts/rc054/run-windows-host-and-dispatch.sh <fresh dir>` — the macOS and Windows browser legs.
+- `bash scripts/rc066/run-container-browser-panel-proof.sh <fresh dir>` — the container's own Chromium driving the panel.
+- `bash scripts/rc066/run-windows-restart-proof.sh <fresh dir>` — the Windows browser across an API restart.
+- `bash scripts/rc066/run-android-bot-routine-proof.sh <fresh dir>` and `RC_NATIVE_TEST_ROUTINES=1 RC_NATIVE_TEST_WORK_DIR=<fresh dir> bash scripts/run-mobile-native-test.sh` — the two mobile routine journeys.
+- `bash scripts/rc067/run-publish-proof.sh <fresh dir>` and `bash scripts/rc067/run-hosted-service-dispatch.sh <fresh dir>` — the published artifact and the managed service.
 
-| Task | What it is | Evidence |
-| --- | --- | --- |
-| RC-054 | Web clients on macOS and Windows | Chromium and WebKit on this Mac; a real Windows Chromium on GitHub's `windows-latest` runner through a Cloudflare tunnel: `1 passed (22.3s)`. `scripts/rc054/run-macos-browsers-proof.sh`, `scripts/rc054/run-windows-host-and-dispatch.sh` |
-| RC-065 | Fault injection across every layer | `bash scripts/rc065/run-failure-matrix.sh <fresh dir>` -> `{"result": "passed", "casesRun": 22, "casesPassed": 22, "casesFailed": 0}`. Found and fixed a real defect: a hosted account whose container died kept reading `ready` |
+## Recorded ceilings (not gaps)
 
-## RC-066 — the acceptance matrix (open)
+- Device push on iOS and Android: no APNs project, no FCM credentials and no
+  Expo push project id exist on this machine. RC-047 and RC-055 prove the
+  routing and the provider boundary without a device token.
+- A registry-published image: this account's GitHub token has no
+  `write:packages` scope and ECR Public has no alias, so the image is built from
+  the published `v0.1.0` tag's own Dockerfile. The tag pins the source, so
+  nothing can diverge from it.
+- The managed control plane is published here on a Cloudflare quick tunnel
+  rather than deployed to a cloud host: the GCP project has no billing account
+  and Railway cannot run nested Docker.
 
-Artifact: `plan/acceptance-matrix.md`. 23 cells carry a cited result, 17 are
-`not run`, 14 are `n/a` because the product's shape makes them meaningless.
-Every `not run` cell is drivable here and is what RC-066 still needs. In rough
-order of cost:
+## Housekeeping this repository expects
 
-1. **Windows browser, scheduled Bot.** Run `scripts/rc051/run-linux-web-proof.sh`'s
-   spec from the Windows runner that `scripts/rc054/run-windows-host-and-dispatch.sh`
-   already wires up. The step that is missing is a dispatch input that selects
-   `apps/web/e2e/agent-activity.spec.ts` (it needs `RC051_STUB_AGENT=1` on the
-   host) instead of `macos-linux-client.spec.ts`.
-2. **Windows browser, injected failure.** The same runner against
-   `scripts/rc065/run-restart-log-ui-proof.sh`'s host: the Linux host is started
-   here, so point the Windows job at it and run the `after` phase only.
-3. **Container guest Chromium**, four cells: scheduled Bot, human login,
-   cut-and-reconnect and screen take-over from the container's own browser.
-   `scripts/rc042/run-preview-proof.ts` and `scripts/rc053/run-linux-gui-proof.sh`
-   already drive that browser over CDP; each cell needs its journey added there.
-4. **Container GUI, scheduled Bot.** Same host as RC-053; the journey is the one
-   RC-051 already drives.
-5. **iOS and Android, scheduled Bot.** `apps/mobile/src/screens/BotsScreen.tsx`
-   already shows a Bot's routines, so this needs a native-test mode that opens
-   the Bots screen and asserts the routine against `GET /api/schedules`, in the
-   shape of `RC_NATIVE_TEST_WORKSPACES`.
-
-Mark a cell only when its run has produced its own recorded result; a skipped
-test that reports a pass is the one failure mode this file exists to prevent.
-
-## RC-067 — publish the open version and the managed service (open)
-
-Done so far, all pushed: the annotated tag `v0.1.0` and the GitHub release
-`https://github.com/samuelfaj/remote-code/releases/tag/v0.1.0`, and `INSTALL.md`
-now pins the instalment to that tag ("3b. Which release you are installing").
-
-Still missing, and in this order:
-
-1. **A public image.** `docker push` to `ghcr.io/samuelfaj/remote-code-host` is
-   refused: the `gh` token in use has `repo`, `gist`, `read:org` and
-   `admin:public_key` only — no `write:packages`. Either refresh the token with
-   that scope (an interactive device flow) or publish the image under a registry
-   whose credentials exist; the local image `remotecode/host:local` is the one
-   to push (`docker tag` + `docker push`).
-2. **The proof.** `scripts/rc067/` does not exist yet. It should clone the
-   public repository at `v0.1.0` into a fresh directory, build the image from
-   that tag's `prototype/Dockerfile`, start it, then repeat one real journey
-   from a browser and one from the Linux GUI, and create a paid test account
-   through the billing route the way `scripts/rc061/run-billing-proof.ts` does
-   (its provider is an HTTP stand-in for Stripe; a real Stripe test-mode key
-   would be needed to call the provider itself).
-3. **The managed service.** The hosted control plane creates account containers
-   with Docker, so it cannot run on a container platform without a Docker
-   socket. A reachable deployment therefore needs a host with Docker; the
-   honest options are a machine you own plus the Cloudflare-tunnel pattern that
-   `scripts/rc054/run-windows-host-and-dispatch.sh` already uses, or a VPS.
-   The GCP project here has no billing account (`UREQ_PROJECT_BILLING_NOT_FOUND`),
-   and the AWS account does have working credentials if a VPS is preferred.
-4. **Support and rollback.** `INSTALL.md` section 3b and the release notes
-   already state that rollback is a rebuild at a tag and that a mismatched
-   client is refused by the host (`scripts/rc059/run-install-proof.ts`); the
-   release notes should be updated with whatever the hosted service turns out
-   to be.
-
-## Environment notes that save time
-
-- Docker is OrbStack on this machine. It went down once under heavy load with
-  the Android emulator running; `open -a OrbStack` brings it back in ~25s, and a
-  matrix run started while it is down reports per-case failures rather than a
-  clear error.
-- The RC-054 Windows leg needs `workflow_dispatch` to resolve, which only happens
-  for a workflow that is also on the default branch — and `main` here is
-  protected. The leg is therefore armed by a repository variable plus a push to
-  the open pull request, and the variable is cleared once the run has started.
-- Proof conventions: TypeScript proofs take an absolute `RC0NN_PROOF_DIR` that
-  must not exist yet; shell proofs take one positional fresh directory; the
-  Android proofs need the APK built with
-  `EXPO_PUBLIC_API_ORIGIN=http://127.0.0.1:37132` and ports 37131/37132.
+- `python3 scripts/check-doc-links.py` must stay clean.
+- `bun run typecheck`, `bun test apps/api/src apps/gateway/src packages/client/src` and `bun run test:e2e` are the local gates.
+- Commit subjects follow Conventional Commits, and each checkpoint is pushed.
