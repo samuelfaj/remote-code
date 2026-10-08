@@ -100,7 +100,7 @@ for ENGINE in chromium webkit; do
 done
 
 say "-- Windows --"
-say "not run: this machine has no Windows target (no Windows host, VM or browser available), so the Windows leg of RC-054 stays unverified"
+say "not run here: this machine has no Windows target, so that leg runs on GitHub's windows-latest runner via scripts/rc054/run-windows-host-and-dispatch.sh, which publishes a host like this one over a tunnel and runs the same journey from a Windows Chromium"
 
 say "-- the API's own log, for anything the run hid --"
 docker exec "$NAME" tail -20 /var/log/rc054-api.log 2>&1 | tee -a "$OUT/proof.log" || true
@@ -112,7 +112,7 @@ json.dump({
   "result": "verified" if status == 0 else "failed",
   "scope": "RC-054 macOS browsers against a Linux host",
   "engines": ["chromium", "webkit"],
-  "windows": "unverified: no Windows target on this machine",
+  "windows": "run separately by scripts/rc054/run-windows-host-and-dispatch.sh on GitHub's windows-latest runner",
 }, open(out + "/proof.json", "w"), indent=2)
 print("proof.json written")
 PY

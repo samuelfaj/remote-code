@@ -1,4 +1,9 @@
 # Changelog
+## RC-054 accepted — a Windows browser and a macOS browser on the same Linux host 2026-10-08 (UTC)
+- macOS: `scripts/rc054/run-macos-browsers-proof.sh` passes on Chromium (`1 passed (5.6s)`) and WebKit (`1 passed (6.0s)`).
+- Windows: `scripts/rc054/run-windows-host-and-dispatch.sh` publishes a host over a Cloudflare quick tunnel and arms `rc054-windows-client.yml` on GitHub's `windows-latest` runner; run 37745604065 reported `1 passed (22.3s)` and its artifact `{"result": "verified", "engine": "chromium", "os": "windows"}`.
+- The only Windows-side process is Vite, which forwards; the UI and the API are the Linux host's, and the tunnel needed `REMOTECODE_WEB_PROXY_CHANGE_ORIGIN=1` because it routes by the Host it is asked for.
+- Evidence: `plan/checkpoint-evidence.md`.
 ## RC-065's matrix runs 18 of 18 — the two failing cases fixed at their cause 2026-10-08 (UTC)
 - `bash scripts/rc065/run-failure-matrix.sh <fresh dir>` now reports `{"result": "passed", "casesRun": 18, "casesPassed": 18, "casesFailed": 0}`, one transcript per case.
 - `linux-use-command-failure-and-isolation` (`scripts/rc015/run-isolation-proof.sh`): the proof handed the container's agent the host's default model `claude/claude-opus-5-5`, which is not in the catalog the copied credential exposes inside the container, and `default_reasoning_effort = "max"`, which those models refuse. It now takes a model id from the container's own catalog and rewrites only the copied config's `[models]` lines. Passes twice; the run completes as `rcagent`.
