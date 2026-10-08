@@ -52,30 +52,25 @@ test("saves a file, survives an API restart and reads it back once", async ({ pa
   await page.getByRole("button", { name: "Create workspace" }).click();
   await expect(page.getByTestId("workspace-list")).toContainText(`${marker}-READY ${stamp}`, { timeout: 20_000 });
 
-  // The file is saved, and the driving machine waits for that signal before it
-  // restarts the API. This side watches the host go away and come back: a
-  // request that fails is the restart beginning, and the same request answering
-  // again is the restart over.
-  const ready = async () => page.evaluate(async () => {
+  // The driving machine restarts the host's API and then writes a marker
+  // workspace of its own. Waiting for that marker is what proves the restart
+  // happened: the host's port stays open across it by design, so the browser
+  // never sees a gap, and the marker only appears once the new process serves.
+  const hostNames = async () => page.evaluate(async () => {
     try {
-      const response = await fetch("/api/health/ready", { cache: "no-store" });
-      return response.ok ? "ready" : `status ${response.status}`;
-    } catch (error) {
-      return `unreachable: ${String(error).slice(0, 60)}`;
+      const response = await fetch("/api/workspaces", { cache: "no-store" });
+      if (!response.ok) return [];
+      const body = await response.json();
+      return (body.workspaces ?? []).map((entry: { name: string }) => entry.name) as string[];
+    } catch {
+      return [];
     }
   });
-  await expect.poll(async () => (await ready()) !== "ready", {
-    message: "the host should go away while the restart runs",
-    timeout: 120_000,
-    intervals: [1_000],
-  }).toBe(true);
-  // The proxy in front of the host holds a pooled connection that the restart
-  // breaks, so this is given the time that pool needs to be replaced.
-  await expect.poll(ready, {
-    message: "the host should answer again after the restart",
+  await expect.poll(async () => (await hostNames()).some((name) => name.includes(`${marker}-DONE`)), {
+    message: "the driving machine should announce the finished restart",
     timeout: 240_000,
     intervals: [2_000],
-  }).toBe("ready");
+  }).toBe(true);
 
   // Read the file back through the app after the restart.
   await page.reload();
