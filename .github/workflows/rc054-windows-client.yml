@@ -65,6 +65,10 @@ jobs:
         with:
           bun-version: "1.4.2"
 
+      - name: Normalise the shell scripts the Windows runner will run
+        run: |
+          find scripts -name '*.sh' -print0 | xargs -0 -I{} sh -c 'tr -d "\r" < "{}" > "{}.lf" && mv "{}.lf" "{}"'
+
       - name: Install the dependencies and the Windows browser
         run: |
           bun install --frozen-lockfile
