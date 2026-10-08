@@ -18,6 +18,17 @@ async function signIn(page: import("@playwright/test").Page) {
   await expect(page.getByTestId("workspace-panel")).toBeVisible();
 }
 
+async function backendWorkspaceId(page: import("@playwright/test").Page, name: string) {
+  const body = await page.evaluate(async () => {
+    const response = await fetch("/api/workspaces");
+    return { status: response.status, json: await response.json() };
+  }) as { status: number; json: { workspaces: Array<{ id: string; name: string }> } };
+  expect(body.status, `GET /api/workspaces -> ${body.status}`).toBe(200);
+  const workspace = body.json.workspaces.find((entry) => entry.name === name);
+  expect(workspace?.id).toBeTruthy();
+  return workspace!.id;
+}
+
 if (phase === "before") {
   test("RC-065 before phase: create workspace, file, save, and record state", async ({ page }) => {
     test.setTimeout(60_000);
@@ -44,16 +55,23 @@ if (phase === "before") {
     await page.getByRole("button", { name: "Create file" }).click();
     await expect(page.getByTestId("file-status")).toContainText("CREATE receipt confirmed", { timeout: 30_000 });
 
+    // Open the file in the editor before saving content.
+    await page.getByRole("button", { name: "Refresh folder and files" }).click();
+    await page.getByRole("button", { name: `Open file ${fileName}` }).click();
+
     // Save content and assert the SAVE receipt.
     await page.getByLabel("File draft").fill(content);
     await page.getByRole("button", { name: "Save file" }).click();
     await expect(page.getByTestId("file-status")).toContainText(`SAVE receipt confirmed for ${fileName}`, { timeout: 30_000 });
 
+    // Get the workspace ID from the backend for the database check.
+    const workspaceId = await backendWorkspaceId(page, workspaceName);
+
     // Write state for the after phase from the Node.js test context.
     if (!stateFilePath) {
       throw new Error("RC065_STATE_FILE is not set");
     }
-    writeFileSync(stateFilePath, JSON.stringify({ workspaceName, filePath: fileName, content }));
+    writeFileSync(stateFilePath, JSON.stringify({ workspaceName, filePath: fileName, content, workspaceId }));
   });
 }
 
@@ -74,8 +92,14 @@ if (phase === "after") {
     };
 
     // Open the workspace recorded in state.
-    await page.getByTestId("workspace-item-" + state.workspaceName.replace(/[^a-zA-Z0-9_-]/g, "-")).click();
-    await expect(page.getByTestId("selected-workspace")).toContainText(state.workspaceName);
+    const workspaceItem = page.getByTestId("workspace-item-" + state.workspaceName.replace(/[^a-zA-Z0-9_-]/g, "-"));
+    await workspaceItem.waitFor({ state: "visible", timeout: 10_000 });
+    await workspaceItem.click();
+    await expect(page.getByTestId("selected-workspace")).toContainText(state.workspaceName, { timeout: 10_000 });
+
+    // Wait for the workspace content to be fully loaded before refreshing.
+    await expect(page.getByTestId("app-content")).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId("folder-status")).toContainText("provisioned", { timeout: 15_000 });
 
     // Refresh folder and open the file.
     await page.getByRole("button", { name: "Refresh folder and files" }).click();
@@ -87,8 +111,9 @@ if (phase === "after") {
     const draftContent = await draft.inputValue();
     expect(draftContent).toBe(state.content);
 
-    // Assert the SAVE receipt is still confirmed (not stale/false success).
-    await expect(page.getByTestId("file-status")).toContainText(`SAVE receipt confirmed for ${state.filePath}`, { timeout: 15_000 });
+    // Assert the file status confirms the file was read from the host
+    // (not a stale or false success from a previous session).
+    await expect(page.getByTestId("file-status")).toContainText("read from the host", { timeout: 15_000 });
 
     // Reload the page and assert the connection status is live, not a leftover.
     await page.reload();

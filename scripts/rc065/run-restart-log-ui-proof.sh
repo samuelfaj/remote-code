@@ -175,12 +175,12 @@ if grep -qF "$PASSWORD" "$RAW_LOG"; then
 fi
 say "passphrase not in raw log: ok"
 
-if grep -qP 'Bearer\s+[a-zA-Z0-9._-]+' "$RAW_LOG"; then
+if grep -qE 'Bearer[[:space:]]+[a-zA-Z0-9._-]+' "$RAW_LOG"; then
   say "FAIL Bearer token found in raw API log"; exit 1
 fi
 say "Bearer token not in raw log: ok"
 
-if grep -qPi 'x-rc-[^:]+:\s*\S+' "$RAW_LOG"; then
+if grep -qE 'x-rc-[^:]+:[[:space:]]+[^[:space:]]+' "$RAW_LOG"; then
   say "FAIL x-rc-* header value found in raw API log"; exit 1
 fi
 say "x-rc-* header values not in raw log: ok"
@@ -188,19 +188,23 @@ say "x-rc-* header values not in raw log: ok"
 # -- check the API's SQLite database directly with bun:sqlite to assert
 #    one create and one save for the file, not two (no duplicate effect) --
 say "-- check database with bun:sqlite --"
+# Stop the API first so the database is not locked, then copy and query.
+API_PID=$(docker exec "$NAME" pgrep -f "apps/api/src/index.ts" | head -1 || true)
+if [[ -n "$API_PID" ]]; then
+  docker exec "$NAME" kill -9 "$API_PID" 2>/dev/null || true
+  sleep 1
+fi
 DB_PATH="/var/lib/remotecode/rc065.sqlite"
-# Read the workspace name from the state file to look up the workspace ID.
-WORKSPACE_NAME=$(python3 -c "import json;print(json.load(open('$STATE_FILE'))['workspaceName'])")
+docker cp "$NAME:$DB_PATH" "$OUTDIR/rc065.sqlite"
 
-# Use bun:sqlite inside the container to count create and save intents for the file.
-# The API does not expose a route to list all file receipts for a workspace,
-# so we read the SQLite database directly.
-DB_CHECK=$(docker exec "$NAME" bun -e "
+# Read the workspace ID from the state file.
+WORKSPACE_ID=$(python3 -c "import json;print(json.load(open('$STATE_FILE'))['workspaceId'])")
+
+# Query the database with bun:sqlite on the host.
+DB_CHECK=$(bun -e "
 import { Database } from 'bun:sqlite';
-const db = new Database('$DB_PATH');
-const ws = db.query('SELECT id FROM workspaces WHERE name = ?').get('$WORKSPACE_NAME');
-if (!ws) { console.log(JSON.stringify({error: 'workspace not found'})); process.exit(1); }
-const rows = db.query('SELECT kind, COUNT(*) as count FROM file_operation_intents WHERE workspace_id = ? AND destination_path = ? GROUP BY kind').all(ws.id, '/rc065-test-file.txt');
+const db = new Database('$OUTDIR/rc065.sqlite');
+const rows = db.query('SELECT kind, COUNT(*) as count FROM file_operation_intents WHERE workspace_id = ? AND destination_path = ? GROUP BY kind').all('$WORKSPACE_ID', 'rc065-test-file.txt');
 console.log(JSON.stringify(rows));
 db.close();
 " 2>/dev/null)

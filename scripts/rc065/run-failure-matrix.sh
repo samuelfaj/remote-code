@@ -38,6 +38,8 @@ CASES=(
   "webhook-unsigned-forged-duplicate-out-of-order|RC061_PROOF_DIR={CASE} bun $ROOT/scripts/rc061/run-billing-proof.ts"
   "restore-backup-round-trip|RC058_PROOF_DIR={CASE} bun $ROOT/scripts/rc058/run-backup-restore-proof.ts"
   "version-mismatch-refusal|RC059_PROOF_DIR={CASE} bun $ROOT/scripts/rc059/run-install-proof.ts"
+  "hosted-account-container-death|RC065_PROOF_DIR={CASE} bun $ROOT/scripts/rc065/run-hosted-failure-proof.ts"
+  "sanitized-log-and-ui-after-restart|bash $ROOT/scripts/rc065/run-restart-log-ui-proof.sh {CASE}"
 )
 
 PASSED=0
