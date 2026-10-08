@@ -44,10 +44,33 @@ run bash -lc "install -d -m 700 /var/lib/remotecode && printf '%s' '$TOKEN' > /v
 run bash -lc "install -d -o rcagent -g rcagent -m 700 /workspace/rc015-workspace && install -d -o rcagent -g rcagent -m 700 /home/rcagent/.distill"
 docker cp "$AUTH" "$NAME:/home/rcagent/.distill/auth.json"
 # The credential alone is not the whole state: the agent also needs the host's
-# Distill configuration, or it runs with defaults it cannot reach a model with.
+# Distill configuration. The host's default model is not in the catalog this
+# credential exposes inside the container, and an id the container cannot
+# resolve ends the turn before any work happens, so the copied config is pinned
+# to a model the container's own catalog offers. RC015_MODEL overrides it.
 CONFIG="${RC015_CONFIG:-$HOME/.distill/config.toml}"
 if [[ -f "$CONFIG" ]]; then
-  docker cp "$CONFIG" "$NAME:/home/rcagent/.distill/config.toml"
+  MODEL="${RC015_MODEL:-}"
+  if [[ -z "$MODEL" ]]; then
+    MODEL=$(run bash -lc 'K=$(python3 -c "import json;print(list(json.load(open(\"/home/rcagent/.distill/auth.json\")).values())[0][\"key\"])"); curl -fsS https://cli-chat-proxy.grok.com/v1/models -H "Authorization: Bearer $K" | python3 -c "import sys,json;print(json.load(sys.stdin)[\"data\"][0][\"id\"])"')
+  fi
+  say "container model=$MODEL (from the catalog this credential exposes)"
+  PATCHED="$OUTDIR/rc015-config.toml"
+  python3 - "$CONFIG" "$PATCHED" "$MODEL" "${RC015_REASONING_EFFORT:-high}" <<'PY'
+import re, sys
+src, dst, model, effort = sys.argv[1:5]
+out, in_models = [], False
+for line in open(src):
+    if line.startswith("["):
+        in_models = line.strip() == "[models]"
+    if in_models and re.match(r'^(default|worker) = "', line):
+        line = '%s = "%s"\n' % (line.split(" ")[0], model)
+    if in_models and line.startswith("default_reasoning_effort"):
+        line = 'default_reasoning_effort = "%s"\n' % effort
+    out.append(line)
+open(dst, "w").write("".join(out))
+PY
+  docker cp "$PATCHED" "$NAME:/home/rcagent/.distill/config.toml"
   run bash -lc "chown rcagent:rcagent /home/rcagent/.distill/config.toml && chmod 600 /home/rcagent/.distill/config.toml"
 fi
 run bash -lc "chown rcagent:rcagent /home/rcagent/.distill/auth.json && chmod 600 /home/rcagent/.distill/auth.json"
