@@ -70,7 +70,7 @@ fi
 docker cp "$HERE/cdp-forward.mjs" "$NAME:/tmp/rc066-tcp-forward.mjs"
 docker exec -d "$NAME" bash -lc "cd /tmp && FORWARD_TARGET_PORT=3001 FORWARD_LISTEN_PORT=3000 bun rc066-tcp-forward.mjs > /var/log/rc066-forward.log 2>&1"
 sleep 1
-docker exec -d "$NAME" bash -lc "cd /workspace && DISPLAY=:99 API_PORT=3001 \
+docker exec -d "$NAME" bash -lc "echo \$\$ > /tmp/rc066-api.pid; exec env DISPLAY=:99 API_PORT=3001 \
   DATABASE_PATH=/var/lib/remotecode/rc054.sqlite REMOTECODE_AUTH_PASSWORD='$PASSWORD' \
   REMOTECODE_WEB_ORIGIN='$WEB_ORIGIN' REMOTECODE_TLS_CERT=/proof-cert.pem \
   REMOTECODE_TLS_KEY=/proof-key.pem $EXTRA_ENV bun apps/api/src/index.ts \
@@ -168,13 +168,14 @@ if [[ "$SEEN" != "1" ]]; then
   say "FAIL: the Windows runner never created its workspace; the restart was not driven"
 else
   say "-- restarting the API inside the host --"
-  # Exact name, not a pattern: `-f` would match this very command's own text
-  # inside the container and take the rest of the script down with it.
-  docker exec "$NAME" bash -lc 'pkill -x bun || true' >/dev/null 2>&1 || true
+  # Exactly the API, by the pid it wrote at start-up: `pkill -x bun` would also
+  # kill the forwarder that holds the published port open, which turns every
+  # later request into a 502 from the tunnel.
+  docker exec "$NAME" bash -lc 'kill "$(cat /tmp/rc066-api.pid)" || true' >/dev/null 2>&1 || true
   sleep 3
   # Only the API restarts; the forwarder on 3000 keeps the published port open,
   # which is what the runner's pooled proxy needs.
-  docker exec -d "$NAME" bash -lc "cd /workspace && DISPLAY=:99 API_PORT=3001 \
+  docker exec -d "$NAME" bash -lc "echo \$\$ > /tmp/rc066-api.pid; exec env DISPLAY=:99 API_PORT=3001 \
     DATABASE_PATH=/var/lib/remotecode/rc054.sqlite REMOTECODE_AUTH_PASSWORD='$PASSWORD' \
     REMOTECODE_WEB_ORIGIN='$WEB_ORIGIN' REMOTECODE_TLS_CERT=/proof-cert.pem \
     REMOTECODE_TLS_KEY=/proof-key.pem $EXTRA_ENV bun apps/api/src/index.ts \

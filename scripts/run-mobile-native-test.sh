@@ -944,6 +944,16 @@ if sys.argv[15] == "1":
     # own state is read there, not from a local database.
     print(json.dumps({"takeover": "audited on the host by scripts/rc057/run-mobile-takeover-proof.sh"}))
     sys.exit(0)
+if sys.argv[16] == "1":
+    # The routines journey seeds exactly one routine for its Bot on the host the
+    # harness started, and the app is not allowed to invent another one.
+    routines = sqlite3.connect(sys.argv[1]).execute(
+        "SELECT local_time, timezone, enabled FROM schedules WHERE kind = 'routine'"
+    ).fetchall()
+    if len(routines) != 1:
+        raise SystemExit(f"Expected exactly one routine on the host, observed: {routines!r}")
+    print(json.dumps({"routines": routines, "sessions": session_count}, indent=2))
+    sys.exit(0)
 if sys.argv[14] == "1":
     # The navigation journey makes exactly the two actions it asserts on: one
     # through the app's own control and one outside it.
