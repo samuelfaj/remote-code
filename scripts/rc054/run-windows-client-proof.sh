@@ -17,6 +17,8 @@ OUT="${1:-$ROOT/scratch/rc054-windows}"
 BACKEND="${RC054_BACKEND_ORIGIN:?set RC054_BACKEND_ORIGIN to the Linux host's HTTPS origin}"
 : "${RC054_AUTH_PASSWORD:?set RC054_AUTH_PASSWORD to the Linux host's passphrase}"
 ENGINE="${RC054_BROWSER:-chromium}"
+# RC-066 reuses this leg for other journeys; the default is RC-054's own.
+SPEC="${RC054_SPEC:-apps/web/e2e/macos-linux-client.spec.ts}"
 WEB_PORT="${RC054_WEB_PORT:-37124}"
 
 mkdir -p "$OUT"
@@ -42,13 +44,13 @@ done
 curl -s --fail "http://127.0.0.1:${WEB_PORT}/" >/dev/null
 say "web ready on 127.0.0.1:${WEB_PORT} (it only forwards; the API is the Linux host's)"
 
-say "-- the journey on $ENGINE, on Windows --"
+say "-- the journey $SPEC on $ENGINE, on Windows --"
 STATUS=0
 set +e
 RC054_LINUX_HOST=1 RC054_BROWSER="$ENGINE" \
 RC003_WEB_URL="http://127.0.0.1:${WEB_PORT}" RC003_API_URL="http://127.0.0.1:${WEB_PORT}" \
-RC003_AUTH_PASSWORD="$RC054_AUTH_PASSWORD" \
-bun run test:e2e -- "apps/web/e2e/macos-linux-client.spec.ts" 2>&1 | tee -a "$OUT/proof.log" | tail -15
+RC003_AUTH_PASSWORD="$RC054_AUTH_PASSWORD" RC051_STUB_AGENT="${RC051_STUB_AGENT:-0}" \
+bun run test:e2e -- "$SPEC" 2>&1 | tee -a "$OUT/proof.log" | tail -15
 STATUS=${PIPESTATUS[0]}
 set -e
 say "$ENGINE spec exit status: $STATUS"

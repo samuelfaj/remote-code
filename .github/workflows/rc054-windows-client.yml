@@ -15,6 +15,16 @@ on:
       backend_origin:
         description: HTTPS origin of the Linux RemoteCode host, e.g. https://34.1.2.3:8443
         required: true
+      spec:
+        description: Playwright spec to drive from the Windows browser
+        required: false
+        type: string
+        default: apps/web/e2e/macos-linux-client.spec.ts
+      stub_agent:
+        description: Set to 1 when the host runs the runs stub agent (RC-051's journeys)
+        required: false
+        type: string
+        default: "0"
       browser:
         description: Chromium engine to run the journey on
         required: false
@@ -50,6 +60,8 @@ jobs:
           RC054_BACKEND_ORIGIN: ${{ inputs.backend_origin || vars.RC054_BACKEND_ORIGIN }}
           RC054_AUTH_PASSWORD: ${{ secrets.RC054_AUTH_PASSWORD }}
           RC054_BROWSER: ${{ inputs.browser || 'chromium' }}
+          RC054_SPEC: ${{ inputs.spec || vars.RC054_SPEC || 'apps/web/e2e/macos-linux-client.spec.ts' }}
+          RC051_STUB_AGENT: ${{ inputs.stub_agent || vars.RC051_STUB_AGENT || '0' }}
         run: bash scripts/rc054/run-windows-client-proof.sh "$GITHUB_WORKSPACE/proof-rc054-windows"
 
       - name: Keep the transcript, the Vite log and the result

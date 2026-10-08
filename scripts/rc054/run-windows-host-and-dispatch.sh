@@ -57,10 +57,18 @@ docker run -d --name "$NAME" -p "127.0.0.1:${API_PORT}:3000" -v "$DATA_VOLUME:/v
 docker cp "$OUT/cert.pem" "$NAME:/proof-cert.pem"
 docker cp "$OUT/key.pem" "$NAME:/proof-key.pem"
 docker exec "$NAME" bash -lc 'chmod 600 /proof-key.pem'
+# `panel` mode is for RC-066's other journeys: they need a host whose agent
+# really asks, which is the repository's own ACP stub (scripts/rc051).
+EXTRA_ENV=""
+if [[ "${RC054_HOST_MODE:-journey}" == "panel" ]]; then
+  docker exec "$NAME" bash -lc 'printf "#!/bin/bash\nsleep 3\nexec bun /workspace/apps/api/src/features/runs-stub-agent.mjs \"\$@\"\n" > /usr/local/bin/rc051-agent && chmod 0755 /usr/local/bin/rc051-agent'
+  EXTRA_ENV="REMOTECODE_DISTILL_BIN=/usr/local/bin/rc051-agent"
+  say "-- the host runs the repository's runs stub as its agent --"
+fi
 docker exec -d "$NAME" bash -lc "cd /workspace && DISPLAY=:99 API_PORT=3000 \
   DATABASE_PATH=/var/lib/remotecode/rc054.sqlite REMOTECODE_AUTH_PASSWORD='$PASSWORD' \
   REMOTECODE_WEB_ORIGIN='$WEB_ORIGIN' REMOTECODE_TLS_CERT=/proof-cert.pem \
-  REMOTECODE_TLS_KEY=/proof-key.pem bun apps/api/src/index.ts \
+  REMOTECODE_TLS_KEY=/proof-key.pem $EXTRA_ENV bun apps/api/src/index.ts \
   > /var/log/rc054-api.log 2>&1"
 
 for _ in $(seq 1 60); do
@@ -108,6 +116,8 @@ printf '%s' "$PASSWORD" | gh secret set RC054_AUTH_PASSWORD --repo "$REPO"
 # below, so the next ordinary push runs nothing.
 say "-- arming the Windows job on branch ${BRANCH} --"
 gh variable set RC054_BACKEND_ORIGIN --repo "$REPO" --body "$TUNNEL"
+gh variable set RC054_SPEC --repo "$REPO" --body "${RC054_SPEC:-apps/web/e2e/macos-linux-client.spec.ts}"
+gh variable set RC051_STUB_AGENT --repo "$REPO" --body "$([[ "${RC054_HOST_MODE:-journey}" == "panel" ]] && echo 1 || echo 0)"
 # The push that arms the job also fires the other runs on this branch, so the
 # run this script waits for is the one created after this moment, not simply
 # the newest by name.
@@ -125,6 +135,8 @@ for _ in $(seq 1 40); do
 done
 if [[ -z "$RUN_ID" || "$RUN_ID" == "null" ]]; then
   gh variable delete RC054_BACKEND_ORIGIN --repo "$REPO" >/dev/null 2>&1 || true
+gh variable delete RC054_SPEC --repo "$REPO" >/dev/null 2>&1 || true
+gh variable delete RC051_STUB_AGENT --repo "$REPO" >/dev/null 2>&1 || true
   say "FAIL the push never produced a windows-client run"
   exit 1
 fi
@@ -135,6 +147,8 @@ gh run watch "$RUN_ID" --repo "$REPO" --exit-status >/dev/null 2>&1 || STATUS=1
 # Only now: a job decides its own gate when it starts, so clearing the origin
 # earlier would skip the run this script just armed.
 gh variable delete RC054_BACKEND_ORIGIN --repo "$REPO" >/dev/null 2>&1 || true
+gh variable delete RC054_SPEC --repo "$REPO" >/dev/null 2>&1 || true
+gh variable delete RC051_STUB_AGENT --repo "$REPO" >/dev/null 2>&1 || true
 say "run outcome: $(gh run view "$RUN_ID" --repo "$REPO" --json conclusion --jq .conclusion)"
 gh run view "$RUN_ID" --repo "$REPO" --log > "$OUT/windows-job.log" 2>&1 || true
 gh run download "$RUN_ID" --repo "$REPO" -n rc054-windows-evidence -D "$OUT/evidence" 2>/dev/null || true
