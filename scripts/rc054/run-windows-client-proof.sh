@@ -31,7 +31,7 @@ curl -sk --fail "$BACKEND/api/health/ready" | tee -a "$OUT/proof.log"
 printf '\n'
 
 say "-- this Windows machine serves the web app in front of the Linux host --"
-REMOTECODE_WEB_PROXY_TARGET="$BACKEND" WEB_PORT="$WEB_PORT" \
+REMOTECODE_WEB_PROXY_TARGET="$BACKEND" REMOTECODE_WEB_PROXY_CHANGE_ORIGIN=1 WEB_PORT="$WEB_PORT" \
   bunx vite --config "$ROOT/apps/web/vite.config.ts" --host 127.0.0.1 --port "$WEB_PORT" \
   > "$OUT/vite.log" 2>&1 &
 WEB_PID=$!

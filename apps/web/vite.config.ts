@@ -47,6 +47,9 @@ export default defineConfig({
         target: process.env.REMOTECODE_WEB_PROXY_TARGET ?? `http://127.0.0.1:${process.env.API_PORT ?? 3000}`,
         ws: true,
         secure: false,
+        // An origin reached through a tunnel routes by the Host it is asked for
+        // and refuses the browser's own: RC-054's Windows leg sets this.
+        changeOrigin: process.env.REMOTECODE_WEB_PROXY_CHANGE_ORIGIN === "1",
       },
     },
   },
