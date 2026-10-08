@@ -164,7 +164,9 @@ if [[ "$SEEN" != "1" ]]; then
   say "FAIL: the Windows runner never created its workspace; the restart was not driven"
 else
   say "-- restarting the API inside the host --"
-  docker exec "$NAME" bash -lc "pkill -f 'apps/api/src/index.ts' || true"
+  # Exact name, not a pattern: `-f` would match this very command's own text
+  # inside the container and take the rest of the script down with it.
+  docker exec "$NAME" bash -lc 'pkill -x bun || true' >/dev/null 2>&1 || true
   sleep 3
   docker exec -d "$NAME" bash -lc "cd /workspace && DISPLAY=:99 API_PORT=3000 \
     DATABASE_PATH=/var/lib/remotecode/rc054.sqlite REMOTECODE_AUTH_PASSWORD='$PASSWORD' \
