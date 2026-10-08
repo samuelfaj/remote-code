@@ -11,7 +11,9 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
 OUT="${1:-$ROOT/scratch/rc067-windows}"
-case "$OUT" in /*) ;; *) echo "output dir must be absolute" >&2; exit 2 ;; esac
+# Git Bash on a Windows runner hands over a drive path such as D:\a\... , so
+# both the POSIX and the Windows form count as absolute here.
+case "$OUT" in /*|[A-Za-z]:*) ;; *) echo "output dir must be absolute" >&2; exit 2 ;; esac
 mkdir -p "$OUT"
 
 CONTROL_ORIGIN="${RC067_CONTROL_ORIGIN:?set RC067_CONTROL_ORIGIN to the control plane's HTTPS origin}"
