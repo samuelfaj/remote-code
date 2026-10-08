@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Legacy RemoteCode client</title>
+  </head>
+  <body>
+    <main>
+      <h1>Legacy RemoteCode client</h1>
+      <label for="passphrase">Host passphrase</label>
+      <input id="passphrase" type="password" />
+      <button id="sign-in">Sign in</button>
+      <p id="status">Signed out</p>
+      <p id="error" role="alert"></p>
+      <label for="action">Action description</label>
+      <input id="action" value="Legacy client action" />
+      <button id="write" disabled>Write backend receipt</button>
+      <output id="receipt"></output>
+    </main>
+    <script type="module" src="./legacy-client-entry.ts"></script>
+  </body>
+</html>

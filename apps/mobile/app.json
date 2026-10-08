@@ -1,0 +1,16 @@
+{
+  "expo": {
+    "name": "RemoteCode Mobile Proof",
+    "slug": "remotecode-mobile-proof",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "plugins": ["./plugins/withNativeUITests.cjs"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.remotecode.mobileproof"
+    },
+    "android": {
+      "package": "com.remotecode.mobileproof"
+    }
+  }
+}

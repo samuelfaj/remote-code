@@ -1,0 +1,892 @@
+{
+  "schema_version": 2,
+  "profile": "full",
+  "status": "REVISE",
+  "packet_path": "/Users/samuelfajreldines/dev/new-remote-code/plan/council/rc011-routing/packet.md",
+  "packet_head": "9f011c1b74e253c5f20f033b91f4e52cd28bfb70",
+  "packet_scope": "FULL",
+  "execution_policy": {
+    "default_round_limit": 1,
+    "hard_round_limit": 3,
+    "continuation_authorized": false,
+    "max_objections_per_reviewer": 3,
+    "max_response_words": 1000,
+    "packet_strategy": "RELEVANT_ONLY",
+    "parallelism": "MAX_AVAILABLE",
+    "initial_effort": "medium",
+    "arbiter_effort": "high"
+  },
+  "thesis": {
+    "id": "T-002",
+    "objective": "Determine and implement a secure managed-account gateway routing prerequisite for RC-011 without changing its acceptance criteria.",
+    "problem_frame": "The current Elysia API uses one local cookie identity and Compose has one service; there is no account-to-container routing or gateway.",
+    "scope": [
+      "Preconfigured two-account local proof gateway and isolated tenant APIs.",
+      "Server-bound sessions and tenant identity assertion across HTTP and WebSocket.",
+      "Executable isolation, failure, and browser proof before any RC-011 acceptance."
+    ],
+    "constraints": [
+      "Do not trust client routing identity.",
+      "Preserve standalone local auth in explicit standalone mode; managed mode accepts only gateway assertions.",
+      "Keep gateway secrets outside tenants and agent/terminal environments.",
+      "Do not deploy, change credentials, or touch RC-002.",
+      "Preserve RC-011 original acceptance and failure conditions."
+    ],
+    "alternatives": [
+      "Client-selected host/account routing: rejected.",
+      "Shared tenant network or Docker socket: rejected.",
+      "Mock-only routing: rejected.",
+      "Gateway with fixed tenant mapping, tenant-specific assertion audiences, and isolated local proof networks: selected provisionally."
+    ],
+    "steps": [
+      "Specify audience, auth mode, assertion transport, deadlines, socket revocation, user-visible failure, fixture cleanup, and telemetry contracts.",
+      "Implement gateway and tenant verifier only after the design gate is authorized and closed.",
+      "Prove two-account API and WebSocket routing and direct-port denial in isolated fixture."
+    ],
+    "success_criteria": [
+      "Accounts A/B route only to their configured tenant.",
+      "Cross-tenant assertion and data access fail.",
+      "Internal ports are inaccessible from the relevant untrusted tenant/account networks.",
+      "Logout and expiry reject stale cookies and close proxied sockets.",
+      "Unavailable/stalled targets complete within a measurable bound and cancel upstream work."
+    ],
+    "test_strategy": [
+      "Unit: signed assertion signature/expiry/audience/mode validation.",
+      "Integration: real gateway and Elysia APIs for HTTP, WebSocket, revocation, timeout and cleanup.",
+      "E2E: Chromium A/B login, route/data isolation, logout/reload/error path.",
+      "Docker fixture verifies healthy control reachability before negative network tests and scoped cleanup."
+    ],
+    "rollout": [
+      "Optional local proof Compose project only; preserve current default development Compose."
+    ],
+    "rollback": [
+      "Remove optional fixture/gateway and retain standalone API mode; no migration planned."
+    ],
+    "observability": [
+      "Structured redacted outcome with correlation ID, dependency category, status class and elapsed time; omit credentials, cookies, assertions, keys, hashes, and bodies."
+    ],
+    "residual_risks": [
+      "Privileged Docker host is outside tenant network isolation.",
+      "Gateway compromise remains a multi-tenant trust risk.",
+      "RC-015 process isolation is distinct and RC-002 remains unknown.",
+      "Static mapping may not satisfy managed provisioning lifecycle."
+    ],
+    "recheck_triggers": [
+      "Any requirement for dynamic provisioning or host-level isolation.",
+      "Changes to API auth/WebSocket, tenant topology, gateway replicas, or session storage.",
+      "Measured proxy deadline, socket closure, or resource cleanup outside explicit bounds."
+    ],
+    "assumptions": [
+      {
+        "id": "A-001",
+        "claim": "Preconfigured account-to-service entries satisfy the initial RC-011 proof scope.",
+        "state": "EXPERIMENT_PLANNED",
+        "experiment": "Compare full task language and prove two independent accounts route correctly.",
+        "owner": "implementation agent",
+        "pass_threshold": "No dynamic provisioning requirement exists and both configured accounts satisfy original proof.",
+        "evidence_ids": []
+      },
+      {
+        "id": "A-002",
+        "claim": "Isolated Compose networks without a Docker socket block tenant-to-tenant direct access.",
+        "state": "EXPERIMENT_PLANNED",
+        "experiment": "Verify membership, published ports, healthy control reachability, and bounded cross-tenant denial.",
+        "owner": "implementation agent",
+        "pass_threshold": "Only gateway reaches both tenant services; tenant A cannot reach B.",
+        "evidence_ids": []
+      },
+      {
+        "id": "A-003",
+        "claim": "Tenant-specific audience assertions can authorize HTTP and WebSocket without sharing signing authority.",
+        "state": "EXPERIMENT_PLANNED",
+        "experiment": "Test real verifier, expiry, signature, audience, HTTP and browser WebSocket.",
+        "owner": "implementation agent",
+        "pass_threshold": "A assertion accepted only by A; absent or invalid assertion fails closed.",
+        "evidence_ids": []
+      },
+      {
+        "id": "A-004",
+        "claim": "RC-011 does not require process isolation from Distill beyond not injecting gateway routing credentials into its environment.",
+        "state": "UNRESOLVED",
+        "evidence_ids": [],
+        "experiment": "Compare RC-011 direct-port/token language with RC-015 and inspect actual host/tenant threat boundary.",
+        "owner": "goal owner",
+        "pass_threshold": "Task contract and executable test prove no gateway routing token reaches agent/terminal and internal ports cannot be reached by account A."
+      }
+    ]
+  },
+  "evidence": [
+    {
+      "id": "E-001",
+      "kind": "task-contract",
+      "claim": "RC-011 Start, delivery, executable proof, failure-if and dependency are defined in plan/tasks.html#rc-011.",
+      "locator": "plan/tasks.html#rc-011"
+    },
+    {
+      "id": "E-002",
+      "kind": "task-contract",
+      "claim": "RC-011 depends on RC-010.",
+      "locator": "plan/tasks.html#rc-011"
+    },
+    {
+      "id": "E-003",
+      "kind": "source",
+      "claim": "Current auth uses one local cookie-session identity.",
+      "locator": "apps/api/src/features/auth.ts"
+    },
+    {
+      "id": "E-004",
+      "kind": "source",
+      "claim": "API composes current auth/actions/storage and action WebSocket routes authenticate via local session.",
+      "locator": "apps/api/src/app.ts; apps/api/src/features/actions.ts"
+    },
+    {
+      "id": "E-005",
+      "kind": "source",
+      "claim": "Current Compose has one service and published loopback ports.",
+      "locator": "prototype/compose.yaml"
+    },
+    {
+      "id": "E-006",
+      "kind": "source",
+      "claim": "Prototype starts API, web and Distill together and shares startup environment.",
+      "locator": "prototype/Dockerfile; prototype/start.sh"
+    },
+    {
+      "id": "E-007",
+      "kind": "plan",
+      "claim": "Product plan identifies account gateway and backend/agent separation.",
+      "locator": "plan/index.html#funciona"
+    },
+    {
+      "id": "E-008",
+      "kind": "runtime",
+      "claim": "Docker Engine is available as Linux arm64, client/server 29.4.0.",
+      "locator": "Frozen packet E-008; prior verified output"
+    },
+    {
+      "id": "E-009",
+      "kind": "git",
+      "claim": "Repository branch is at 9f011c1b74e253c5f20f033b91f4e52cd28bfb70 with pre-existing untracked pycache.",
+      "locator": "Frozen packet E-009"
+    },
+    {
+      "id": "E-010",
+      "kind": "tool-limit",
+      "claim": "Council telemetry begin command failed with unknown subcommand; no further telemetry brackets used.",
+      "locator": "Frozen packet E-010"
+    },
+    {
+      "id": "E-011",
+      "kind": "review",
+      "claim": "Six blind specialist reviews returned material objections to T-001.",
+      "locator": "Native task IDs in verification.md"
+    },
+    {
+      "id": "E-012",
+      "kind": "review",
+      "claim": "Three fresh independent verifiers returned REVISE for T-002 and identified unresolved isolation/bounds risks.",
+      "locator": "Native task IDs 01a0dd54-6130-7721-98b6-355f5f0f9d26; 01a0dd54-6130-7721-98b6-3563b9282011; 01a0dd54-6130-7721-98b6-3571e0dae065"
+    }
+  ],
+  "independence": {
+    "mode": "single-host",
+    "providers": [
+      "openai"
+    ],
+    "provider_runtimes": {
+      "openai": {
+        "adapter": "native-subagent",
+        "model": "host-default",
+        "reviewer_effort": "host-default",
+        "arbiter_effort": "host-default",
+        "max_parallel_workers": 6
+      }
+    },
+    "blind_first_pass": true,
+    "reviewers_saw_peer_reviews_before_submission": false,
+    "reviewer_ids": [
+      "logic",
+      "assumptions",
+      "execution",
+      "adversarial",
+      "alternatives",
+      "problem-frame",
+      "security-privacy",
+      "reliability-performance",
+      "api-compatibility",
+      "testability-release",
+      "operations-observability",
+      "product-ux"
+    ],
+    "verifier_ids": [
+      "fresh-closure-verifier",
+      "rc011-system-verifier",
+      "fresh-arbiter-rc011"
+    ],
+    "conditional_seat_selection": {
+      "security-privacy": "SELECTED: Tenant assertions and routing secrets create a security trust boundary.",
+      "reliability-performance": "SELECTED: Bounded Docker and proxy failure are explicit acceptance conditions.",
+      "api-compatibility": "SELECTED: The design changes HTTP and WebSocket identity contracts.",
+      "testability-release": "SELECTED: Two-tenant network proof and fixture lifecycle are acceptance-critical.",
+      "operations-observability": "SELECTED: Docker/tenant failure needs safe attribution without secret leakage.",
+      "product-ux": "SELECTED: Login, logout, expiry and failure recovery affect user-visible behavior.",
+      "data-migration": "NOT_APPLICABLE: No migration is proposed.",
+      "cost-dependency": "NOT_APPLICABLE: No paid external dependency proposed.",
+      "compliance-governance": "NOT_APPLICABLE: Local prototype only; access control covered by security review."
+    },
+    "batch_plan": [
+      {
+        "round": 1,
+        "phase": "blind",
+        "provider": "openai",
+        "seat_ids": [
+          "logic",
+          "assumptions",
+          "execution",
+          "adversarial",
+          "alternatives",
+          "problem-frame"
+        ]
+      },
+      {
+        "round": 1,
+        "phase": "blind",
+        "provider": "openai",
+        "seat_ids": [
+          "security-privacy",
+          "reliability-performance",
+          "api-compatibility",
+          "testability-release",
+          "operations-observability",
+          "product-ux"
+        ]
+      },
+      {
+        "round": 1,
+        "phase": "verification",
+        "provider": "openai",
+        "seat_ids": [
+          "fresh-closure-verifier",
+          "rc011-system-verifier",
+          "fresh-arbiter-rc011"
+        ]
+      }
+    ],
+    "conflicts": []
+  },
+  "confrontation": null,
+  "rounds": [
+    {
+      "number": 1,
+      "input_thesis_id": "T-001",
+      "output_thesis_id": "T-002",
+      "reviewer_ids": [
+        "logic",
+        "assumptions",
+        "execution",
+        "adversarial",
+        "alternatives",
+        "problem-frame",
+        "security-privacy",
+        "reliability-performance",
+        "api-compatibility",
+        "testability-release",
+        "operations-observability",
+        "product-ux"
+      ],
+      "reviewer_results": [
+        {
+          "reviewer_id": "logic",
+          "provider": "openai",
+          "verdict": "NO_MATERIAL_OBJECTION",
+          "search_summary": "Reviewed thesis, constraints, proof gates and evidence index; concern remains whether static mapping fits full task language.",
+          "disconfirming_evidence": "Explicitly marks A-004 unresolved and preserves original RC-011 criteria.",
+          "residual_uncertainty": "No implementation or runtime evidence; full acceptance remains to be proven."
+        },
+        {
+          "reviewer_id": "assumptions",
+          "provider": "openai",
+          "verdict": "OBJECTIONS",
+          "search_summary": "Static mapping may not fit lifecycle; assertion audience and network assumptions need real validation.",
+          "disconfirming_evidence": "Planned tests could settle it but are not evidence.",
+          "residual_uncertainty": "No implementation or runtime evidence; full acceptance remains to be proven."
+        },
+        {
+          "reviewer_id": "execution",
+          "provider": "openai",
+          "verdict": "OBJECTIONS",
+          "search_summary": "Network fixture, assertion acceptance and WebSocket logout need executable proof.",
+          "disconfirming_evidence": "Packet includes the relevant checks, but no run evidence.",
+          "residual_uncertainty": "No implementation or runtime evidence; full acceptance remains to be proven."
+        },
+        {
+          "reviewer_id": "adversarial",
+          "provider": "openai",
+          "verdict": "OBJECTIONS",
+          "search_summary": "Audience configuration, gateway-mediated cross-tenant access and logout socket lifecycle are under-specified.",
+          "disconfirming_evidence": "Server binding and isolated networks are sound constraints but not enforced yet.",
+          "residual_uncertainty": "No implementation or runtime evidence; full acceptance remains to be proven."
+        },
+        {
+          "reviewer_id": "alternatives",
+          "provider": "openai",
+          "verdict": "NO_MATERIAL_OBJECTION",
+          "search_summary": "Selected mapping and isolated networks are testable versus rejected insecure alternatives.",
+          "disconfirming_evidence": "Two-account and network proofs may falsify design.",
+          "residual_uncertainty": "No implementation or runtime evidence; full acceptance remains to be proven."
+        },
+        {
+          "reviewer_id": "problem-frame",
+          "provider": "openai",
+          "verdict": "OBJECTIONS",
+          "search_summary": "Potential blocker: task may require lifecycle or stronger isolation; real tenant API trust boundary is unproven.",
+          "disconfirming_evidence": "Packet identifies original criteria and treats risks as open, but does not reproduce full text.",
+          "residual_uncertainty": "No implementation or runtime evidence; full acceptance remains to be proven."
+        },
+        {
+          "reviewer_id": "security-privacy",
+          "provider": "openai",
+          "verdict": "OBJECTIONS",
+          "search_summary": "Account binding, audience validation, revocation and direct-port threat boundary reviewed.",
+          "disconfirming_evidence": "Relevant constraints exist; proposed enforcement and host boundary remain unproven.",
+          "residual_uncertainty": "Review is limited to frozen design packet."
+        },
+        {
+          "reviewer_id": "reliability-performance",
+          "provider": "openai",
+          "verdict": "OBJECTIONS",
+          "search_summary": "Proxy deadlines, cancellation and WebSocket lifetime reviewed.",
+          "disconfirming_evidence": "Bounded errors are specified abstractly but no concrete timeout or resource proof exists.",
+          "residual_uncertainty": "Review is limited to frozen design packet."
+        },
+        {
+          "reviewer_id": "api-compatibility",
+          "provider": "openai",
+          "verdict": "OBJECTIONS",
+          "search_summary": "HTTP/WebSocket assertion transport and auth-mode compatibility reviewed.",
+          "disconfirming_evidence": "Fail-closed constraints exist but transport/mode details are absent from T-001.",
+          "residual_uncertainty": "Review is limited to frozen design packet."
+        },
+        {
+          "reviewer_id": "testability-release",
+          "provider": "openai",
+          "verdict": "OBJECTIONS",
+          "search_summary": "Two-container proof, negative connectivity controls and fixture lifecycle reviewed.",
+          "disconfirming_evidence": "Proof intent exists; interruption-safe cleanup/control reachability are unspecified.",
+          "residual_uncertainty": "Review is limited to frozen design packet."
+        },
+        {
+          "reviewer_id": "operations-observability",
+          "provider": "openai",
+          "verdict": "OBJECTIONS",
+          "search_summary": "Safe attribution of dependency failures reviewed.",
+          "disconfirming_evidence": "Redaction intent exists but no event schema or operational evidence.",
+          "residual_uncertainty": "Review is limited to frozen design packet."
+        },
+        {
+          "reviewer_id": "product-ux",
+          "provider": "openai",
+          "verdict": "OBJECTIONS",
+          "search_summary": "Login, expiry, logout, outage and recovery path reviewed.",
+          "disconfirming_evidence": "General proof is planned but distinct user-visible outcomes are unspecified.",
+          "residual_uncertainty": "Review is limited to frozen design packet."
+        }
+      ],
+      "objections": [
+        {
+          "id": "O-R1-001",
+          "reviewer_id": "security-privacy",
+          "supporting_reviewer_ids": [
+            "security-privacy"
+          ],
+          "claim": "The audience must be unique per tenant and enforced by fixed verifier configuration.",
+          "failure_mode": "Cross-tenant assertion replay may authorize the wrong host.",
+          "severity": "HIGH",
+          "confidence": 82,
+          "premise_ids": [
+            "A-003"
+          ],
+          "evidence_ids": [
+            "E-003",
+            "E-004"
+          ],
+          "required_proof": "Show A assertion succeeds only at A; tamper route headers and paths.",
+          "smallest_correction": "Fix immutable audience per host.",
+          "status": "OPEN",
+          "author_response": {
+            "disposition": "ACCEPT",
+            "rationale": "Addressed in revised design T-002; not validated in implementation.",
+            "evidence_ids": [
+              "E-011",
+              "E-012"
+            ],
+            "change": "See revised thesis T-002 in plan/council/rc011-routing/verification.md.",
+            "validation": "Executable verification is still required; fresh panel returned REVISE.",
+            "residual_risk": "Not resolved as product behavior; keep RC-011 unaccepted."
+          }
+        },
+        {
+          "id": "O-R1-002",
+          "reviewer_id": "security-privacy",
+          "supporting_reviewer_ids": [
+            "security-privacy"
+          ],
+          "claim": "Logout must revoke sessions and close tracked upgraded sockets within a bound.",
+          "failure_mode": "A stale WebSocket may keep delivering tenant data after logout.",
+          "severity": "HIGH",
+          "confidence": 78,
+          "premise_ids": [],
+          "evidence_ids": [
+            "E-001"
+          ],
+          "required_proof": "Logout with real socket; prove stale cookie rejection and no post-logout event.",
+          "smallest_correction": "Track sockets and close on revoke.",
+          "status": "OPEN",
+          "author_response": {
+            "disposition": "ACCEPT",
+            "rationale": "Addressed in revised design T-002; not validated in implementation.",
+            "evidence_ids": [
+              "E-011",
+              "E-012"
+            ],
+            "change": "See revised thesis T-002 in plan/council/rc011-routing/verification.md.",
+            "validation": "Executable verification is still required; fresh panel returned REVISE.",
+            "residual_risk": "Not resolved as product behavior; keep RC-011 unaccepted."
+          }
+        },
+        {
+          "id": "O-R1-003",
+          "reviewer_id": "adversarial",
+          "supporting_reviewer_ids": [
+            "adversarial",
+            "security-privacy"
+          ],
+          "claim": "The Compose network does not establish host-level port isolation.",
+          "failure_mode": "Host workloads may still reach unpublished tenant services.",
+          "severity": "MEDIUM",
+          "confidence": 73,
+          "premise_ids": [
+            "A-002"
+          ],
+          "evidence_ids": [
+            "E-008"
+          ],
+          "required_proof": "Test Docker host and non-gateway peer; establish actual threat boundary.",
+          "smallest_correction": "Limit claim to tenant networks or prove host controls.",
+          "status": "OPEN",
+          "author_response": {
+            "disposition": "PARTIAL",
+            "rationale": "Claim narrowed, but direct-port and host-boundary proof is explicitly still open.",
+            "evidence_ids": [
+              "E-011",
+              "E-012"
+            ],
+            "change": "See revised thesis T-002 in plan/council/rc011-routing/verification.md.",
+            "validation": "Executable verification is still required; fresh panel returned REVISE.",
+            "residual_risk": "Not resolved as product behavior; keep RC-011 unaccepted."
+          }
+        },
+        {
+          "id": "O-R1-004",
+          "reviewer_id": "reliability-performance",
+          "supporting_reviewer_ids": [
+            "reliability-performance"
+          ],
+          "claim": "A timeout may not cancel stalled upstream work or release resources.",
+          "failure_mode": "Concurrent stalled requests exhaust gateway.",
+          "severity": "HIGH",
+          "confidence": 87,
+          "premise_ids": [
+            "A-002"
+          ],
+          "evidence_ids": [
+            "E-008"
+          ],
+          "required_proof": "Measure deadline, cancellation and cleanup with refused/stalled/concurrent requests.",
+          "smallest_correction": "Specify deadline, abort and bounded bodies/concurrency.",
+          "status": "OPEN",
+          "author_response": {
+            "disposition": "ACCEPT",
+            "rationale": "Addressed in revised design T-002; not validated in implementation.",
+            "evidence_ids": [
+              "E-011",
+              "E-012"
+            ],
+            "change": "See revised thesis T-002 in plan/council/rc011-routing/verification.md.",
+            "validation": "Executable verification is still required; fresh panel returned REVISE.",
+            "residual_risk": "Not resolved as product behavior; keep RC-011 unaccepted."
+          }
+        },
+        {
+          "id": "O-R1-005",
+          "reviewer_id": "reliability-performance",
+          "supporting_reviewer_ids": [
+            "reliability-performance"
+          ],
+          "claim": "WebSocket target loss/revocation lacks a defined close bound.",
+          "failure_mode": "Sockets wait indefinitely or remain authorized.",
+          "severity": "HIGH",
+          "confidence": 82,
+          "premise_ids": [
+            "A-002",
+            "A-003"
+          ],
+          "evidence_ids": [
+            "E-003",
+            "E-004"
+          ],
+          "required_proof": "Test tenant loss, stalls, expiry/logout, concurrent sockets.",
+          "smallest_correction": "Define close and revocation semantics.",
+          "status": "OPEN",
+          "author_response": {
+            "disposition": "ACCEPT",
+            "rationale": "Addressed in revised design T-002; not validated in implementation.",
+            "evidence_ids": [
+              "E-011",
+              "E-012"
+            ],
+            "change": "See revised thesis T-002 in plan/council/rc011-routing/verification.md.",
+            "validation": "Executable verification is still required; fresh panel returned REVISE.",
+            "residual_risk": "Not resolved as product behavior; keep RC-011 unaccepted."
+          }
+        },
+        {
+          "id": "O-R1-006",
+          "reviewer_id": "api-compatibility",
+          "supporting_reviewer_ids": [
+            "api-compatibility"
+          ],
+          "claim": "Assertion transport for browser WebSocket is unspecified.",
+          "failure_mode": "HTTP auth works but browser socket lacks tenant identity.",
+          "severity": "HIGH",
+          "confidence": 90,
+          "premise_ids": [
+            "A-003"
+          ],
+          "evidence_ids": [
+            "E-003",
+            "E-004"
+          ],
+          "required_proof": "Browser-originated socket through gateway and real tenant verifier.",
+          "smallest_correction": "Inject internal assertion after gateway validates cookie.",
+          "status": "OPEN",
+          "author_response": {
+            "disposition": "ACCEPT",
+            "rationale": "Addressed in revised design T-002; not validated in implementation.",
+            "evidence_ids": [
+              "E-011",
+              "E-012"
+            ],
+            "change": "See revised thesis T-002 in plan/council/rc011-routing/verification.md.",
+            "validation": "Executable verification is still required; fresh panel returned REVISE.",
+            "residual_risk": "Not resolved as product behavior; keep RC-011 unaccepted."
+          }
+        },
+        {
+          "id": "O-R1-007",
+          "reviewer_id": "api-compatibility",
+          "supporting_reviewer_ids": [
+            "api-compatibility"
+          ],
+          "claim": "Local and managed auth modes may fall back ambiguously.",
+          "failure_mode": "Managed tenant may accept local identity or standalone flow breaks.",
+          "severity": "HIGH",
+          "confidence": 84,
+          "premise_ids": [
+            "A-003"
+          ],
+          "evidence_ids": [
+            "E-003",
+            "E-004"
+          ],
+          "required_proof": "Test standalone and managed with missing/tampered/expired/wrong-aud assertions.",
+          "smallest_correction": "Explicit server-configured exclusive auth modes.",
+          "status": "OPEN",
+          "author_response": {
+            "disposition": "ACCEPT",
+            "rationale": "Addressed in revised design T-002; not validated in implementation.",
+            "evidence_ids": [
+              "E-011",
+              "E-012"
+            ],
+            "change": "See revised thesis T-002 in plan/council/rc011-routing/verification.md.",
+            "validation": "Executable verification is still required; fresh panel returned REVISE.",
+            "residual_risk": "Not resolved as product behavior; keep RC-011 unaccepted."
+          }
+        },
+        {
+          "id": "O-R1-008",
+          "reviewer_id": "execution",
+          "supporting_reviewer_ids": [
+            "execution",
+            "testability-release"
+          ],
+          "claim": "Interrupted fixture may leave Docker resources or contaminate default Compose.",
+          "failure_mode": "Stale containers/volumes affect unrelated local state.",
+          "severity": "HIGH",
+          "confidence": 78,
+          "premise_ids": [
+            "A-002"
+          ],
+          "evidence_ids": [
+            "E-005",
+            "E-008"
+          ],
+          "required_proof": "Interrupt and repeat fixture; inspect only owned resources.",
+          "smallest_correction": "Unique project, scoped volumes and teardown.",
+          "status": "OPEN",
+          "author_response": {
+            "disposition": "ACCEPT",
+            "rationale": "Addressed in revised design T-002; not validated in implementation.",
+            "evidence_ids": [
+              "E-011",
+              "E-012"
+            ],
+            "change": "See revised thesis T-002 in plan/council/rc011-routing/verification.md.",
+            "validation": "Executable verification is still required; fresh panel returned REVISE.",
+            "residual_risk": "Not resolved as product behavior; keep RC-011 unaccepted."
+          }
+        },
+        {
+          "id": "O-R1-009",
+          "reviewer_id": "testability-release",
+          "supporting_reviewer_ids": [
+            "testability-release"
+          ],
+          "claim": "A negative cross-network probe can pass because tenant B is unhealthy.",
+          "failure_mode": "False isolation result from wrong target or transient error.",
+          "severity": "HIGH",
+          "confidence": 83,
+          "premise_ids": [
+            "A-002"
+          ],
+          "evidence_ids": [
+            "E-008"
+          ],
+          "required_proof": "Verify B health and gateway reachability before A denial.",
+          "smallest_correction": "Add positive controls and assert network denial.",
+          "status": "OPEN",
+          "author_response": {
+            "disposition": "ACCEPT",
+            "rationale": "Addressed in revised design T-002; not validated in implementation.",
+            "evidence_ids": [
+              "E-011",
+              "E-012"
+            ],
+            "change": "See revised thesis T-002 in plan/council/rc011-routing/verification.md.",
+            "validation": "Executable verification is still required; fresh panel returned REVISE.",
+            "residual_risk": "Not resolved as product behavior; keep RC-011 unaccepted."
+          }
+        },
+        {
+          "id": "O-R1-010",
+          "reviewer_id": "operations-observability",
+          "supporting_reviewer_ids": [
+            "operations-observability"
+          ],
+          "claim": "Failure logs lack safe attribution.",
+          "failure_mode": "Operators either cannot diagnose or log sensitive values.",
+          "severity": "HIGH",
+          "confidence": 93,
+          "premise_ids": [],
+          "evidence_ids": [
+            "E-008",
+            "E-010"
+          ],
+          "required_proof": "Inspect structured outcomes on failures and scan for secrets.",
+          "smallest_correction": "Add redacted correlation/dependency/status/duration fields.",
+          "status": "OPEN",
+          "author_response": {
+            "disposition": "ACCEPT",
+            "rationale": "Addressed in revised design T-002; not validated in implementation.",
+            "evidence_ids": [
+              "E-011",
+              "E-012"
+            ],
+            "change": "See revised thesis T-002 in plan/council/rc011-routing/verification.md.",
+            "validation": "Executable verification is still required; fresh panel returned REVISE.",
+            "residual_risk": "Not resolved as product behavior; keep RC-011 unaccepted."
+          }
+        },
+        {
+          "id": "O-R1-011",
+          "reviewer_id": "product-ux",
+          "supporting_reviewer_ids": [
+            "product-ux"
+          ],
+          "claim": "Browser auth/session outcome contract is incomplete.",
+          "failure_mode": "Users cannot distinguish invalid credentials, expiry, or service outage.",
+          "severity": "HIGH",
+          "confidence": 86,
+          "premise_ids": [],
+          "evidence_ids": [
+            "E-003",
+            "E-007"
+          ],
+          "required_proof": "Browser test invalid login, expiry, logout, outage, reload, interrupted work.",
+          "smallest_correction": "Specify explicit re-auth/error state and unconfirmed operations.",
+          "status": "OPEN",
+          "author_response": {
+            "disposition": "ACCEPT",
+            "rationale": "Addressed in revised design T-002; not validated in implementation.",
+            "evidence_ids": [
+              "E-011",
+              "E-012"
+            ],
+            "change": "See revised thesis T-002 in plan/council/rc011-routing/verification.md.",
+            "validation": "Executable verification is still required; fresh panel returned REVISE.",
+            "residual_risk": "Not resolved as product behavior; keep RC-011 unaccepted."
+          }
+        },
+        {
+          "id": "O-R1-012",
+          "reviewer_id": "product-ux",
+          "supporting_reviewer_ids": [
+            "product-ux"
+          ],
+          "claim": "Logout may only clear the UI while server session/socket remains live.",
+          "failure_mode": "Old cookie or socket can continue reading data.",
+          "severity": "HIGH",
+          "confidence": 79,
+          "premise_ids": [],
+          "evidence_ids": [
+            "E-003"
+          ],
+          "required_proof": "After logout, replay cookie and check socket event/reload.",
+          "smallest_correction": "Bind logout to server revoke, socket close, and stale-cookie rejection.",
+          "status": "OPEN",
+          "author_response": {
+            "disposition": "ACCEPT",
+            "rationale": "Addressed in revised design T-002; not validated in implementation.",
+            "evidence_ids": [
+              "E-011",
+              "E-012"
+            ],
+            "change": "See revised thesis T-002 in plan/council/rc011-routing/verification.md.",
+            "validation": "Executable verification is still required; fresh panel returned REVISE.",
+            "residual_risk": "Not resolved as product behavior; keep RC-011 unaccepted."
+          }
+        },
+        {
+          "id": "O-R1-013",
+          "reviewer_id": "problem-frame",
+          "supporting_reviewer_ids": [
+            "problem-frame",
+            "assumptions"
+          ],
+          "claim": "Preconfigured account-to-service entries may not satisfy the original RC-011 routing or isolation requirements.",
+          "failure_mode": "A two-account static fixture could pass while omitting lifecycle or threat-boundary behavior required by the unchanged task.",
+          "severity": "BLOCKER",
+          "confidence": 85,
+          "premise_ids": [
+            "A-001",
+            "A-004"
+          ],
+          "evidence_ids": [
+            "E-001",
+            "E-007"
+          ],
+          "required_proof": "Map the complete task criteria to the proposed mapping and isolation scope, then prove every original condition on the real gateway/tenant path.",
+          "smallest_correction": "Do not accept RC-011 until the full original acceptance and failure clauses are demonstrated; expand implementation only if their exact language requires it.",
+          "status": "OPEN",
+          "author_response": {
+            "disposition": "INVESTIGATE",
+            "rationale": "The reviewer identified a possible mismatch; task text is read, but same-container/process boundary and actual host threat boundary are not proven by this packet.",
+            "evidence_ids": [
+              "E-001",
+              "E-007",
+              "E-012"
+            ],
+            "change": "See revised thesis T-002 in plan/council/rc011-routing/verification.md.",
+            "validation": "Requires real gateway/two-tenant execution and direct-port/network proof before acceptance.",
+            "residual_risk": "Blocking. No product implementation or task acceptance."
+          }
+        }
+      ],
+      "verification": [
+        {
+          "verifier_id": "fresh-closure-verifier",
+          "objection_ids": [
+            "O-R1-001",
+            "O-R1-002",
+            "O-R1-003",
+            "O-R1-004",
+            "O-R1-005",
+            "O-R1-006",
+            "O-R1-007",
+            "O-R1-008",
+            "O-R1-009",
+            "O-R1-010",
+            "O-R1-011",
+            "O-R1-012"
+          ],
+          "rationale": "T-002 addresses design omissions but original internal-port proof remains conditional; reviewers identified missing numeric bounds and distinct UX details.",
+          "verdict": "STILL_OPEN"
+        },
+        {
+          "verifier_id": "rc011-system-verifier",
+          "objection_ids": [
+            "O-R1-003",
+            "O-R1-004",
+            "O-R1-005"
+          ],
+          "rationale": "Direct-port boundary remains open; assertions, lifecycle and resource bounds are proposals only; replay and multi-gateway consistency risks surfaced.",
+          "verdict": "STILL_OPEN"
+        },
+        {
+          "verifier_id": "fresh-arbiter-rc011",
+          "objection_ids": [
+            "O-R1-003",
+            "O-R1-008"
+          ],
+          "rationale": "Original direct-port criterion is not proven and mapping/session credential lifecycle remains a risk; do not present narrowed design as acceptance.",
+          "verdict": "STILL_OPEN"
+        }
+      ],
+      "new_material_objections": 0
+    }
+  ],
+  "decision": {
+    "final_thesis_id": "T-002",
+    "open_blocker_ids": [
+      "O-R1-013"
+    ],
+    "open_high_ids": [
+      "O-R1-001",
+      "O-R1-002",
+      "O-R1-004",
+      "O-R1-005",
+      "O-R1-006",
+      "O-R1-007",
+      "O-R1-008",
+      "O-R1-009",
+      "O-R1-010",
+      "O-R1-011",
+      "O-R1-012"
+    ],
+    "accepted_risk_ids": [],
+    "required_experiment_ids": [
+      "A-001",
+      "A-002",
+      "A-003"
+    ],
+    "confidence": 94,
+    "basis": "EVIDENCE_AND_RISK",
+    "rationale": "Six blind reviewers identified material risks. Three fresh verifiers returned REVISE; the original internal-port threat boundary and measurable limits remain open, and no implementation evidence exists. Do not approve or accept RC-011.",
+    "conditions": [
+      "Do not implement/publish this gateway design as accepted until design objections and original direct-port criterion are closed.",
+      "Do not change RC-002 status or retry/reconcile its prior provider effect."
+    ],
+    "change_summary": [
+      "T-002 makes auth modes, tenant audiences, WebSocket identity transport, session revocation, bounded proxy behavior, fixture scope, telemetry and UX failures explicit.",
+      "Fresh verification found design still incomplete; no product change or RC-011 acceptance."
+    ],
+    "decision_owner_actions": []
+  },
+  "historical_record_limitations": [
+    "Council telemetry command unsupported; one telemetry proof gap recorded and later brackets skipped. Raw worker results are available as the native subagent task IDs listed in plan/council/rc011-routing/verification.md.",
+    "Controller began author cross-examination and verification before dispatching the six required baseline seats; those seats later reviewed only frozen T-001 without peer output. This protocol-order deviation is documented in verification.md; do not treat the REVISE report as procedure-conformant approval."
+  ],
+  "blockers": []
+}

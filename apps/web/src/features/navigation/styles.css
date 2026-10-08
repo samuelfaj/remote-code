@@ -1,0 +1,44 @@
+.sidebar-toggle {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .sidebar-toggle {
+    display: flex;
+  }
+}
+
+[data-testid="app-sidebar"] [data-nav-item]:focus-visible {
+  outline: 2px solid #126b54;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px rgba(18, 107, 84, 0.3);
+}
+
+[data-testid="app-sidebar"] [data-nav-item]:focus:not(:focus-visible) {
+  outline: none;
+  box-shadow: none;
+}
+
+@media (min-width: 769px) {
+  [data-testid="app-sidebar"] {
+    display: flex !important;
+    width: 280px !important;
+    min-width: 280px !important;
+    position: relative !important;
+    overflow: visible !important;
+  }
+}
+
+@media (max-width: 768px) {
+  [data-testid="app-sidebar"] {
+    position: absolute;
+    z-index: 10;
+    height: 100%;
+    width: 280px;
+    min-width: 280px;
+    display: flex;
+  }
+  [data-testid="app-sidebar"][data-closed="true"] {
+    display: none !important;
+  }
+}
