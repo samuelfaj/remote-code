@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { listThreadMessages, listThreads, postThreadMessage, type Thread } from "@remotecode/client";
+import { createApiClient, listThreadMessages, listThreads, postThreadMessage, workspaceListFromValue, type Thread, type Workspace } from "@remotecode/client";
 
 type Props = {
   origin: string;
@@ -15,12 +15,19 @@ export function ThreadsScreen({ origin, workspaceId, workspaceName, focusRunId, 
   const [threads, setThreads] = useState<Thread[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [workspace, setWorkspace] = useState<Workspace | null>(null);
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [workspacesLoading, setWorkspacesLoading] = useState(true);
+  const [workspacesError, setWorkspacesError] = useState("");
+  const openWorkspaceId = workspace?.id ?? workspaceId;
+  const openWorkspaceName = workspace?.name ?? workspaceName;
 
   useEffect(() => {
+    if (!openWorkspaceId) { setLoading(false); return; }
     let active = true;
     async function load() {
       try {
-        const data = await listThreads(workspaceId, origin);
+        const data = await listThreads(openWorkspaceId, origin);
         if (active) { setThreads(data); setLoading(false); }
       } catch {
         if (active) { setError("Could not load threads."); setLoading(false); }
@@ -28,7 +35,23 @@ export function ThreadsScreen({ origin, workspaceId, workspaceName, focusRunId, 
     }
     void load();
     return () => { active = false; };
-  }, [origin, workspaceId]);
+  }, [origin, openWorkspaceId]);
+
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      try {
+        const { data, error: failure } = await createApiClient(origin).api.workspaces.get();
+        if (failure) throw new Error("workspace list failed");
+        const listed = workspaceListFromValue(data);
+        if (!listed) throw new Error("unreadable workspace list");
+        if (active) { setWorkspaces(listed); setWorkspacesLoading(false); }
+      } catch {
+        if (active) { setWorkspacesError("Could not load workspaces."); setWorkspacesLoading(false); }
+      }
+    })();
+    return () => { active = false; };
+  }, [origin]);
 
   // A push for a run names the run, not its thread, and runs carry no thread id
   // on the API: the thread is the one whose messages record that run.
@@ -39,7 +62,7 @@ export function ThreadsScreen({ origin, workspaceId, workspaceName, focusRunId, 
     void (async () => {
       for (const thread of threads) {
         try {
-          const result = await listThreadMessages(workspaceId, thread.id, origin);
+          const result = await listThreadMessages(openWorkspaceId, thread.id, origin);
           if (!active) return;
           if (result.messages.some((message) => message.runId === focusRunId)) {
             focused.current = true;
@@ -50,14 +73,38 @@ export function ThreadsScreen({ origin, workspaceId, workspaceName, focusRunId, 
       }
     })();
     return () => { active = false; };
-  }, [focusRunId, loading, threads, workspaceId, origin, onSelectThread]);
+  }, [focusRunId, loading, threads, openWorkspaceId, origin, onSelectThread]);
+
+  // Threads are per workspace, and a push can name one directly; without a
+  // workspace this screen asks which one instead of showing an empty list.
+  if (!openWorkspaceId) {
+    if (workspacesLoading) return <Text style={styles.status}>Loading workspaces…</Text>;
+    if (workspacesError) return <Text style={styles.error}>{workspacesError}</Text>;
+    return (
+      <ScrollView contentContainerStyle={styles.list}>
+        <Text style={styles.heading}>Threads</Text>
+        {workspaces.length === 0 ? <Text style={styles.status}>No workspaces yet.</Text> : null}
+        {workspaces.map((workspace) => (
+          <Pressable
+            key={workspace.id}
+            accessibilityRole="button"
+            accessibilityLabel={`Threads for ${workspace.name}`}
+            onPress={() => setWorkspace(workspace)}
+            style={styles.row}
+          >
+            <Text style={styles.name}>{workspace.name}</Text>
+          </Pressable>
+        ))}
+      </ScrollView>
+    );
+  }
 
   if (loading) return <Text style={styles.status}>Loading threads…</Text>;
   if (error) return <Text style={styles.error}>{error}</Text>;
 
   return (
     <ScrollView contentContainerStyle={styles.list}>
-      <Text style={styles.heading}>Threads in {workspaceName}</Text>
+      <Text style={styles.heading}>Threads in {openWorkspaceName}</Text>
       {threads.length === 0 ? <Text style={styles.status}>No threads yet.</Text> : null}
       {threads.map((thread) => (
         <Pressable

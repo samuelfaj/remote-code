@@ -43,6 +43,7 @@ private struct InboxItemMetadata: Decodable {
     let id: String
     let title: String
     let state: String
+    let runId: String?
 }
 
 private struct InboxListMetadata: Decodable {
@@ -2202,46 +2203,72 @@ final class RemoteCodeMobileProofUITests: XCTestCase {
         signIn(app)
         try await observer.signIn(at: api, password: password)
 
+        // The host holds one workspace with a Bot, a thread, its message, an
+        // Inbox item and an action; every screen below is compared with those
+        // rows, not merely checked for being on screen.
         let workspaceName = "native-nav-workspace-\(UUID().uuidString)"
         let workspace = try await observer.createWorkspace(at: api, name: workspaceName)
-
         let botName = "native-nav-bot-\(UUID().uuidString)"
         let bot = try await observer.createBot(at: api, name: botName)
-
         let threadTitle = "native-nav-thread-\(UUID().uuidString)"
         let thread = try await observer.createThread(at: api, workspaceId: workspace.id, title: threadTitle)
-
         let messageBody = "native-nav-message-body"
         try await observer.postMessage(at: api, threadId: thread.id, body: messageBody)
+        let inboxItem = try await observer.runToInboxItem(at: api, workspaceId: workspace.id, botId: bot.id)
 
-        let actionName = "native-nav-action-\(UUID().uuidString)"
-        let actionReceipt = try await observer.submitAction(at: api, action: actionName)
-
-        let botsTab = app.buttons["tab-bots"]
+        // Bots: the row is the Bot the host holds, addressed by its own label.
+        let botsTab = app.buttons["Bots"]
         XCTAssertTrue(botsTab.waitForExistence(timeout: 10))
         botsTab.tap()
-        XCTAssertTrue(app.staticTexts[botName].waitForExistence(timeout: 10), "The Bots screen should show the seeded Bot name")
+        XCTAssertTrue(app.buttons["Bot \(botName)"].waitForExistence(timeout: 20),
+                      "The Bots screen should show the seeded Bot. Visible: \(app.debugDescription)")
 
-        let workspacesTab = app.buttons["tab-workspaces"]
-        workspacesTab.tap()
-        XCTAssertTrue(app.staticTexts["Workspaces"].waitForExistence(timeout: 10))
-        let openWorkspace = app.buttons["Open workspace \(workspaceName)"]
-        XCTAssertTrue(openWorkspace.waitForExistence(timeout: 10))
-        openWorkspace.tap()
-        XCTAssertTrue(app.staticTexts["Selected: \(workspaceName)"].waitForExistence(timeout: 10))
-        XCTAssertTrue(app.staticTexts[threadTitle].waitForExistence(timeout: 10), "The workspace should show the seeded thread title")
-        app.staticTexts[threadTitle].tap()
-        XCTAssertTrue(app.staticTexts[messageBody].waitForExistence(timeout: 10), "The ThreadMessages screen should show the seeded message body")
+        // Threads: the tab asks which workspace when a push did not name one.
+        let threadsTab = app.buttons["Threads"]
+        XCTAssertTrue(threadsTab.waitForExistence(timeout: 10))
+        threadsTab.tap()
+        let workspaceChoice = app.buttons["Threads for \(workspaceName)"]
+        XCTAssertTrue(workspaceChoice.waitForExistence(timeout: 20),
+                      "The Threads screen should offer the seeded workspace")
+        workspaceChoice.tap()
+        let threadRow = app.buttons["Thread \(threadTitle)"]
+        XCTAssertTrue(threadRow.waitForExistence(timeout: 20),
+                      "The workspace's threads should include the seeded thread. Visible: \(app.debugDescription)")
+        threadRow.tap()
+        XCTAssertTrue(app.staticTexts[messageBody].waitForExistence(timeout: 20),
+                      "The thread should show the message the host holds. Visible: \(app.debugDescription)")
 
-        let inboxTab = app.buttons["tab-inbox"]
+        // Inbox: the seeded item's own title.
+        let inboxTab = app.buttons["Inbox"]
         XCTAssertTrue(inboxTab.waitForExistence(timeout: 10))
         inboxTab.tap()
-        XCTAssertTrue(app.staticTexts["Inbox"].waitForExistence(timeout: 10), "The Inbox screen should be visible")
+        XCTAssertTrue(app.staticTexts[inboxItem].waitForExistence(timeout: 20),
+                      "The Inbox screen should show the item the host recorded. Visible: \(app.debugDescription)")
 
-        let actionsTab = app.buttons["tab-actions"]
+        // Actions: the app submits one through its own control and the screen
+        // shows the action the host recorded for it.
+        let actionName = "native-nav-action-\(UUID().uuidString)"
+        let workspacesTab = app.buttons["Workspaces"]
+        XCTAssertTrue(workspacesTab.waitForExistence(timeout: 10))
+        workspacesTab.tap()
+        let actionInput = app.textFields["Action"]
+        for _ in 0..<5 where !actionInput.isHittable { app.scrollViews.firstMatch.swipeDown() }
+        XCTAssertTrue(actionInput.waitForExistence(timeout: 15),
+                      "The workspaces screen should offer the action field. Visible: \(app.debugDescription)")
+        actionInput.tap()
+        actionInput.typeText(actionName)
+        app.keyboards.buttons["Return"].tap()
+        let submit = app.buttons["Submit action"]
+        XCTAssertTrue(submit.waitForExistence(timeout: 10))
+        submit.tap()
+        let receipts = try await observer.actions(at: api)
+        XCTAssertTrue(receipts.contains(where: { $0.action == actionName }),
+                      "The host should hold the action the app submitted; saw \(receipts.map(\.action))")
+        let actionsTab = app.buttons["Actions"]
         XCTAssertTrue(actionsTab.waitForExistence(timeout: 10))
         actionsTab.tap()
-        XCTAssertTrue(app.staticTexts[actionName].waitForExistence(timeout: 10), "The Actions screen should show the seeded action name")
+        XCTAssertTrue(app.staticTexts[actionName].waitForExistence(timeout: 20),
+                      "The Actions screen should show the submitted action. Visible: \(app.debugDescription)")
     }
 
     @MainActor
@@ -2574,6 +2601,22 @@ private extension URLSession {
         let (data, response) = try await data(from: URL(string: "/api/inbox", relativeTo: baseURL)!)
         XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
         return try JSONDecoder().decode(InboxListMetadata.self, from: data).items
+    }
+
+    /// Sends a task as a run and returns the title of the Inbox item the host
+    /// records for that run, whichever way the run ends.
+    func runToInboxItem(at baseURL: URL, workspaceId: String, botId: String) async throws -> String {
+        let run = try await startRun(at: baseURL, workspaceId: workspaceId, botId: botId,
+                                     prompt: "native-nav-run-\(UUID().uuidString)")
+        var observed: [String] = []
+        for _ in 0..<120 {
+            let items = try await listInbox(at: baseURL)
+            observed = items.map(\.title)
+            if let item = items.first(where: { $0.runId == run.id }) { return item.title }
+            try await Task.sleep(nanoseconds: 500_000_000)
+        }
+        XCTFail("The host recorded no Inbox item for run \(run.id) (saw \(observed))")
+        return ""
     }
 
     func submitAction(at baseURL: URL, action: String) async throws -> ActionReceipt {

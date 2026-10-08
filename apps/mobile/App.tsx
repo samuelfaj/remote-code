@@ -852,9 +852,12 @@ export default function App() {
     connection !== "signed_out" && connection !== "incompatible",
   );
 
-  const tabs: Array<{ screen: "Workspaces" | "Bots" | "Inbox" | "Actions"; label: string; testID: string }> = [
+  const tabs: Array<{ screen: "Workspaces" | "Bots" | "Threads" | "Inbox" | "Actions"; label: string; testID: string }> = [
     { screen: "Workspaces", label: "Workspaces", testID: "tab-workspaces" },
     { screen: "Bots", label: "Bots", testID: "tab-bots" },
+    // Threads are per workspace; the screen asks which one when nothing has
+    // selected it, and a push can name the workspace directly.
+    { screen: "Threads", label: "Threads", testID: "tab-threads" },
     { screen: "Inbox", label: "Inbox", testID: "tab-inbox" },
     { screen: "Actions", label: "Actions", testID: "tab-actions" },
   ];

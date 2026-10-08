@@ -470,9 +470,11 @@ PYDEPS
   docker start "$DOCKER_ID" >/dev/null
 else
   if [[ "${RC_NATIVE_TEST_NAVIGATION:-0}" == "1" ]]; then
-    cat > "$WORK_DIR/rc055-stub-agent.sh" <<'STUB'
+    # The path has to be expanded here: a quoted heredoc would leave the literal
+    # $ROOT_DIR in the wrapper and the agent would never start.
+    cat > "$WORK_DIR/rc055-stub-agent.sh" <<STUB
 #!/bin/bash
-exec node "$ROOT_DIR/apps/api/src/features/runs-stub-agent.mjs"
+exec node "$ROOT_DIR/apps/api/src/features/runs-stub-agent.mjs" "\$@"
 STUB
     chmod +x "$WORK_DIR/rc055-stub-agent.sh"
     export REMOTECODE_DISTILL_BIN="$WORK_DIR/rc055-stub-agent.sh"
