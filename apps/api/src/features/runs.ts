@@ -8,6 +8,8 @@ import { startAcpPrompt, type AcpSessionHandle } from "./acp-distill";
 import { withProvisionedWorkspaceFolder } from "./workspace-folders";
 import { hasGitDir, parsePorcelain, runGit } from "./workspace-git";
 import { recordInboxItem } from "./inbox";
+import type { LiveNotifier } from "./live";
+import { appendRunMessage, ensureRunThread } from "./messages";
 
 export type RunState = "starting" | "running" | "completed" | "interrupted" | "failed" | "needs_user";
 
@@ -26,6 +28,7 @@ export type RunView = {
   sessionId: string | null;
   handoffReason: string | null;
   retryAfterSeconds: number | null;
+  threadId: string | null;
 };
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -50,6 +53,7 @@ type RunRow = {
   session_id: string | null;
   handoff_reason: string | null;
   retry_after_seconds: number | null;
+  thread_id: string | null;
 };
 
 function view(row: RunRow): RunView {
@@ -68,6 +72,7 @@ function view(row: RunRow): RunView {
     sessionId: row.session_id,
     handoffReason: row.handoff_reason,
     retryAfterSeconds: row.retry_after_seconds,
+    threadId: row.thread_id,
   };
 }
 
@@ -94,7 +99,8 @@ export function runsFeature(
     command?: string; args?: string[]; cwd?: string; env?: NodeJS.ProcessEnv;
     agentUser?: string; agentHome?: string;
     wrapSpawn?: (command: string, args: string[]) => { command: string; args: string[] };
-    onUpdate?: (run: RunView) => void;
+    onUpdate?: (run: RunView, userId: string) => void;
+    onChange?: LiveNotifier;
     stallMs?: number;
   } = {},
 ) {
@@ -192,12 +198,14 @@ export function runsFeature(
         error TEXT,
         session_id TEXT,
         handoff_reason TEXT,
-        retry_after_seconds INTEGER
+        retry_after_seconds INTEGER,
+        thread_id TEXT
       )`);
       db.exec("CREATE INDEX IF NOT EXISTS runs_workspace ON runs(workspace_id, created_at)");
       const columns = db.query<{ name: string }, []>("PRAGMA table_info(runs)").all();
       const columnNames = columns.map((column) => column.name);
       if (!columnNames.includes("bot_id")) db.exec("ALTER TABLE runs ADD COLUMN bot_id TEXT");
+      if (!columnNames.includes("thread_id")) db.exec("ALTER TABLE runs ADD COLUMN thread_id TEXT");
       for (const name of ["session_id", "handoff_reason", "retry_after_seconds"]) {
         if (!columnNames.includes(name)) db.exec(`ALTER TABLE runs ADD COLUMN ${name} INTEGER`);
       }
@@ -239,7 +247,7 @@ export function runsFeature(
   function emit(id: string) {
     if (!options.onUpdate) return;
     const row = readRow(id);
-    if (row) options.onUpdate(view(row));
+    if (row) options.onUpdate(view(row), row.user_id);
   }
 
   function captureRunChanges(runId: string, workspaceId: string, userId: string): void {
@@ -321,7 +329,7 @@ export function runsFeature(
     }
     live.set(id, handle);
     const requestedStop = () => readRow(id)?.stop_requested_at ?? null;
-    handle.done.then(({ stopReason, error: acpError }) => {
+    handle.done.then(({ stopReason, error: acpError, text }) => {
       cancelPendingPermissions(id);
       live.delete(id);
       const current = readRow(id);
@@ -340,6 +348,12 @@ export function runsFeature(
         ...(classified.retryAfterSeconds !== null ? { retry_after_seconds: classified.retryAfterSeconds } : {}),
       });
       emit(id);
+      // Record the agent's reply on the run's thread. An empty answer records
+      // nothing: the transcript must never invent agent words.
+      if (current?.thread_id && state === "completed" && text.trim().length > 0) {
+        const appended = appendRunMessage(databasePath, { userId: current.user_id, threadId: current.thread_id, runId: id, kind: "assistant", body: text });
+        if (appended) options.onChange?.({ userId: current.user_id, type: "message.changed", workspaceId: current.workspace_id });
+      }
       if (current) captureRunChanges(id, current.workspace_id, current.user_id);
       if (current) {
         const dest = { screen: "run" as const, runId: id, workspaceId: current.workspace_id, botId: current.bot_id };
@@ -382,17 +396,19 @@ export function runsFeature(
 
   function startRun(owner: { userId: string }, input: { workspaceId: string; prompt: string; botId?: string; requestId?: string }):
     { kind: "ok"; run: RunView; created: boolean } | { kind: "not_found"; what: "workspace" | "bot" } | { kind: "failed"; error: string } {
-    const result: { workspaceMissing: true } | { botNotFound: true } | { existing: RunRow; conflict?: boolean } | { row: RunRow } = database((db) => db.transaction(() => {
+    const result: { workspaceMissing: true } | { botNotFound: true } | { existing: RunRow; conflict?: boolean } | { row: RunRow; botName: string | null } = database((db) => db.transaction(() => {
       const workspace = db.query<{ id: string }, [string, string]>(
         "SELECT id FROM workspaces WHERE id = ? AND user_id = ?",
       ).get(input.workspaceId, owner.userId);
       if (!workspace) return { workspaceMissing: true as const };
       let composedPrompt = input.prompt;
+      let botName: string | null = null;
       if (input.botId) {
-        const bot = db.query<{ id: string; user_id: string; instructions: string }, [string, string]>(
-          "SELECT id, user_id, instructions FROM bots WHERE id = ? AND user_id = ?",
+        const bot = db.query<{ id: string; user_id: string; instructions: string; name: string }, [string, string]>(
+          "SELECT id, user_id, instructions, name FROM bots WHERE id = ? AND user_id = ?",
         ).get(input.botId, owner.userId);
         if (!bot) return { botNotFound: true as const };
+        botName = bot.name;
         composedPrompt = bot.instructions ? `${bot.instructions}\n\n${input.prompt}` : input.prompt;
       }
       if (input.requestId) {
@@ -410,14 +426,15 @@ export function runsFeature(
         id, user_id: owner.userId, workspace_id: input.workspaceId,
         bot_id: input.botId ?? null, prompt: composedPrompt, state: "starting", created_at: createdAt, updated_at: createdAt,
         heartbeat_at: null, stop_requested_at: null, stop_reason: null, error: null,
-        session_id: null, handoff_reason: null, retry_after_seconds: null,
+        session_id: null, handoff_reason: null, retry_after_seconds: null, thread_id: null,
       };
-      db.query(`INSERT INTO runs (id, user_id, workspace_id, bot_id, prompt, state, created_at, updated_at, heartbeat_at, stop_requested_at, stop_reason, error, session_id, handoff_reason, retry_after_seconds)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+      db.query(`INSERT INTO runs (id, user_id, workspace_id, bot_id, prompt, state, created_at, updated_at, heartbeat_at, stop_requested_at, stop_reason, error, session_id, handoff_reason, retry_after_seconds, thread_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
         row.id, row.user_id, row.workspace_id, row.bot_id, row.prompt, row.state, row.created_at, row.updated_at,
         row.heartbeat_at, row.stop_requested_at, row.stop_reason, row.error, row.session_id, row.handoff_reason, row.retry_after_seconds,
+        row.thread_id,
       );
-      return { row };
+      return { row, botName };
     }).immediate());
     if ("workspaceMissing" in result) return { kind: "not_found", what: "workspace" };
     if ("botNotFound" in result) return { kind: "not_found", what: "bot" };
@@ -426,8 +443,44 @@ export function runsFeature(
       // A repeated request id returns the existing run, so the caller sees 200.
       return { kind: "ok", run: view(result.existing), created: false };
     }
-    launch(result.row.id, result.row.prompt);
-    return { kind: "ok", run: view(result.row), created: true };
+    // Only a freshly inserted run records a transcript: the prompt as the user
+    // turn, on a thread titled after the bot (or "Chat" for a plain run).
+    const row = result.row;
+    const title = result.botName ?? "Chat";
+    const threadId = ensureRunThread(databasePath, { userId: owner.userId, workspaceId: row.workspace_id, title });
+    if (threadId) {
+      row.thread_id = threadId;
+      database((db) => db.query("UPDATE runs SET thread_id = ? WHERE id = ?").run(threadId, row.id));
+      const appended = appendRunMessage(databasePath, { userId: owner.userId, threadId, runId: row.id, kind: "user", body: row.prompt });
+      if (appended) options.onChange?.({ userId: owner.userId, type: "message.changed", workspaceId: row.workspace_id });
+    }
+    // A host that names the variable holding the model's credential must have it.
+    // Failing here says exactly what is missing, instead of letting the agent
+    // start and report the provider's opaque "Internal error".
+    const modelKey = process.env.REMOTECODE_AGENT_MODEL_ENV_KEY;
+    if (modelKey && !process.env[modelKey]) {
+      transition(row.id, {
+        state: "failed",
+        stop_reason: "credential_missing",
+        error: `${modelKey} is not set on this host, so the agent has no provider credential. Set it and start the dev host again.`,
+      });
+      emit(row.id);
+      try {
+        recordInboxItem(databasePath, {
+          userId: owner.userId,
+          kind: "intervention",
+          botId: row.bot_id,
+          workspaceId: row.workspace_id,
+          runId: row.id,
+          title: "Run failed",
+          destination: { screen: "run", runId: row.id, workspaceId: row.workspace_id, botId: row.bot_id },
+          dedupeKey: `run:${row.id}:intervention`,
+        });
+      } catch { /* never fail the run state machine */ }
+      return { kind: "ok", run: view(readRow(row.id) ?? row), created: true };
+    }
+    launch(row.id, row.prompt);
+    return { kind: "ok", run: view(row), created: true };
   }
 
   const routes = new Elysia()

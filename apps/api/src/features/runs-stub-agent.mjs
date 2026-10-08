@@ -44,7 +44,12 @@ async function handle(message) {
     promptId = message.id;
     logPrompt();
     const text = message.params?.prompt?.[0]?.text ?? "";
-    send({ method: "session/update", params: { sessionId, update: { sessionUpdate: "agent_message_chunk" } } });
+    // EMPTY_REPLY makes the agent answer without a word, so a test can prove an
+    // empty reply records no assistant message. Otherwise stream a deterministic
+    // reply derived from the prompt so the transcript capture is observable.
+    if (!text.includes("EMPTY_REPLY")) {
+      send({ method: "session/update", params: { sessionId, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: `stub reply to: ${text}` } } } });
+    }
     if (text.includes("AUTH_EXPIRED")) {
       send({ id: promptId, error: { code: -32001, message: "401 Unauthorized: the provider credential has expired" } });
       return;

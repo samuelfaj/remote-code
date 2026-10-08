@@ -5,7 +5,7 @@ export type AcpProgress = { kind: string; at: string; detail?: string };
 
 export type AcpSessionHandle = {
   /** Resolves when the prompt finishes (or the process ends). */
-  done: Promise<{ stopReason: string | null; sessionId: string | null; error?: string | null }>;
+  done: Promise<{ stopReason: string | null; sessionId: string | null; error?: string | null; text: string }>;
   /** Ask the agent to cancel the current prompt (session/cancel). */
   cancel: () => void;
   /** Hard-stop the agent process. */
@@ -51,6 +51,10 @@ export function startAcpPrompt(options: Options): AcpSessionHandle {
   let sessionId: string | null = null;
   let settled = false;
   let buffered = "";
+  // The agent's own words: the assistant text of this prompt, accumulated from
+  // the session updates the agent streams while it answers. Kept verbatim so a
+  // run can record what the agent actually said.
+  const assistantText: string[] = [];
   const pending = new Map<string, (message: Record<string, unknown>) => void>();
   const terminals = new Map<string, {
     proc: ChildProcessWithoutNullStreams;
@@ -74,7 +78,11 @@ export function startAcpPrompt(options: Options): AcpSessionHandle {
     }
     const method = typeof message.method === "string" ? message.method : undefined;
     if (method === "session/update") {
-      const update = (message.params as { update?: { sessionUpdate?: string } } | undefined)?.update;
+      const update = (message.params as { update?: { sessionUpdate?: string; content?: { type?: string; text?: unknown } } } | undefined)?.update;
+      if (update?.sessionUpdate === "agent_message_chunk") {
+        const text = update.content?.text;
+        if (typeof text === "string" && text.length > 0) assistantText.push(text);
+      }
       options.onProgress?.({ kind: update?.sessionUpdate ?? "update", at: new Date().toISOString() });
       return;
     }
@@ -236,7 +244,7 @@ export function startAcpPrompt(options: Options): AcpSessionHandle {
     });
 
   const done = (async () => {
-    if (spawnFailure) return { stopReason: "spawn_failed" as string | null, sessionId, error: spawnFailure };
+    if (spawnFailure) return { stopReason: "spawn_failed" as string | null, sessionId, error: spawnFailure, text: assistantText.join("") };
     await request("initialize", {
       protocolVersion: 1,
       clientCapabilities: { fs: { readTextFile: true, writeTextFile: true }, terminal: true },
@@ -253,8 +261,8 @@ export function startAcpPrompt(options: Options): AcpSessionHandle {
     settled = true;
     const promptResult = answer.result as { stopReason?: string } | undefined;
     const promptError = (answer.error as { message?: string } | undefined)?.message ?? null;
-    return { stopReason: spawnFailure ? "spawn_failed" : (promptResult?.stopReason ?? (promptError ? "prompt_error" : null)), sessionId, error: promptError ?? spawnFailure };
-  })().catch(() => ({ stopReason: spawnFailure ? "spawn_failed" : null, sessionId, error: spawnFailure }));
+    return { stopReason: spawnFailure ? "spawn_failed" : (promptResult?.stopReason ?? (promptError ? "prompt_error" : null)), sessionId, error: promptError ?? spawnFailure, text: assistantText.join("") };
+  })().catch(() => ({ stopReason: spawnFailure ? "spawn_failed" : null, sessionId, error: spawnFailure, text: assistantText.join("") }));
 
   child.on("exit", () => {
     if (!settled) settled = true;

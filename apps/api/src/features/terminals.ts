@@ -7,6 +7,7 @@ import { clearInterval, clearTimeout, setInterval, setTimeout } from "node:timer
 import { isDeepStrictEqual } from "node:util";
 import { Elysia, t } from "elysia";
 import { sessionExpiresAt, sessionTokenHash, sessionUserId } from "./auth";
+import type { LiveNotifier } from "./live";
 import { withProvisionedWorkspaceFolder } from "./workspace-folders";
 
 type TerminalConfig = { volumeName: string; image: string };
@@ -277,7 +278,8 @@ function attach(row: TerminalRow, accept: (socket: Socket, head: Buffer) => void
   });
 }
 
-export function terminalsFeature(databasePath: string, config?: TerminalConfig) {
+export function terminalsFeature(databasePath: string, config?: TerminalConfig & { onChange?: LiveNotifier }) {
+  const onChange = config?.onChange;
   const cfg = validConfig(config) ? { ...config } : undefined;
   const contexts = new Map<string, TerminalContext>();
   const inputKey = randomBytes(32);
@@ -541,6 +543,7 @@ export function terminalsFeature(databasePath: string, config?: TerminalConfig) 
   function receive(context: TerminalContext, bytes: Buffer) {
     try {
       appendOutput(context, bytes);
+      onChange?.({ userId: context.row.user_id, type: "terminal.changed", workspaceId: context.row.workspace_id });
       if (!context.ready && !context.closing) {
         context.readyBytes = Buffer.concat([context.readyBytes, bytes.subarray(0, 4097 - context.readyBytes.length)]);
         const expected = Buffer.from(`\x1eREMOTECODE:${context.row.nonce}:65534:65534:${context.row.folder_device}:${context.row.folder_inode}\x1f`);
@@ -740,6 +743,7 @@ export function terminalsFeature(databasePath: string, config?: TerminalConfig) 
         context.launch = launch(context);
         await context.launch;
         guard(context);
+        onChange?.({ userId: owner.userId, type: "terminal.changed", workspaceId: params.workspaceId });
         set.status = 201;
         return receipt(context.row);
       } catch (error) {
@@ -818,6 +822,7 @@ export function terminalsFeature(databasePath: string, config?: TerminalConfig) 
         });
         target.backpressured = !writable;
         if (target.inputPending) update(target, { input_state: "queued" });
+        onChange?.({ userId: owner.userId, type: "terminal.changed", workspaceId: target.row.workspace_id });
         assertSession(owner);
         return { terminalId: target.row.terminal_id, sequence: body.sequence, state: "queued" };
       } catch (error) {
@@ -844,6 +849,7 @@ export function terminalsFeature(databasePath: string, config?: TerminalConfig) 
         if (result.status !== 200) throw new TerminalError(503, "terminal_resize_unknown");
         update(context, { current_cols: body.cols, current_rows: body.rows, resize_state: "applied" });
         guard(context);
+        onChange?.({ userId: owner.userId, type: "terminal.changed", workspaceId: context.row.workspace_id });
         return receipt(context.row);
       } catch (error) {
         if (context && (!(error instanceof TerminalError) || error.status !== 409)) fenceFailure(context);
@@ -860,6 +866,7 @@ export function terminalsFeature(databasePath: string, config?: TerminalConfig) 
         assertSession(owner);
         const current = ownedRow(owner, params.terminalId);
         if (!finished(current) || current.cleanup !== "removed") set.status = 503;
+        else onChange?.({ userId: owner.userId, type: "terminal.changed", workspaceId: current.workspace_id });
         return receipt(current);
       } catch (error) { return routeError(error, set); }
     }, { params: t.Object({ terminalId: uuidSchema }) });

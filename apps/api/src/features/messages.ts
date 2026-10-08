@@ -4,6 +4,7 @@ import { mkdirSync, readFileSync, fstatSync } from "node:fs";
 import { dirname } from "node:path";
 import { Elysia, t } from "elysia";
 import { sessionExpiresAt, sessionTokenHash, sessionUserId } from "./auth";
+import type { LiveNotifier } from "./live";
 import { withProvisionedWorkspaceFolder } from "./workspace-folders";
 import { hasGitDir, parsePorcelain, runGit } from "./workspace-git";
 import { relativeComponents } from "./workspace-files";
@@ -13,7 +14,92 @@ const maxDiffBytes = 64 * 1024;
 
 type Owner = { kind: "anonymous" } | { kind: "unavailable" } | { kind: "ok"; userId: string };
 
-export function messagesFeature(databasePath: string) {
+function initializeSchema(db: Database): void {
+  db.exec(`CREATE TABLE IF NOT EXISTS threads (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`);
+  db.exec(`CREATE TABLE IF NOT EXISTS messages (
+    id TEXT PRIMARY KEY,
+    thread_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    body TEXT NOT NULL,
+    run_id TEXT,
+    created_at TEXT NOT NULL
+  )`);
+  db.exec(`CREATE TABLE IF NOT EXISTS message_attachments (
+    id TEXT PRIMARY KEY,
+    message_id TEXT NOT NULL,
+    path TEXT NOT NULL,
+    sha256 TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    created_at TEXT NOT NULL
+  )`);
+  db.exec(`CREATE TABLE IF NOT EXISTS run_changes (
+    run_id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL,
+    captured_at TEXT NOT NULL,
+    payload TEXT NOT NULL
+  )`);
+  db.exec("CREATE INDEX IF NOT EXISTS messages_thread ON messages(thread_id)");
+  db.exec("CREATE INDEX IF NOT EXISTS messages_run ON messages(run_id)");
+  db.exec("CREATE INDEX IF NOT EXISTS attachments_message ON message_attachments(message_id)");
+  db.exec("CREATE INDEX IF NOT EXISTS run_changes_workspace ON run_changes(workspace_id)");
+}
+
+function database<T>(databasePath: string, callback: (db: Database) => T): T {
+  mkdirSync(dirname(databasePath), { recursive: true });
+  const db = new Database(databasePath, { create: true });
+  try {
+    db.exec("PRAGMA busy_timeout = 250");
+    db.exec("PRAGMA synchronous = FULL");
+    initializeSchema(db);
+    return callback(db);
+  } finally {
+    db.close();
+  }
+}
+
+/** The chat thread a run belongs to: one per (workspace, user, title), created on first use. Returns null when storage is unavailable. */
+export function ensureRunThread(databasePath: string, input: { userId: string; workspaceId: string; title: string }): string | null {
+  try {
+    return database(databasePath, (db) => {
+      const existing = db.query<{ id: string }, [string, string, string]>(
+        "SELECT id FROM threads WHERE workspace_id = ? AND user_id = ? AND title = ? ORDER BY created_at ASC LIMIT 1",
+      ).get(input.workspaceId, input.userId, input.title);
+      if (existing) return existing.id;
+      const id = crypto.randomUUID();
+      const now = new Date().toISOString();
+      db.query("INSERT INTO threads (id, workspace_id, user_id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
+        .run(id, input.workspaceId, input.userId, input.title, now, now);
+      return id;
+    });
+  } catch {
+    return null;
+  }
+}
+
+/** Append one turn to a run's chat thread. Returns false when storage is unavailable. */
+export function appendRunMessage(databasePath: string, input: { userId: string; threadId: string; runId: string; kind: "user" | "assistant"; body: string }): boolean {
+  try {
+    database(databasePath, (db) => {
+      const now = new Date().toISOString();
+      db.query("INSERT INTO messages (id, thread_id, user_id, kind, body, run_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+        .run(crypto.randomUUID(), input.threadId, input.userId, input.kind, input.body, input.runId, now);
+      db.query("UPDATE threads SET updated_at = ? WHERE id = ?").run(now, input.threadId);
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function messagesFeature(databasePath: string, options?: { onChange?: LiveNotifier }) {
   function resolveOwner(request: Request): Owner {
     const userId = sessionUserId(databasePath, request);
     const tokenHash = sessionTokenHash(request);
@@ -33,57 +119,6 @@ export function messagesFeature(databasePath: string) {
     }
   }
 
-  function initializeSchema(db: Database): void {
-    db.exec(`CREATE TABLE IF NOT EXISTS threads (
-      id TEXT PRIMARY KEY,
-      workspace_id TEXT NOT NULL,
-      user_id TEXT NOT NULL,
-      title TEXT NOT NULL,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    )`);
-    db.exec(`CREATE TABLE IF NOT EXISTS messages (
-      id TEXT PRIMARY KEY,
-      thread_id TEXT NOT NULL,
-      user_id TEXT NOT NULL,
-      kind TEXT NOT NULL,
-      body TEXT NOT NULL,
-      run_id TEXT,
-      created_at TEXT NOT NULL
-    )`);
-    db.exec(`CREATE TABLE IF NOT EXISTS message_attachments (
-      id TEXT PRIMARY KEY,
-      message_id TEXT NOT NULL,
-      path TEXT NOT NULL,
-      sha256 TEXT NOT NULL,
-      size INTEGER NOT NULL,
-      created_at TEXT NOT NULL
-    )`);
-    db.exec(`CREATE TABLE IF NOT EXISTS run_changes (
-      run_id TEXT PRIMARY KEY,
-      workspace_id TEXT NOT NULL,
-      captured_at TEXT NOT NULL,
-      payload TEXT NOT NULL
-    )`);
-    db.exec("CREATE INDEX IF NOT EXISTS messages_thread ON messages(thread_id)");
-    db.exec("CREATE INDEX IF NOT EXISTS messages_run ON messages(run_id)");
-    db.exec("CREATE INDEX IF NOT EXISTS attachments_message ON message_attachments(message_id)");
-    db.exec("CREATE INDEX IF NOT EXISTS run_changes_workspace ON run_changes(workspace_id)");
-  }
-
-  function database<T>(callback: (db: Database) => T): T {
-    mkdirSync(dirname(databasePath), { recursive: true });
-    const db = new Database(databasePath, { create: true });
-    try {
-      db.exec("PRAGMA busy_timeout = 250");
-      db.exec("PRAGMA synchronous = FULL");
-      initializeSchema(db);
-      return callback(db);
-    } finally {
-      db.close();
-    }
-  }
-
   return new Elysia()
     .post("/api/workspaces/:workspaceId/threads", ({ params, body, request, set }) => {
       const owner = resolveOwner(request);
@@ -93,7 +128,7 @@ export function messagesFeature(databasePath: string) {
       if (!title || title.length > 500) { set.status = 400; return { error: "invalid_title" as const }; }
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
-      database((db) => {
+      const created = database(databasePath, (db) => {
         const workspace = db.query<{ id: string }, [string, string]>(
           "SELECT id FROM workspaces WHERE id = ? AND user_id = ?",
         ).get(params.workspaceId, owner.userId);
@@ -102,6 +137,7 @@ export function messagesFeature(databasePath: string) {
           .run(id, params.workspaceId, owner.userId, title, now, now);
         return { kind: "ok" as const, id };
       });
+      if (created.kind === "ok") options?.onChange?.({ userId: owner.userId, type: "thread.changed", workspaceId: params.workspaceId });
       set.status = 201;
       return { id, workspaceId: params.workspaceId, title, createdAt: now, updatedAt: now };
     }, {
@@ -112,7 +148,7 @@ export function messagesFeature(databasePath: string) {
       const owner = resolveOwner(request);
       if (owner.kind === "anonymous") { set.status = 401; return { error: "unauthorized" as const }; }
       if (owner.kind === "unavailable") { set.status = 503; return { error: "storage_unavailable" as const }; }
-      const threads = database((db) => {
+      const threads = database(databasePath, (db) => {
         const workspace = db.query<{ id: string }, [string, string]>(
           "SELECT id FROM workspaces WHERE id = ? AND user_id = ?",
         ).get(params.workspaceId, owner.userId);
@@ -195,6 +231,7 @@ export function messagesFeature(databasePath: string) {
           db.query("INSERT INTO message_attachments (id, message_id, path, sha256, size, created_at) VALUES (?, ?, ?, ?, ?, ?)")
             .run(att.id, id, att.path, att.sha256, att.size, now);
         }
+        options?.onChange?.({ userId: owner.userId, type: "message.changed", workspaceId: thread.workspace_id });
         set.status = 201;
         return {
           id, threadId: params.threadId, kind, body: bodyText, runId,
@@ -219,13 +256,13 @@ export function messagesFeature(databasePath: string) {
       const owner = resolveOwner(request);
       if (owner.kind === "anonymous") { set.status = 401; return { error: "unauthorized" as const }; }
       if (owner.kind === "unavailable") { set.status = 503; return { error: "storage_unavailable" as const }; }
-      const thread = database((db) => {
+      const thread = database(databasePath, (db) => {
         return db.query<{ workspace_id: string; user_id: string }, [string]>(
           "SELECT workspace_id, user_id FROM threads WHERE id = ?",
         ).get(params.threadId);
       });
       if (!thread || thread.user_id !== owner.userId) { set.status = 404; return { error: "not_found" as const }; }
-      const messages = database((db) => {
+      const messages = database(databasePath, (db) => {
         return db.query<{ id: string; kind: string; body: string; run_id: string | null; created_at: string }, [string]>(
           "SELECT id, kind, body, run_id, created_at FROM messages WHERE thread_id = ? ORDER BY created_at ASC",
         ).all(params.threadId);
@@ -234,7 +271,7 @@ export function messagesFeature(databasePath: string) {
         let changes: { files: Array<{ path: string; changeKind: string }>; diff: string; truncated: boolean } | null = null;
         if (msg.run_id) {
           const runId = msg.run_id;
-          const runChange = database((db) => {
+          const runChange = database(databasePath, (db) => {
             return db.query<{ payload: string }, [string]>(
               "SELECT payload FROM run_changes WHERE run_id = ?",
             ).get(runId);
@@ -243,7 +280,7 @@ export function messagesFeature(databasePath: string) {
             try { changes = JSON.parse(runChange.payload); } catch { changes = null; }
           }
         }
-        const attachments = database((db) => {
+        const attachments = database(databasePath, (db) => {
           return db.query<{ path: string; sha256: string; size: number }, [string]>(
             "SELECT path, sha256, size FROM message_attachments WHERE message_id = ? ORDER BY created_at ASC",
           ).all(msg.id);
@@ -264,13 +301,13 @@ export function messagesFeature(databasePath: string) {
       if (owner.kind === "anonymous") { set.status = 401; return { error: "unauthorized" as const }; }
       if (owner.kind === "unavailable") { set.status = 503; return { error: "storage_unavailable" as const }; }
       if (!canonicalUuid.test(params.id)) { set.status = 404; return { error: "not_found" as const }; }
-      const row = database((db) => {
+      const row = database(databasePath, (db) => {
         return db.query<{ workspace_id: string; user_id: string }, [string]>(
           "SELECT r.workspace_id, r.user_id FROM runs r WHERE r.id = ?",
         ).get(params.id);
       });
       if (!row || row.user_id !== owner.userId) { set.status = 404; return { error: "not_found" as const }; }
-      const change = database((db) => {
+      const change = database(databasePath, (db) => {
         return db.query<{ captured_at: string; payload: string }, [string]>(
           "SELECT captured_at, payload FROM run_changes WHERE run_id = ?",
         ).get(params.id);

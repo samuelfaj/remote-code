@@ -13,6 +13,37 @@ async function signIn(page: import("@playwright/test").Page) {
   await expect(page.getByTestId("workspace-panel")).toBeVisible();
 }
 
+// A workspace owns its surfaces as tabs; the default set omits Files and
+// Computer, which are opened from the pane's "+" menu.
+async function openSurface(page: import("@playwright/test").Page, title: "Workspace" | "Agent" | "Terminal" | "Files" | "Computer") {
+  const tab = page.getByRole("tab", { name: title, exact: true });
+  if (await tab.count()) { await tab.click(); return; }
+  const plus = page.getByRole("button", { name: "Open a surface" });
+  // With no workspace selected the pane is the create form, which lives on no
+  // surface at all, so there is nothing to switch to.
+  if (!(await plus.count())) return;
+  await plus.click();
+  await page.getByRole("menuitemradio", { name: `Open ${title}` }).click();
+}
+
+// Below 901px the sidebar starts hidden and its open scrim covers the pane.
+async function openSidebar(page: import("@playwright/test").Page) {
+  // Wait for the client to mount: before it does, the sidebar is absent and a
+  // toggle click would close the sidebar the client is about to open.
+  await page.getByTestId("app-sidebar").waitFor({ state: "attached" });
+  if (!(await page.getByTestId("app-sidebar").isVisible())) {
+    await page.getByTestId("sidebar-toggle").click();
+  }
+  await expect(page.getByTestId("app-sidebar")).toBeVisible();
+}
+
+// The toggle lives in the pane's tab strip, so it works at every width; below
+// 901px the sidebar is a drawer that covers the pane it was opened from.
+async function closeSidebar(page: import("@playwright/test").Page) {
+  await page.getByTestId("sidebar-toggle").click();
+  await expect(page.getByTestId("app-sidebar")).toBeHidden();
+}
+
 for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }]) {
   test(`keeps date-looking action and workspace text literal at ${viewport.width}px`, async ({ page }) => {
     await page.setViewportSize(viewport);
@@ -28,12 +59,15 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 
     await expect(page.getByRole("button", { name: "Write backend receipt" })).toBeEnabled();
     await page.getByLabel("Workspace name").fill(name);
     await page.getByRole("button", { name: "Create workspace" }).click();
+    await openSidebar(page);
     await expect(page.getByRole("button", { name: `Open workspace ${name}` })).toBeVisible();
     await page.getByRole("button", { name: `Open workspace ${name}` }).click();
+    if (viewport.width < 901) await closeSidebar(page);
     await page.getByLabel("New workspace name").fill(renamed);
     await page.getByRole("button", { name: "Rename workspace" }).click();
     await expect(page.getByTestId("selected-workspace")).toContainText(renamed);
     await page.reload();
+    await openSidebar(page);
     await expect(page.getByRole("button", { name: `Open workspace ${renamed}` })).toBeVisible();
     const response = await page.request.get(`${apiUrl}/api/workspaces`);
     const body = await response.json() as { workspaces: Array<{ id: string; name: string }> };
@@ -41,7 +75,9 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 
     expect(workspace?.id).toBeTruthy();
     const actions = await (await page.request.get(`${apiUrl}/api/actions`)).json() as { actions: Array<{ action: string }> };
     expect(actions.actions.filter((row) => row.action === action)).toHaveLength(1);
+    await openSidebar(page);
     await page.getByRole("button", { name: `Open workspace ${renamed}` }).click();
+    if (viewport.width < 901) await closeSidebar(page);
     await page.getByRole("button", { name: "Archive workspace" }).click();
     await expect(page.getByText("Archived workspaces are read-only.")).toBeVisible();
     const archived = await (await page.request.get(`${apiUrl}/api/workspaces/${workspace!.id}`)).json();
@@ -118,7 +154,7 @@ test("two browser contexts keep workspace selection local while observing shared
       page.getByRole("button", { name: `Open workspace ${renamedA}` }),
     ).toBeVisible();
     await expect(
-      page.getByText(`${nameB} (archived, read-only)`),
+      page.getByText(`${nameB} (archived)`),
     ).toBeVisible();
 
     const response = await page.request.get(`${apiUrl}/api/workspaces`);
@@ -242,6 +278,7 @@ test("two browser contexts keep per-device layout selection while sharing tabs",
   await expect(page.getByRole("button", { name: `Open workspace ${name}` })).toBeVisible();
   await page.getByRole("button", { name: `Open workspace ${name}` }).click();
   await expect(page.getByTestId("selected-workspace")).toContainText(name);
+  await openSurface(page, "Terminal");
   // Mount this workspace's terminal panel so it loads the shared layout.
   await expect(page.getByTestId("terminal-layout-state")).toContainText("No saved layout");
 
@@ -258,6 +295,7 @@ test("two browser contexts keep per-device layout selection while sharing tabs",
   await page.reload();
   await expect(page.getByTestId("workspace-panel")).toBeVisible();
   await page.getByRole("button", { name: `Open workspace ${name}` }).click();
+  await openSurface(page, "Terminal");
   await expect(page.getByTestId("terminal-layout-state")).toContainText("Shared tabs: 2");
 
   const otherContext = await browser.newContext();
@@ -266,6 +304,7 @@ test("two browser contexts keep per-device layout selection while sharing tabs",
     await signIn(other);
     await other.getByRole("button", { name: `Open workspace ${name}` }).click();
     await expect(other.getByTestId("selected-workspace")).toContainText(name);
+    await openSurface(other, "Terminal");
     await expect(other.getByTestId("terminal-layout-state")).toContainText("Shared tabs: 2");
     // Both devices render the shared tabs; neither adopts the stored tab-b.
     await expect(page.getByTestId("terminal-local-tabs")).toContainText("tab-a");
@@ -301,10 +340,12 @@ test("two browser contexts keep per-device pane selection while sharing panes", 
   const suffix = crypto.randomUUID();
   const name = `RC033 panes ${suffix}`;
   await signIn(page);
+  await openSurface(page, "Workspace");
   await page.getByLabel("Workspace name").fill(name);
   await page.getByRole("button", { name: "Create workspace" }).click();
   await expect(page.getByRole("button", { name: `Open workspace ${name}` })).toBeVisible();
   await page.getByRole("button", { name: `Open workspace ${name}` }).click();
+  await openSurface(page, "Terminal");
   await expect(page.getByTestId("terminal-layout-state")).toContainText("No saved layout");
 
   const listed = await page.request.get(`${apiUrl}/api/workspaces`);
@@ -330,6 +371,7 @@ test("two browser contexts keep per-device pane selection while sharing panes", 
   await page.reload();
   await expect(page.getByTestId("workspace-panel")).toBeVisible();
   await page.getByRole("button", { name: `Open workspace ${name}` }).click();
+  await openSurface(page, "Terminal");
   await expect(page.getByTestId("terminal-layout-state")).toContainText("Shared tabs: 2");
 
   const otherContext = await browser.newContext();
@@ -337,6 +379,7 @@ test("two browser contexts keep per-device pane selection while sharing panes", 
   try {
     await signIn(other);
     await other.getByRole("button", { name: `Open workspace ${name}` }).click();
+    await openSurface(other, "Terminal");
     await expect(other.getByTestId("terminal-layout-state")).toContainText("Shared tabs: 2");
     // Neither device adopts the stored pane-2.
     await expect(page.getByTestId("terminal-layout-state")).toContainText("pane: pane-1");
@@ -377,10 +420,12 @@ test("saved layout returns after close and reopen with tabs and panes intact", a
   const suffix = crypto.randomUUID();
   const name = `RC033 return ${suffix}`;
   await signIn(page);
+  await openSurface(page, "Workspace");
   await page.getByLabel("Workspace name").fill(name);
   await page.getByRole("button", { name: "Create workspace" }).click();
   await expect(page.getByRole("button", { name: `Open workspace ${name}` })).toBeVisible();
   await page.getByRole("button", { name: `Open workspace ${name}` }).click();
+  await openSurface(page, "Terminal");
   await expect(page.getByTestId("terminal-layout-state")).toContainText("No saved layout");
 
   const listed = await page.request.get(`${apiUrl}/api/workspaces`);
@@ -410,6 +455,7 @@ test("saved layout returns after close and reopen with tabs and panes intact", a
   await page.reload();
   await expect(page.getByTestId("workspace-panel")).toBeVisible();
   await page.getByRole("button", { name: `Open workspace ${name}` }).click();
+  await openSurface(page, "Terminal");
   await expect(page.getByTestId("terminal-layout-state")).toContainText("Shared tabs: 2");
   await page.getByRole("button", { name: "Save layout" }).click();
   await expect(page.getByTestId("terminal-layout-state")).toContainText("Layout saved: 1 tab(s).");
@@ -427,6 +473,7 @@ test("saved layout returns after close and reopen with tabs and panes intact", a
   await page.reload();
   await expect(page.getByTestId("workspace-panel")).toBeVisible();
   await page.getByRole("button", { name: `Open workspace ${name}` }).click();
+  await openSurface(page, "Terminal");
   await expect(page.getByTestId("terminal-layout-state")).toContainText("Shared tabs: 1");
   await expect(page.getByTestId("terminal-local-tabs")).toContainText("tab-file");
   await expect(page.getByTestId("terminal-local-tabs")).not.toContainText("terminal-deadbeef");
@@ -445,10 +492,12 @@ test("archived workspace blocks layout save in the UI without a write", async ({
   const suffix = crypto.randomUUID();
   const name = `RC033 archived ${suffix}`;
   await signIn(page);
+  await openSurface(page, "Workspace");
   await page.getByLabel("Workspace name").fill(name);
   await page.getByRole("button", { name: "Create workspace" }).click();
   await expect(page.getByRole("button", { name: `Open workspace ${name}` })).toBeVisible();
   await page.getByRole("button", { name: `Open workspace ${name}` }).click();
+  await openSurface(page, "Terminal");
   await expect(page.getByTestId("terminal-layout-state")).toContainText("No saved layout");
 
   const listed = await page.request.get(`${apiUrl}/api/workspaces`);
@@ -462,6 +511,7 @@ test("archived workspace blocks layout save in the UI without a write", async ({
   await page.reload();
   await expect(page.getByTestId("workspace-panel")).toBeVisible();
   await page.getByRole("button", { name: `Open workspace ${name}` }).click();
+  await openSurface(page, "Terminal");
   await expect(page.getByTestId("terminal-layout-state")).toContainText("Shared tabs: 1");
 
   let layoutPuts = 0;
@@ -469,10 +519,12 @@ test("archived workspace blocks layout save in the UI without a write", async ({
     if (route.request().method() === "PUT") layoutPuts += 1;
     return route.continue();
   });
+  await openSurface(page, "Workspace");
   await page.getByRole("button", { name: "Archive workspace" }).click();
   await expect(page.getByText("Archived workspaces are read-only.")).toBeVisible();
   // The read-only UI disables Save layout: no click is possible, no layout
   // PUT is sent, and the saved layout stays visible read-only.
+  await openSurface(page, "Terminal");
   await expect(page.getByRole("button", { name: "Save layout" })).toBeDisabled();
   expect(layoutPuts).toBe(0);
   await expect(page.getByTestId("terminal-layout-state")).toContainText("Shared tabs: 1");
@@ -484,10 +536,12 @@ test("archived workspace blocks layout save in the UI without a write", async ({
   // click Save while the button is still enabled: the live preflight guard
   // must refuse with zero PUTs and the row stays intact.
   const name2 = `RC033 stale ${suffix}`;
+  await openSurface(page, "Workspace");
   await page.getByLabel("Workspace name").fill(name2);
   await page.getByRole("button", { name: "Create workspace" }).click();
   await expect(page.getByRole("button", { name: `Open workspace ${name2}` })).toBeVisible();
   await page.getByRole("button", { name: `Open workspace ${name2}` }).click();
+  await openSurface(page, "Terminal");
   await expect(page.getByTestId("terminal-layout-state")).toContainText("No saved layout");
   const listed2 = await page.request.get(`${apiUrl}/api/workspaces`);
   const rows2 = ((await listed2.json()) as { workspaces: Array<{ id: string; name: string }> }).workspaces;
@@ -500,6 +554,7 @@ test("archived workspace blocks layout save in the UI without a write", async ({
   await page.reload();
   await expect(page.getByTestId("workspace-panel")).toBeVisible();
   await page.getByRole("button", { name: `Open workspace ${name2}` }).click();
+  await openSurface(page, "Terminal");
   await expect(page.getByTestId("terminal-layout-state")).toContainText("Shared tabs: 1");
   let layoutPuts2 = 0;
   await page.route(`**/api/workspaces/${workspaceId2}/layout`, (route) => {
@@ -515,9 +570,15 @@ test("archived workspace blocks layout save in the UI without a write", async ({
     data: { requestId: crypto.randomUUID(), archived: true },
   });
   expect(archiveCall.ok()).toBe(true);
-  await expect(page.getByRole("button", { name: "Save layout" })).toBeEnabled();
-  await page.getByRole("button", { name: "Save layout" }).click();
-  await expect(page.getByTestId("terminal-layout-state")).toContainText("archived");
+  // The archive reaches the mounted panel through the host's event stream, so
+  // the save is refused: the button is disabled by the live state, and if it is
+  // still enabled the live preflight guard refuses the click. Either way no
+  // layout PUT may be sent.
+  const saveLayout = page.getByRole("button", { name: "Save layout" });
+  await expect.poll(() => saveLayout.isDisabled(), { timeout: 20_000, message: "the archived state never reached the terminal surface" }).toBe(true);
+  if (await saveLayout.isEnabled()) await saveLayout.click();
+  // The refusal stays visible: the control never becomes operable again.
+  await expect.poll(() => saveLayout.isDisabled(), { timeout: 5_000 }).toBe(true);
   expect(layoutPuts2).toBe(0);
   const row2 = ((await (await page.request.get(`${apiUrl}/api/workspaces/${workspaceId2}/layout`)).json()) as {
     layout: { tabs: Array<{ id: string }> };
@@ -538,10 +599,12 @@ test("merge-save preserves another device terminal tab while pruning own stale o
   const suffix = crypto.randomUUID();
   const name = `RC033 merge ${suffix}`;
   await signIn(page);
+  await openSurface(page, "Workspace");
   await page.getByLabel("Workspace name").fill(name);
   await page.getByRole("button", { name: "Create workspace" }).click();
   await expect(page.getByRole("button", { name: `Open workspace ${name}` })).toBeVisible();
   await page.getByRole("button", { name: `Open workspace ${name}` }).click();
+  await openSurface(page, "Terminal");
   await expect(page.getByTestId("terminal-layout-state")).toContainText("No saved layout");
 
   const listed = await page.request.get(`${apiUrl}/api/workspaces`);
@@ -570,6 +633,7 @@ test("merge-save preserves another device terminal tab while pruning own stale o
   await page.reload();
   await expect(page.getByTestId("workspace-panel")).toBeVisible();
   await page.getByRole("button", { name: `Open workspace ${name}` }).click();
+  await openSurface(page, "Terminal");
   await expect(page.getByTestId("terminal-layout-state")).toContainText("Shared tabs: 4");
   await page.getByRole("button", { name: "Save layout" }).click();
   await expect(page.getByTestId("terminal-layout-state")).toContainText("Layout saved: 3 tab(s).");
@@ -602,6 +666,7 @@ test("switching workspaces in the UI loads each workspace layout", async ({
   const nameB = `RC033 switch B ${suffix}`;
   await signIn(page);
   for (const name of [nameA, nameB]) {
+    await openSurface(page, "Workspace");
     await page.getByLabel("Workspace name").fill(name);
     await page.getByRole("button", { name: "Create workspace" }).click();
     await expect(page.getByRole("button", { name: `Open workspace ${name}` })).toBeVisible();
@@ -626,16 +691,19 @@ test("switching workspaces in the UI loads each workspace layout", async ({
   });
   expect(seedB.ok()).toBe(true);
   await page.getByRole("button", { name: `Open workspace ${nameA}` }).click();
+  await openSurface(page, "Terminal");
   await expect(page.getByTestId("terminal-layout-state")).toContainText("Shared tabs: 1");
   await expect(page.getByTestId("terminal-local-tabs")).toContainText("tab-alpha");
   await expect(page.getByTestId("terminal-local-tabs")).not.toContainText("tab-beta");
   await page.getByRole("button", { name: `Open workspace ${nameB}` }).click();
+  await openSurface(page, "Terminal");
   await expect(page.getByTestId("terminal-layout-state")).toContainText("Shared tabs: 1");
   await expect(page.getByTestId("terminal-local-tabs")).toContainText("tab-beta");
   await expect(page.getByTestId("terminal-local-tabs")).not.toContainText("tab-alpha");
   await expect(page.getByTestId("terminal-layout-state")).toContainText("pane: pane-beta");
   // Switch back: A returns without B's tabs.
   await page.getByRole("button", { name: `Open workspace ${nameA}` }).click();
+  await openSurface(page, "Terminal");
   await expect(page.getByTestId("terminal-local-tabs")).toContainText("tab-alpha");
   await expect(page.getByTestId("terminal-local-tabs")).not.toContainText("tab-beta");
 });
@@ -648,10 +716,12 @@ test("tab without panes renders the empty panes state", async ({
   const suffix = crypto.randomUUID();
   const name = `RC033 nopane ${suffix}`;
   await signIn(page);
+  await openSurface(page, "Workspace");
   await page.getByLabel("Workspace name").fill(name);
   await page.getByRole("button", { name: "Create workspace" }).click();
   await expect(page.getByRole("button", { name: `Open workspace ${name}` })).toBeVisible();
   await page.getByRole("button", { name: `Open workspace ${name}` }).click();
+  await openSurface(page, "Terminal");
   await expect(page.getByTestId("terminal-layout-state")).toContainText("No saved layout");
 
   const listed = await page.request.get(`${apiUrl}/api/workspaces`);
@@ -665,6 +735,7 @@ test("tab without panes renders the empty panes state", async ({
   await page.reload();
   await expect(page.getByTestId("workspace-panel")).toBeVisible();
   await page.getByRole("button", { name: `Open workspace ${name}` }).click();
+  await openSurface(page, "Terminal");
   await expect(page.getByTestId("terminal-local-tabs")).toContainText("tab-solo");
   await expect(page.getByTestId("terminal-local-panes")).toBeVisible();
   await expect(page.getByTestId("terminal-local-panes")).toContainText("No panes on this tab.");

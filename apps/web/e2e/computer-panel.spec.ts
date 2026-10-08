@@ -44,6 +44,15 @@ async function createBot(page: import("@playwright/test").Page, workspaceId: str
   return botId;
 }
 
+// Possession is shown on the computer surface. A workspace starts with the
+// workspace, agent and terminal surfaces, so the computer surface is opened
+// from the pane's own "+" menu, one step, like the macOS pane.
+async function showComputer(page: import("@playwright/test").Page) {
+  await page.getByRole("button", { name: "Open a surface" }).click();
+  await page.getByRole("menuitemradio", { name: "Open Computer" }).click();
+  await expect(page.getByTestId("computer-panel")).toBeVisible();
+}
+
 test("computer panel: two clients take the same screen, one is superseded, and control returns", async ({
   browser,
   page,
@@ -56,6 +65,7 @@ test("computer panel: two clients take the same screen, one is superseded, and c
   const workspaceId = await createWorkspace(page, workspaceName);
   await createBot(page, workspaceId, `RC052 bot A ${suffix}`);
   await createBot(page, workspaceId, `RC052 bot B ${suffix}`);
+  await showComputer(page);
 
   // Client A takes the Bot's screen and the host confirms it.
   await page.getByTestId("take-control").click();
@@ -73,6 +83,7 @@ test("computer panel: two clients take the same screen, one is superseded, and c
     await signIn(other);
     await other.getByTestId(`workspace-item-${workspaceName.replace(/[^a-zA-Z0-9_-]/g, "-")}`).click();
     await other.getByTestId(`bot-item-${`RC052 bot A ${suffix}`.replace(/[^a-zA-Z0-9_-]/g, "-")}`).click();
+    await showComputer(other);
 
     // Possession is reported against this client's own token, so B holds nothing
     // of its own before it takes.

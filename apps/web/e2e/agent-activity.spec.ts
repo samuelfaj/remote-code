@@ -40,6 +40,9 @@ async function createWorkspace(page: import("@playwright/test").Page, name: stri
   // The sidebar is what tells the shell which workspace the panels show.
   await page.getByTestId(`workspace-item-${name.replace(/[^a-zA-Z0-9_-]/g, "-")}`).click();
   await expect(page.getByTestId("selected-workspace")).toContainText(name);
+  // Agent activity lives in its own surface tab; the workspace tab is the one
+  // the shell opens when a workspace is selected.
+  await page.getByRole("tab", { name: "Agent", exact: true }).click();
   await expect(page.getByTestId("agent-panel")).toBeVisible();
   return workspace!.id as string;
 }

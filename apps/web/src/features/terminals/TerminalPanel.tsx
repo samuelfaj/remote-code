@@ -1,5 +1,6 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import "./styles.css";
+import { type LiveSignals } from "../shell/live";
 import { TerminalScreen, type TerminalScreenHandle } from "./TerminalScreen";
 import {
   createApiClient, fileFolderStateFromValue, terminalAttachedReceipt, terminalInputAckFromValue, terminalInputRejectionIsDefinitive, terminalPollFromValue, terminalRejectionMessage,
@@ -9,17 +10,18 @@ import {
   type TerminalReceipt, type TerminalReference, type Workspace, type WorkspaceLayout,
 } from "@remotecode/client";
 import { color, space, radius, font, ui } from "../../design/tokens";
+import { Icon } from "../shell/icons";
 
-type Props = { userId: string; workspace: Workspace | null; blocked: boolean; onUnauthorized: () => void };
+type Props = { userId: string; workspace: Workspace | null; blocked: boolean; onUnauthorized: () => void; live?: LiveSignals };
 const budgetMs = 10_000;
 const outputLimit = 64 * 1024;
 
 // Line input; output is parsed by a read-only xterm emulator from validated byte pages.
-export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Props) {
+export function TerminalPanel({ userId, workspace, blocked, onUnauthorized, live }: Props) {
   const origin = window.location.origin;
   const key = `remotecode.terminal:${JSON.stringify([origin, userId])}`;
-  const live = useRef({ userId, workspace, blocked });
-  live.current = { userId, workspace, blocked };
+  const context = useRef({ userId, workspace, blocked });
+  context.current = { userId, workspace, blocked };
   const active = useRef(false);
   const epoch = useRef(0);
   const working = useRef(false);
@@ -95,8 +97,8 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
     const generation = epoch.current;
     const id = workspace?.id;
     const archived = workspace?.archived;
-    return () => active.current && epoch.current === generation && live.current.userId === userId &&
-      live.current.workspace?.id === id && live.current.workspace?.archived === archived && live.current.blocked === blocked;
+    return () => active.current && epoch.current === generation && context.current.userId === userId &&
+      context.current.workspace?.id === id && context.current.workspace?.archived === archived && context.current.blocked === blocked;
   }
 
   function client(end: number) {
@@ -310,54 +312,62 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
     }
   }, [userId, workspace?.id, workspace?.archived, blocked]);
 
-  useLayoutEffect(() => {
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout>;
+  // Event-driven output read: the host bumps live.terminal when terminal state
+  // changed, so this re-reads the authoritative route instead of polling.
+  async function readOutput() {
+    const saved = referenceRef.current;
     const current = currentCheck();
-    const tick = async () => {
-      const saved = referenceRef.current;
-      if (cancelled || !current()) return;
-      if (!working.current && saved?.terminalId && saved.start.workspaceId === workspace?.id && !blocked) {
-        working.current = true; setBusy(true);
-        const end = Date.now() + budgetMs;
-        try {
-          await session(end, current);
-          const confirmed = await poll(end, current, saved);
-          if (current()) setMessage(saved.inputUncertain ? "Input delivery remains unknown. State reads do not resend or confirm the original input."
-            : confirmed.cleanup === "removed" ? "Host confirms the process ended and was removed."
-            : saved.stopRequested ? "Stop is unconfirmed. Input remains disabled."
-            : "Terminal state read from the host. Input acknowledgements are not command results.");
+    if (working.current || !current() || !saved?.terminalId ||
+      saved.start.workspaceId !== context.current.workspace?.id || context.current.blocked) return;
+    working.current = true; setBusy(true);
+    const end = Date.now() + budgetMs;
+    try {
+      await session(end, current);
+      const confirmed = await poll(end, current, saved);
+      if (current()) setMessage(saved.inputUncertain ? "Input delivery remains unknown. State reads do not resend or confirm the original input."
+        : confirmed.cleanup === "removed" ? "Host confirms the process ended and was removed."
+        : saved.stopRequested ? "Stop is unconfirmed. Input remains disabled."
+        : "Terminal state read from the host. Input acknowledgements are not command results.");
+    }
+    catch (error) {
+      if (current()) {
+        setReceipt(null);
+        if (error instanceof Error && error.message === "Terminal state unavailable for this login" &&
+          referenceRef.current === saved) {
+          // Definitive 404 on the auto-poll: this login can never observe
+          // the terminal again, so release the stale reference and let
+          // the user start fresh. No mutation was sent; nothing to fence.
+          try { writeReference(null, saved); } catch { /* Storage already reports itself; keep the message. */ }
         }
-        catch (error) {
-          if (current()) {
-            setReceipt(null);
-            if (error instanceof Error && error.message === "Terminal state unavailable for this login" &&
-              referenceRef.current === saved) {
-              // Definitive 404 on the auto-poll: this login can never observe
-              // the terminal again, so release the stale reference and let
-              // the user start fresh. No mutation was sent; nothing to fence.
-              try { writeReference(null, saved); } catch { /* Storage already reports itself; keep the message. */ }
-            }
-            setMessage(error instanceof Error && error.message === "Terminal login check is unavailable"
-              ? "Terminal login check is unavailable. State reads retry automatically; nothing was resent."
-              : error instanceof Error && error.message === "Terminal state unavailable for this login"
-                ? "Terminal not found for this login. Start a new terminal when ready."
-                : error instanceof Error && (error.message === "Invalid terminal poll" ||
-                  error.message === "Invalid terminal state")
-                  ? "Host returned unreadable terminal data. State reads retry automatically; nothing was resent."
-                  : error instanceof Error && (error.message === "Terminal cursor ran ahead. Re-reading retained output; nothing was resent." ||
-                    error.message === "Terminal cursor is invalid. Re-reading retained output; nothing was resent.")
-                    ? error.message
-                    : "Terminal state is unconfirmed. State reads retry automatically; nothing was resent.");
-          }
-        }
-        finally { if (current()) { working.current = false; setBusy(false); drainKeys(); } }
+        setMessage(error instanceof Error && error.message === "Terminal login check is unavailable"
+          ? "Terminal login check is unavailable. State reads retry automatically; nothing was resent."
+          : error instanceof Error && error.message === "Terminal state unavailable for this login"
+            ? "Terminal not found for this login. Start a new terminal when ready."
+            : error instanceof Error && (error.message === "Invalid terminal poll" ||
+              error.message === "Invalid terminal state")
+              ? "Host returned unreadable terminal data. State reads retry automatically; nothing was resent."
+              : error instanceof Error && (error.message === "Terminal cursor ran ahead. Re-reading retained output; nothing was resent." ||
+                error.message === "Terminal cursor is invalid. Re-reading retained output; nothing was resent.")
+                ? error.message
+                : "Terminal state is unconfirmed. State reads retry automatically; nothing was resent.");
       }
-      if (!cancelled && current()) timer = setTimeout(tick, 750);
-    };
-    timer = setTimeout(tick, 750);
-    return () => { cancelled = true; clearTimeout(timer); };
-  }, [userId, workspace?.id, workspace?.archived, blocked, reference?.terminalId]);
+    }
+    finally { if (current()) { working.current = false; setBusy(false); drainKeys(); } }
+  }
+  const readOutputRef = useRef(readOutput);
+  readOutputRef.current = readOutput;
+  const pendingRead = useRef(false);
+  useEffect(() => {
+    if (live?.terminal === undefined) return;
+    if (working.current) { pendingRead.current = true; return; }
+    void readOutputRef.current();
+  }, [live?.terminal]);
+  // A signal that arrived while a read was in flight runs one follow-up read.
+  useEffect(() => {
+    if (busy || !pendingRead.current) return;
+    pendingRead.current = false;
+    void readOutputRef.current();
+  }, [busy]);
 
   async function start() {
     if (!workspace || blocked || workspace.archived || !storageReady || referenceRef.current || working.current || !available) return;
@@ -979,14 +989,24 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
     finally { if (current()) { working.current = false; setBusy(false); } }
   }
 
+  const pillState = closed ? "closed" : gap ? "gap" : currentReceipt?.state === "running" ? "connected" : "offline";
   return <section className="terminal-panel" aria-label="Linux terminal">
-    <h3 style={ui.heading}>Linux terminal</h3>
-    {!workspace ? <p style={ui.body}>Select a workspace to use its host terminal.</p> : <>
+    <header className="terminal-toolbar">
+      <Icon name="terminal" className="terminal-toolbar__icon" />
+      <h3 className="terminal-toolbar__title">Linux terminal</h3>
+      <div className="terminal-toolbar__right">
+        <span className={`terminal-statuspill terminal-statuspill--${pillState}`}>{pillState}</span>
+        {workspace ? <>
+          <button type="button" disabled={busy || blocked} onClick={() => void inspect()}><Icon name="refresh" />Inspect terminal state</button>
+          <button type="button" disabled={busy || blocked || !storageReady || !sameWorkspace || !reference?.terminalId || reference.stopRequested || closed} onClick={() => void stop()}><Icon name="x" />Stop terminal</button>
+          <button type="button" disabled={busy || blocked || !storageReady || !workspace || workspace.archived} onClick={() => void saveLayout()}><Icon name="grid" />Save layout</button>
+        </> : null}
+      </div>
+    </header>
+    {!workspace ? <p style={ui.body}>Select a workspace to use its host terminal.</p> : <div className="terminal-body">
       <p style={ui.body}>Line input with a read-only terminal screen. {directKeys ? `Direct keyboard input is on: typing in the terminal screen queues each keystroke and sends them in order through the same host input queue.${queuedKeys > 0 ? ` ${queuedKeys} waiting.` : ""}` : "Direct keyboard input is off."}</p>
       <div style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: space.md }}>
         <button type="button" className="primary" disabled={busy || blocked || !available || !storageReady || !!reference || workspace.archived} onClick={() => void start()}>Start Linux terminal</button>
-        <button type="button" disabled={busy || blocked} onClick={() => void inspect()}>Inspect terminal state</button>
-        <button type="button" disabled={busy || blocked || !storageReady || !sameWorkspace || !reference?.terminalId || reference.stopRequested || closed} onClick={() => void stop()}>Stop terminal</button>
       </div>
       <p role="status" data-testid="terminal-status" style={ui.meta}>{message}</p>
       {reference && !sameWorkspace ? <p style={ui.body}>Select the original workspace to inspect its terminal reference.</p> : null}
@@ -1013,20 +1033,19 @@ export function TerminalPanel({ userId, workspace, blocked, onUnauthorized }: Pr
       <div style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: space.md }}>
         <button type="button" disabled={busy || !canInput || !draft} onClick={() => void send(draft.endsWith("\n") ? draft : `${draft}\n`, draft)}>Send input</button>
         <button type="button" disabled={busy || !canInput} onClick={() => void send("\x03")}>Send Ctrl+C</button>
-        <button type="button" disabled={busy || blocked || !storageReady || !workspace || workspace.archived} onClick={() => void saveLayout()}>Save layout</button>
       </div>
       <p data-testid="terminal-layout-state" style={ui.meta}>{layoutMessage || "Layout not loaded for this workspace."}{layout ? ` Shared tabs: ${layout.tabs.length}; this device: ${localTabId ?? "none"}; pane: ${localPaneId ?? "none"}; selection stays on this device.` : ""}</p>
-      {layout ? <div style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: space.md }} aria-label="Local tabs" data-testid="terminal-local-tabs">
-        {layout.tabs.length === 0 ? <span style={ui.body}>No shared tabs yet.</span> : layout.tabs.map((tab) => <button key={tab.id} type="button" style={tab.id === localTabId ? ui.listItemSelected : ui.listItem} disabled={tab.id === localTabId} onClick={() => {
+      {layout ? <div className="terminal-chips" aria-label="Local tabs" data-testid="terminal-local-tabs">
+        {layout.tabs.length === 0 ? <span style={ui.body}>No shared tabs yet.</span> : layout.tabs.map((tab) => <button key={tab.id} type="button" className={tab.id === localTabId ? "terminal-chip terminal-chip--active" : "terminal-chip"} disabled={tab.id === localTabId} onClick={() => {
           setLocalTabId(tab.id);
           const inTab = (layout.panes ?? []).filter((pane) => pane.tabId === tab.id).sort((a, b) => a.order - b.order);
           setLocalPaneId(inTab[0]?.id ?? null);
         }}>Open {tab.id}{tab.id === localTabId ? " (this device)" : ""}</button>)}
       </div> : null}
-      {layout && localTabId ? <div style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: space.md }} aria-label="Local panes" data-testid="terminal-local-panes">
-        {layout.panes?.filter((pane) => pane.tabId === localTabId).sort((a, b) => a.order - b.order).map((pane) => <button key={pane.id} type="button" style={pane.id === localPaneId ? ui.listItemSelected : ui.listItem} disabled={pane.id === localPaneId} onClick={() => setLocalPaneId(pane.id)}>Open {pane.id}{pane.id === localPaneId ? " (this device)" : ""}</button>) ?? null}
+      {layout && localTabId ? <div className="terminal-chips" aria-label="Local panes" data-testid="terminal-local-panes">
+        {layout.panes?.filter((pane) => pane.tabId === localTabId).sort((a, b) => a.order - b.order).map((pane) => <button key={pane.id} type="button" className={pane.id === localPaneId ? "terminal-chip terminal-chip--active" : "terminal-chip"} disabled={pane.id === localPaneId} onClick={() => setLocalPaneId(pane.id)}>Open {pane.id}{pane.id === localPaneId ? " (this device)" : ""}</button>) ?? null}
         {(layout.panes?.filter((pane) => pane.tabId === localTabId).length ?? 0) === 0 ? <span style={ui.body}>No panes on this tab.</span> : null}
       </div> : null}
-    </>}
+    </div>}
   </section>;
 }

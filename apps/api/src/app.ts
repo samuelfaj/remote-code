@@ -1,6 +1,7 @@
 import { Database } from "bun:sqlite";
 import { Elysia } from "elysia";
 import { actionsFeature } from "./features/actions";
+import { agentProviderFeature } from "./features/agent-provider";
 import { authFeature, sessionToken } from "./features/auth";
 import { compatibilityFeature } from "./features/compatibility";
 import { storageFeature } from "./features/storage";
@@ -69,16 +70,26 @@ export function createApi(
         }
       : undefined,
   screenConfig: Parameters<typeof screenFeature>[1] = undefined,
+  agentProviderConfig: Parameters<typeof agentProviderFeature>[1] = {},
 ) {
   initializeDatabase(configuredDatabasePath);
   const actions = actionsFeature(configuredDatabasePath, authConfig.webOrigin ?? "http://localhost:5173");
-  const storage = storageFeature(configuredDatabasePath);
-  const terminals = terminalsFeature(configuredDatabasePath, terminalConfig);
+  const storage = storageFeature(configuredDatabasePath, {
+    onChange: (notice) => actions.broadcastToUser(notice.userId, { type: notice.type, workspaceId: notice.workspaceId }),
+  });
+  const terminals = terminalsFeature(configuredDatabasePath, terminalConfig && {
+    ...terminalConfig,
+    onChange: (notice) => actions.broadcastToUser(notice.userId, { type: notice.type, workspaceId: notice.workspaceId }),
+  });
   const runs = runsFeature(configuredDatabasePath, {
     ...(runsConfig ?? {}),
-    onUpdate: (run) => actions.broadcast({ type: "run.updated", run }),
+    onUpdate: (run, userId) => actions.broadcastToUser(userId, { type: "run.updated", workspaceId: run.workspaceId, run }),
+    onChange: (notice) => actions.broadcastToUser(notice.userId, { type: notice.type, workspaceId: notice.workspaceId }),
   });
-  const schedules = schedulesFeature(configuredDatabasePath, { startRun: runs.startRun });
+  const schedules = schedulesFeature(configuredDatabasePath, {
+    startRun: runs.startRun,
+    onChange: (notice) => actions.broadcastToUser(notice.userId, { type: notice.type, workspaceId: notice.workspaceId }),
+  });
   if (configuredDatabasePath === databasePath) registerTerminalsShutdown(terminals.shutdown);
   const workspaceFolders = workspaceFoldersFeature(configuredDatabasePath, undefined, terminals.workspaceIdentity);
   let storageUnavailable = corruptAtStartup(configuredDatabasePath) || !workspaceFolders.isReady() ||
@@ -134,17 +145,27 @@ export function createApi(
     .use(hostedFeature(configuredDatabasePath))
     .use(capacityFeature(configuredDatabasePath))
     .use(updateFeature(configuredDatabasePath))
-    .use(botsFeature(configuredDatabasePath))
+    .use(botsFeature(configuredDatabasePath, {
+      onChange: (notice) => actions.broadcastToUser(notice.userId, { type: notice.type, workspaceId: notice.workspaceId }),
+    }))
     .use(backupFeature(configuredDatabasePath, { dataRoot: process.env.REMOTECODE_DATA_ROOT ?? "/var/lib/remotecode" }))
     .use(workspaceLayoutFeature(configuredDatabasePath).routes)
     .use(terminals.routes)
     .use(runs.routes)
+    .use(agentProviderFeature(configuredDatabasePath, agentProviderConfig))
     .use(schedules.routes)
-    .use(messagesFeature(configuredDatabasePath))
-    .use(inboxFeature(configuredDatabasePath))
+    .use(messagesFeature(configuredDatabasePath, {
+      onChange: (notice) => actions.broadcastToUser(notice.userId, { type: notice.type, workspaceId: notice.workspaceId }),
+    }))
+    .use(inboxFeature(configuredDatabasePath, {
+      onChange: (notice) => actions.broadcastToUser(notice.userId, { type: notice.type, workspaceId: notice.workspaceId }),
+    }))
     .use(pushFeature(configuredDatabasePath))
     .use(billingFeature(configuredDatabasePath))
-    .use(screenFeature(configuredDatabasePath, screenConfig))
+    .use(screenFeature(configuredDatabasePath, {
+      ...(screenConfig ?? {}),
+      onChange: (notice) => actions.broadcastToUser(notice.userId, { type: notice.type, workspaceId: notice.workspaceId }),
+    }))
     .onStop(() => { terminals.stopAll(); runs.stopAll(); schedules.stop(); });
 }
 

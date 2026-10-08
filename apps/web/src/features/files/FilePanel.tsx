@@ -1,20 +1,23 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native-web";
 import { color, space, radius, font, ui } from "../../design/tokens";
 import { createApiClient, fileConflictVersion, fileReceiptFromValue, workspaceErrorStatus, workspaceFromValue, type PendingFile, type Workspace } from "@remotecode/client";
+import { Icon } from "../shell/icons";
+import { type LiveSignals } from "../shell/live";
 import { clearPendingFile, clearPendingFolder, directoryFromValue, fileStorageKey, folderStorageKey, folderStateFromValue, isMissingFilePath, isTargetExists, isVersionConflict, openFileFromValue, persistPendingFile, persistPendingFolder, readPendingFile, readPendingFolder, textSha256, validPath, validText, type FileEntry, type FolderState, type OpenFile } from "./file-editor";
 
 const deadlineMs = 10_000;
-type Props = { userId: string; workspace: Workspace | null; blocked: boolean; onUnauthorized: () => void };
+type Props = { userId: string; workspace: Workspace | null; blocked: boolean; onUnauthorized: () => void; live?: LiveSignals };
 type Inspection = { workspaceId: string; capability: "supported" | "unsupported" | "unknown"; folder: FolderState; archived: boolean };
 type Editor = { host: OpenFile; draft: string; needsRead: boolean };
 
-export function FilePanel({ userId, workspace, blocked, onUnauthorized }: Props) {
+export function FilePanel({ userId, workspace, blocked, onUnauthorized, live }: Props) {
   const origin = window.location.origin;
   const key = fileStorageKey(origin, userId);
   const folderKey = folderStorageKey(origin, userId);
-  const live = useRef({ userId, workspace, blocked });
-  live.current = { userId, workspace, blocked };
+  const current = useRef({ userId, workspace, blocked });
+  current.current = { userId, workspace, blocked };
+  const sawLiveSignal = useRef(false);
   const active = useRef(false);
   const generation = useRef(0);
   const working = useRef(false);
@@ -47,8 +50,8 @@ export function FilePanel({ userId, workspace, blocked, onUnauthorized }: Props)
     const workspaceId = workspace?.id;
     const archived = workspace?.archived;
     const wasBlocked = blocked;
-    return () => active.current && generation.current === epoch && live.current.userId === userId &&
-      live.current.workspace?.id === workspaceId && live.current.workspace?.archived === archived && live.current.blocked === wasBlocked;
+    return () => active.current && generation.current === epoch && current.current.userId === userId &&
+      current.current.workspace?.id === workspaceId && current.current.workspace?.archived === archived && current.current.blocked === wasBlocked;
   }
 
   function unauthorized(error: unknown) {
@@ -230,6 +233,16 @@ export function FilePanel({ userId, workspace, blocked, onUnauthorized }: Props)
     if (workspace && !blocked) void read("");
   }, [userId, workspace?.id, workspace?.archived, blocked]);
 
+  // The host says the workspace or its files changed: re-read instead of polling.
+  useEffect(() => {
+    if (!sawLiveSignal.current) {
+      sawLiveSignal.current = true;
+      return;
+    }
+    if (workspace && !blocked) void read("");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [live?.files, live?.workspaces]);
+
   async function prepareFolder() {
     if (!workspace || working.current || blocked || workspace.archived || !storageReady || pendingRef.current) return;
     if (pendingFolder && pendingFolder.workspaceId !== workspace.id) { setMessage("Select the original workspace to inspect its pending folder request."); return; }
@@ -407,115 +420,164 @@ export function FilePanel({ userId, workspace, blocked, onUnauthorized }: Props)
 
   return (
     <View style={styles.panel} testID="file-panel">
-      <Text accessibilityRole="header" style={styles.heading}>Files and editor</Text>
-      {!workspace ? <Text>Select a workspace to inspect its folder.</Text> : <>
-        <Text>Files in {workspace.name}{workspace.archived ? " (archived, read-only)" : ""}</Text>
-        <Pressable accessibilityRole="button" accessibilityLabel="Refresh folder and files" disabled={busy || blocked}
-          accessibilityState={{ disabled: busy || blocked }} onPress={() => void read(currentListing?.path ?? "")} style={styles.secondary}>
-          <Text>{busy ? "Checking files…" : "Refresh folder and files"}</Text>
-        </Pressable>
-        <Text testID="folder-status">{currentInspection?.capability === "unsupported" ? "Files unavailable on this host."
-          : currentInspection?.folder === "provisioned" ? "Folder provisioned on Linux."
-          : currentInspection?.folder === "not_provisioned" ? "Folder not provisioned."
-          : "Folder status unknown. Writes disabled."}</Text>
-        {currentInspection?.capability === "supported" && (currentInspection.folder === "not_provisioned" || pendingFolder?.workspaceId === workspace.id && currentInspection.folder === "unknown") && !workspace.archived && !currentInspection.archived ? <Pressable accessibilityRole="button" accessibilityLabel="Prepare workspace folder" disabled={busy || blocked || !storageReady || Boolean(pending)} onPress={() => void prepareFolder()} style={styles.secondary}><Text>{pendingFolder ? "Continue folder preparation with same request ID" : "Prepare workspace folder"}</Text></Pressable> : null}
-        {pendingFolder ? <Text testID="pending-folder">Folder request remains unknown. Request ID: {pendingFolder.requestId}</Text> : null}
+      <View style={ui.sectionHeader}>
+        <Icon name="file" size={12} />
+        <Text accessibilityRole="header" style={ui.sectionLabel}>Files and editor</Text>
+      </View>
+      {!workspace ? <Text style={ui.emptyText}>Select a workspace to inspect its folder.</Text> : <>
+        <Text style={ui.secondary}>Files in {workspace.name}{workspace.archived ? " (archived, read-only)" : ""}</Text>
+        <View style={ui.row}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Refresh folder and files" disabled={busy || blocked}
+            accessibilityState={{ disabled: busy || blocked }} onPress={() => void read(currentListing?.path ?? "")} style={styles.secondary}>
+            <Text style={ui.buttonLabel}>{busy ? "Checking files…" : "Refresh folder and files"}</Text>
+          </Pressable>
+        </View>
+        <View style={ui.statusRow}>
+          <View style={[ui.dot, currentInspection?.capability === "unsupported" ? styles.dotDanger
+            : currentInspection?.folder === "provisioned" ? styles.dotSuccess
+            : currentInspection?.folder === "not_provisioned" ? styles.dotWarning : styles.dotNeutral]} />
+          <Text testID="folder-status" style={ui.meta}>{currentInspection?.capability === "unsupported" ? "Files unavailable on this host."
+            : currentInspection?.folder === "provisioned" ? "Folder provisioned on Linux."
+            : currentInspection?.folder === "not_provisioned" ? "Folder not provisioned."
+            : "Folder status unknown. Writes disabled."}</Text>
+        </View>
+        {currentInspection?.capability === "supported" && (currentInspection.folder === "not_provisioned" || pendingFolder?.workspaceId === workspace.id && currentInspection.folder === "unknown") && !workspace.archived && !currentInspection.archived ? <View style={ui.row}><Pressable accessibilityRole="button" accessibilityLabel="Prepare workspace folder" disabled={busy || blocked || !storageReady || Boolean(pending)} onPress={() => void prepareFolder()} style={styles.secondary}><Text style={ui.buttonLabel}>{pendingFolder ? "Continue folder preparation with same request ID" : "Prepare workspace folder"}</Text></Pressable></View> : null}
+        {pendingFolder ? <Text testID="pending-folder" style={ui.hint}>Folder request remains unknown. Request ID: {pendingFolder.requestId}</Text> : null}
         {currentListing ? <View style={styles.section}>
-          <Text>Directory: {currentListing.path || "Workspace root"}</Text>
-          {currentListing.path ? <Pressable accessibilityRole="button" accessibilityLabel="Open parent directory" disabled={busy}
-            onPress={() => void read(currentListing.path.split("/").slice(0, -1).join("/"))} style={styles.secondary}><Text>Parent directory</Text></Pressable> : null}
-          {!currentListing.entries.length ? <Text>This directory is empty.</Text> : currentListing.entries.map((entry) => (
+          <View style={ui.row}>
+            <Icon name="folder" size={12} />
+            <Text style={ui.mono}>Directory: {currentListing.path || "Workspace root"}</Text>
+          </View>
+          {currentListing.path ? <View style={ui.row}><Pressable accessibilityRole="button" accessibilityLabel="Open parent directory" disabled={busy}
+            onPress={() => void read(currentListing.path.split("/").slice(0, -1).join("/"))} style={styles.secondary}><Text style={ui.buttonLabel}>Parent directory</Text></Pressable></View> : null}
+          {!currentListing.entries.length ? <Text style={ui.emptyText}>This directory is empty.</Text> : currentListing.entries.map((entry) => (
             <Pressable key={entry.name} accessibilityRole="button" accessibilityLabel={`Open ${entry.type} ${entry.name}`} disabled={busy}
-              onPress={() => void read(currentListing.path ? `${currentListing.path}/${entry.name}` : entry.name, entry.type === "file")} style={styles.row}>
-              <Text>{entry.name}{entry.type === "directory" ? "/" : ` (${entry.size} bytes)`}</Text>
+              onPress={() => void read(currentListing.path ? `${currentListing.path}/${entry.name}` : entry.name, entry.type === "file")} style={styles.treeRow}>
+              <Icon name={entry.type === "directory" ? "folder" : "file"} size={12} />
+              <Text style={ui.mono}>{entry.name}{entry.type === "directory" ? "/" : ` (${entry.size} bytes)`}</Text>
             </Pressable>
           ))}
         </View> : null}
         <View style={styles.section}>
-          <Text accessibilityRole="header">Create text file</Text>
-          <Text>Paths are relative to the workspace root. The parent directory must already exist.</Text>
-          <label htmlFor="workspace-create-path">New file path</label>
-          <input id="workspace-create-path" aria-label="New file path" value={currentCreation?.path ?? ""}
-            readOnly={workspace.archived || currentInspection?.archived === true}
-            onChange={(event) => {
-              if (live.current.workspace?.id !== workspace.id) return;
-              const path = event.target.value;
-              setCreation((values) => ({ ...values, [workspace.id]: { path, content: values[workspace.id]?.content ?? "" } }));
-            }}
-            style={{ minHeight: 32, paddingLeft: space.md, paddingRight: space.md, paddingTop: space.sm, paddingBottom: space.sm, borderWidth: 1, borderColor: color.line, borderRadius: radius.control, color: color.text, fontFamily: font.sans, fontSize: font.body, width: "100%" }} />
-          <label htmlFor="workspace-create-content">New file text</label>
-          <textarea id="workspace-create-content" aria-label="New file text" value={currentCreation?.content ?? ""} spellCheck={false}
-            readOnly={workspace.archived || currentInspection?.archived === true}
-            onChange={(event) => {
-              if (live.current.workspace?.id !== workspace.id) return;
-              const content = event.target.value;
-              setCreation((values) => ({ ...values, [workspace.id]: { path: values[workspace.id]?.path ?? "", content } }));
-            }}
-            style={{ width: "100%", boxSizing: "border-box", minHeight: 100, resize: "vertical", padding: space.md, borderWidth: 1, borderColor: color.line, borderRadius: radius.control, fontFamily: font.mono, color: color.text, backgroundColor: color.surfaceRaised }} />
+          <View style={ui.sectionHeader}>
+            <Icon name="plus" size={12} />
+            <Text accessibilityRole="header" style={ui.sectionLabel}>Create text file</Text>
+          </View>
+          <Text style={ui.hint}>Paths are relative to the workspace root. The parent directory must already exist.</Text>
+          <View style={ui.field}>
+            <label htmlFor="workspace-create-path" style={styles.fieldLabel}>New file path</label>
+            <input id="workspace-create-path" aria-label="New file path" value={currentCreation?.path ?? ""}
+              readOnly={workspace.archived || currentInspection?.archived === true}
+              onChange={(event) => {
+                if (current.current.workspace?.id !== workspace.id) return;
+                const path = event.target.value;
+                setCreation((values) => ({ ...values, [workspace.id]: { path, content: values[workspace.id]?.content ?? "" } }));
+              }}
+              style={ui.input} />
+          </View>
+          <View style={ui.field}>
+            <label htmlFor="workspace-create-content" style={styles.fieldLabel}>New file text</label>
+            <textarea id="workspace-create-content" aria-label="New file text" value={currentCreation?.content ?? ""} spellCheck={false}
+              readOnly={workspace.archived || currentInspection?.archived === true}
+              onChange={(event) => {
+                if (current.current.workspace?.id !== workspace.id) return;
+                const content = event.target.value;
+                setCreation((values) => ({ ...values, [workspace.id]: { path: values[workspace.id]?.path ?? "", content } }));
+              }}
+              style={styles.textArea} />
+          </View>
           {currentCreation && (!validPath(currentCreation.path) || !validText(currentCreation.content))
-            ? <Text>Use a non-empty relative file path without reserved or traversal segments, and valid UTF-8 text without NUL, at most 1 MiB.</Text> : null}
-          <Pressable accessibilityRole="button" accessibilityLabel="Create file" disabled={createDisabled} accessibilityState={{ disabled: createDisabled }}
-            onPress={() => void mutate("create")} style={[styles.button, createDisabled && styles.disabled]}><Text style={styles.buttonText}>Create file</Text></Pressable>
+            ? <Text style={ui.hint}>Use a non-empty relative file path without reserved or traversal segments, and valid UTF-8 text without NUL, at most 1 MiB.</Text> : null}
+          <View style={ui.row}>
+            <Pressable accessibilityRole="button" accessibilityLabel="Create file" disabled={createDisabled} accessibilityState={{ disabled: createDisabled }}
+              onPress={() => void mutate("create")} style={[styles.button, createDisabled && styles.disabled]}><Text style={styles.buttonText}>Create file</Text></Pressable>
+          </View>
         </View>
         {currentEditor ? <View style={styles.section}>
-          <Text>{currentEditor.host.path} · {currentEditor.needsRead ? "current version must be read" : "last read version available"}</Text>
-          <label htmlFor="workspace-file-draft">Editable draft</label>
-          <textarea id="workspace-file-draft" aria-label="File draft" value={currentEditor.draft} readOnly={workspace.archived || currentInspection?.archived === true}
-            spellCheck={false} onChange={(event) => {
-              const item = editorRef.current;
-              if (live.current.workspace?.id !== workspace.id || !item || item.host !== currentEditor.host) return;
-              const draft = event.target.value;
-              editorRef.current = { ...item, draft };
-              setEditor((value) => value?.host === item.host ? { ...value, draft } : value);
-            }}
-            style={{ width: "100%", boxSizing: "border-box", minHeight: 220, resize: "vertical", padding: space.md, borderWidth: 1, borderColor: color.line, borderRadius: radius.control, fontFamily: font.mono, color: color.text, backgroundColor: color.surfaceRaised }} />
+          <View style={ui.sectionHeader}>
+            <Icon name="file" size={12} />
+            <Text style={ui.sectionLabel}>Editor</Text>
+          </View>
+          <Text style={ui.meta}>{currentEditor.host.path} · {currentEditor.needsRead ? "current version must be read" : "last read version available"}</Text>
+          <View style={ui.field}>
+            <label htmlFor="workspace-file-draft" style={styles.fieldLabel}>Editable draft</label>
+            <textarea id="workspace-file-draft" aria-label="File draft" value={currentEditor.draft} readOnly={workspace.archived || currentInspection?.archived === true}
+              spellCheck={false} onChange={(event) => {
+                const item = editorRef.current;
+                if (current.current.workspace?.id !== workspace.id || !item || item.host !== currentEditor.host) return;
+                const draft = event.target.value;
+                editorRef.current = { ...item, draft };
+                setEditor((value) => value?.host === item.host ? { ...value, draft } : value);
+              }}
+              style={styles.draftArea} />
+          </View>
           {currentEditor.draft !== currentEditor.host.content ? <>
-            <Text>Draft differs from last read host text. Reading does not replace your draft.</Text>
-            <label htmlFor="workspace-file-host">Last read host text (not live)</label>
-            <textarea id="workspace-file-host" aria-label="Last read host text" value={currentEditor.host.content} readOnly
-              style={{ width: "100%", boxSizing: "border-box", minHeight: 100, fontFamily: font.mono, borderWidth: 1, borderColor: color.line, borderRadius: radius.control, padding: space.md }} />
+            <Text style={ui.hint}>Draft differs from last read host text. Reading does not replace your draft.</Text>
+            <View style={ui.field}>
+              <label htmlFor="workspace-file-host" style={styles.fieldLabel}>Last read host text (not live)</label>
+              <textarea id="workspace-file-host" aria-label="Last read host text" value={currentEditor.host.content} readOnly
+                style={styles.textArea} />
+            </View>
           </> : null}
-          {!validText(currentEditor.draft) ? <Text accessibilityRole="alert">SAVE requires valid UTF-8 text without NUL, at most 1 MiB.</Text> : null}
-          <Pressable accessibilityRole="button" accessibilityLabel="Read current file" disabled={busy || blocked}
-            onPress={() => void read(currentEditor.host.path, true)} style={styles.secondary}><Text>Read current file (keep draft)</Text></Pressable>
-          <Pressable accessibilityRole="button" accessibilityLabel="Save file" disabled={saveDisabled} accessibilityState={{ disabled: saveDisabled }}
-            onPress={() => void mutate("save")} style={[styles.button, saveDisabled && styles.disabled]}><Text style={styles.buttonText}>Save file</Text></Pressable>
-          <label htmlFor="workspace-move-destination">Move destination path</label>
-          <input id="workspace-move-destination" aria-label="Move destination path" value={destination}
-            readOnly={workspace.archived || currentInspection?.archived === true}
-            onChange={(event) => {
-              if (live.current.workspace?.id !== workspace.id || editorRef.current?.host !== currentEditor.host) return;
-              setMove({ workspaceId: workspace.id, sourcePath: currentEditor.host.path, destinationPath: event.target.value });
-            }}
-            style={{ minHeight: 32, paddingLeft: space.md, paddingRight: space.md, paddingTop: space.sm, paddingBottom: space.sm, borderWidth: 1, borderColor: color.line, borderRadius: radius.control, color: color.text, fontFamily: font.sans, fontSize: font.body, width: "100%" }} />
-          <Text>MOVE uses the current verified open version, never the unsaved draft. Destination is relative to the workspace root; its parent directory must exist.</Text>
-          {currentEditor.draft !== currentEditor.host.content ? <Text>Save or explicitly discard the dirty draft before moving. No draft will be saved by MOVE.</Text> : null}
-          <Pressable accessibilityRole="button" accessibilityLabel="Move file" disabled={moveDisabled} accessibilityState={{ disabled: moveDisabled }}
-            onPress={() => void mutate("move")} style={[styles.button, moveDisabled && styles.disabled]}><Text style={styles.buttonText}>Move file</Text></Pressable>
+          {!validText(currentEditor.draft) ? <Text accessibilityRole="alert" style={ui.error}>SAVE requires valid UTF-8 text without NUL, at most 1 MiB.</Text> : null}
+          <View style={ui.row}>
+            <Pressable accessibilityRole="button" accessibilityLabel="Read current file" disabled={busy || blocked}
+              onPress={() => void read(currentEditor.host.path, true)} style={styles.secondary}><Text style={ui.buttonLabel}>Read current file (keep draft)</Text></Pressable>
+            <Pressable accessibilityRole="button" accessibilityLabel="Save file" disabled={saveDisabled} accessibilityState={{ disabled: saveDisabled }}
+              onPress={() => void mutate("save")} style={[styles.button, saveDisabled && styles.disabled]}><Text style={styles.buttonText}>Save file</Text></Pressable>
+          </View>
+          <View style={ui.field}>
+            <label htmlFor="workspace-move-destination" style={styles.fieldLabel}>Move destination path</label>
+            <input id="workspace-move-destination" aria-label="Move destination path" value={destination}
+              readOnly={workspace.archived || currentInspection?.archived === true}
+              onChange={(event) => {
+                if (current.current.workspace?.id !== workspace.id || editorRef.current?.host !== currentEditor.host) return;
+                setMove({ workspaceId: workspace.id, sourcePath: currentEditor.host.path, destinationPath: event.target.value });
+              }}
+              style={ui.input} />
+          </View>
+          <Text style={ui.hint}>MOVE uses the current verified open version, never the unsaved draft. Destination is relative to the workspace root; its parent directory must exist.</Text>
+          {currentEditor.draft !== currentEditor.host.content ? <Text style={ui.hint}>Save or explicitly discard the dirty draft before moving. No draft will be saved by MOVE.</Text> : null}
+          <View style={ui.row}>
+            <Pressable accessibilityRole="button" accessibilityLabel="Move file" disabled={moveDisabled} accessibilityState={{ disabled: moveDisabled }}
+              onPress={() => void mutate("move")} style={[styles.button, moveDisabled && styles.disabled]}><Text style={styles.buttonText}>Move file</Text></Pressable>
+          </View>
         </View> : null}
       </>}
       {pending ? <View style={styles.pending} testID="pending-file">
-        <Text>File operation awaits confirmation. Pending identity stays in this tab; no write will be replayed.</Text>
-        <Text>{pending.kind === "move" ? `MOVE: ${pending.sourcePath} to ${pending.destinationPath}` : `${pending.kind.toUpperCase()}: ${pending.path}`}</Text>
-        <Text selectable>Request ID: {pending.requestId}</Text>
-        <Text>{pending.workspaceId === workspace?.id ? "Check its receipt manually." : "Select the original workspace to check this file receipt."}</Text>
-        <Pressable accessibilityRole="button" accessibilityLabel="Check file receipt" disabled={busy || pending.workspaceId !== workspace?.id}
-          onPress={() => void checkReceipt()} style={styles.secondary}><Text>Check file receipt</Text></Pressable>
+        <View style={ui.sectionHeader}>
+          <Icon name="clock" size={12} />
+          <Text style={ui.sectionLabel}>Pending file</Text>
+        </View>
+        <Text style={ui.hint}>File operation awaits confirmation. Pending identity stays in this tab; no write will be replayed.</Text>
+        <Text style={ui.body}>{pending.kind === "move" ? `MOVE: ${pending.sourcePath} to ${pending.destinationPath}` : `${pending.kind.toUpperCase()}: ${pending.path}`}</Text>
+        <Text selectable style={ui.mono}>Request ID: {pending.requestId}</Text>
+        <Text style={ui.hint}>{pending.workspaceId === workspace?.id ? "Check its receipt manually." : "Select the original workspace to check this file receipt."}</Text>
+        <View style={ui.row}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Check file receipt" disabled={busy || pending.workspaceId !== workspace?.id}
+            onPress={() => void checkReceipt()} style={styles.secondary}><Text style={ui.buttonLabel}>Check file receipt</Text></Pressable>
+        </View>
       </View> : null}
-      {!storageReady ? <Text accessibilityRole="alert">Browser recovery storage unavailable. File writes disabled; repair storage and reload.</Text> : null}
-      {message ? <Text testID="file-status" aria-live="polite">{message}</Text> : null}
+      {!storageReady ? <Text accessibilityRole="alert" style={ui.error}>Browser recovery storage unavailable. File writes disabled; repair storage and reload.</Text> : null}
+      {message ? <Text testID="file-status" aria-live="polite" style={ui.meta}>{message}</Text> : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  panel: { ...ui.panel },
-  heading: { ...ui.title },
-  section: { gap: space.md },
-  row: { ...ui.listItem, flexDirection: "row", justifyContent: "space-between", flexShrink: 1, minWidth: 0 },
+  panel: { gap: space.md },
+  section: { ...ui.section, gap: space.sm },
+  fieldLabel: { ...ui.fieldLabel },
+  textArea: { ...ui.inputMultiline, fontFamily: font.mono },
+  draftArea: { ...ui.inputMultiline, fontFamily: font.mono, minHeight: 220 },
+  treeRow: { ...ui.listItem, alignItems: "center", flexDirection: "row", gap: space.sm, minHeight: 28 },
   button: { ...ui.buttonPrimary },
   buttonText: { ...ui.buttonLabelPrimary },
   disabled: { ...ui.buttonDisabled },
   secondary: { ...ui.button },
-  pending: { backgroundColor: color.surfaceRaised, gap: space.md, padding: space.md },
+  pending: { ...ui.section, borderTopWidth: 1, borderTopColor: color.line, paddingTop: space.md },
+  dotNeutral: { backgroundColor: color.textTertiary },
+  dotSuccess: { backgroundColor: color.success },
+  dotWarning: { backgroundColor: color.warning },
+  dotDanger: { backgroundColor: color.danger },
 });

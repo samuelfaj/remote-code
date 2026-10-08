@@ -1,0 +1,847 @@
+/* Shell chrome: the web equivalent of the macOS AppShell (sidebar + pane tab
+   strip + content header). Dense, dark, hairline-separated, one accent. */
+
+.rc-icon {
+  display: block;
+  flex: none;
+}
+
+.rc-shell {
+  background: var(--rc-bg);
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  width: 100%;
+}
+
+/* ---------------------------------------------------------------- sidebar -- */
+
+.rc-sidebar {
+  background: var(--rc-surface);
+  border-right: 1px solid var(--rc-line);
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  min-height: 0;
+  width: 300px;
+  z-index: 3;
+}
+
+.rc-sidebar[data-closed="true"] {
+  display: none;
+}
+
+.rc-sidebar__identity {
+  align-items: center;
+  display: flex;
+  gap: 2px;
+  height: 44px;
+  padding: 0 8px 0 12px;
+}
+
+.rc-sidebar__identity .rc-iconbtn {
+  color: var(--rc-text-secondary);
+}
+
+.rc-iconbtn {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: var(--rc-radius-control);
+  color: var(--rc-text-secondary);
+  display: inline-flex;
+  height: 26px;
+  justify-content: center;
+  min-width: 26px;
+  padding: 0 4px;
+  transition: background var(--rc-motion-micro) var(--rc-ease-out), color var(--rc-motion-micro) var(--rc-ease-out);
+}
+
+.rc-iconbtn:hover {
+  background: var(--rc-hover);
+  color: var(--rc-text);
+}
+
+.rc-iconbtn:active {
+  background: var(--rc-pressed);
+}
+
+.rc-iconbtn[disabled] {
+  cursor: default;
+  opacity: 0.38;
+}
+
+.rc-avatar {
+  align-items: center;
+  background: var(--rc-surface-overlay);
+  border: 1px solid var(--rc-line-strong);
+  border-radius: 999px;
+  color: var(--rc-text);
+  display: inline-flex;
+  flex: none;
+  font-size: 9px;
+  font-weight: 700;
+  height: 22px;
+  justify-content: center;
+  letter-spacing: 0.02em;
+  width: 22px;
+}
+
+.rc-spacer {
+  flex: 1;
+}
+
+.rc-segmented {
+  background: var(--rc-bg);
+  border: 1px solid var(--rc-line);
+  border-radius: var(--rc-radius-control);
+  display: flex;
+  gap: 2px;
+  margin: 0 12px 8px;
+  padding: 2px;
+}
+
+.rc-segmented__btn {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  color: var(--rc-text-tertiary);
+  display: flex;
+  flex: 1;
+  font-size: 11px;
+  font-weight: 600;
+  gap: 6px;
+  justify-content: center;
+  padding: 5px 6px;
+  transition: background var(--rc-motion-micro) var(--rc-ease-out), color var(--rc-motion-micro) var(--rc-ease-out);
+}
+
+.rc-segmented__btn:hover {
+  color: var(--rc-text-secondary);
+}
+
+.rc-segmented__btn[aria-selected="true"] {
+  background: var(--rc-surface-raised);
+  color: var(--rc-text);
+}
+
+.rc-sidebar__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 8px 12px;
+}
+
+.rc-action-row {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: var(--rc-radius-control);
+  color: var(--rc-text);
+  display: flex;
+  font-size: 13px;
+  gap: 10px;
+  height: 42px;
+  padding: 0 8px;
+  text-align: left;
+  transition: background var(--rc-motion-micro) var(--rc-ease-out);
+  width: 100%;
+}
+
+.rc-action-row:hover {
+  background: var(--rc-hover);
+}
+
+.rc-action-row__icon {
+  color: var(--rc-text-secondary);
+  display: inline-flex;
+  justify-content: center;
+  width: 20px;
+}
+
+.rc-action-row__label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rc-action-row[aria-selected="true"] {
+  background: var(--rc-selection);
+}
+
+.rc-action-row[aria-selected="true"] .rc-action-row__icon {
+  color: var(--rc-accent);
+}
+
+.rc-badge {
+  align-items: center;
+  background: var(--rc-accent);
+  border-radius: 999px;
+  color: var(--rc-on-accent);
+  display: inline-flex;
+  font-size: 10px;
+  font-weight: 700;
+  height: 16px;
+  justify-content: center;
+  min-width: 16px;
+  padding: 0 5px;
+}
+
+.rc-sidebar__section {
+  align-items: center;
+  color: var(--rc-text-tertiary);
+  display: flex;
+  font-size: 10px;
+  font-weight: 600;
+  gap: 8px;
+  letter-spacing: 0.6px;
+  padding: 0 12px 6px;
+  text-transform: uppercase;
+}
+
+.rc-sidebar__section-action {
+  height: 20px;
+  margin-left: auto;
+  min-width: 20px;
+  padding: 0;
+  width: 20px;
+}
+
+.rc-bot-create {
+  display: flex;
+  gap: 6px;
+  padding: 0 12px 8px;
+}
+
+.rc-bot-create input {
+  background: var(--rc-surface-raised);
+  border: 1px solid var(--rc-line);
+  border-radius: var(--rc-radius-control);
+  color: var(--rc-text);
+  flex: 1;
+  font-size: 12px;
+  height: 30px;
+  min-width: 0;
+  padding: 0 8px;
+}
+
+.rc-bot-create input:focus {
+  border-color: var(--rc-accent);
+  outline: none;
+}
+
+.rc-bot-create button {
+  align-items: center;
+  background: var(--rc-surface-raised);
+  border: 1px solid var(--rc-line);
+  border-radius: var(--rc-radius-control);
+  color: var(--rc-text);
+  display: inline-flex;
+  flex: none;
+  font-size: 12px;
+  padding: 0 10px;
+}
+
+.rc-bot-create button:hover {
+  background: var(--rc-hover);
+}
+
+.rc-bot-create button[disabled] {
+  cursor: default;
+  opacity: 0.38;
+}
+
+.rc-search {
+  align-items: center;
+  background: var(--rc-surface-raised);
+  border: 1px solid var(--rc-line);
+  border-radius: var(--rc-radius-control);
+  color: var(--rc-text-tertiary);
+  display: flex;
+  gap: 6px;
+  height: 30px;
+  margin: 0 12px 8px;
+  padding: 0 8px;
+}
+
+.rc-search:focus-within {
+  border-color: var(--rc-accent);
+}
+
+.rc-search input {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  color: var(--rc-text);
+  flex: 1;
+  font-size: 12px;
+  min-height: 0;
+  padding: 0;
+}
+
+.rc-search input:focus {
+  outline: none;
+}
+
+.rc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  list-style: none;
+  margin: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 8px 8px;
+}
+
+.rc-list__empty {
+  color: var(--rc-text-tertiary);
+  font-size: 12px;
+  padding: 8px 6px;
+}
+
+.rc-list > li {
+  display: block;
+}
+
+.rc-ws-row {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: var(--rc-radius-control);
+  color: var(--rc-text-secondary);
+  display: flex;
+  font-size: 13px;
+  gap: 8px;
+  height: 38px;
+  padding: 0 8px;
+  position: relative;
+  text-align: left;
+  transition: background var(--rc-motion-micro) var(--rc-ease-out);
+  width: 100%;
+}
+
+.rc-ws-row:hover {
+  background: var(--rc-hover);
+}
+
+.rc-ws-row[aria-current="true"] {
+  background: var(--rc-selection);
+  color: var(--rc-text);
+  font-weight: 600;
+}
+
+.rc-ws-row[aria-current="true"]::before {
+  background: var(--rc-accent);
+  border-radius: 2px;
+  content: "";
+  height: calc(100% - 10px);
+  left: 0;
+  position: absolute;
+  top: 5px;
+  width: 3px;
+}
+
+.rc-ws-row__icon {
+  color: var(--rc-text-tertiary);
+  display: inline-flex;
+  flex: none;
+  justify-content: center;
+  width: 16px;
+}
+
+.rc-ws-row[aria-current="true"] .rc-ws-row__icon {
+  color: var(--rc-accent);
+}
+
+.rc-ws-row__name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rc-ws-row__count {
+  color: var(--rc-text-tertiary);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.rc-sidebar__footer {
+  border-top: 1px solid var(--rc-line);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: auto;
+  padding: 10px 12px 12px;
+}
+
+.rc-usage {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rc-usage__label {
+  color: var(--rc-text-tertiary);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+}
+
+.rc-usage__track {
+  background: var(--rc-surface-raised);
+  border: 1px solid var(--rc-line);
+  border-radius: 999px;
+  height: 6px;
+  overflow: hidden;
+}
+
+.rc-usage__fill {
+  background: var(--rc-accent);
+  border-radius: 999px;
+  height: 100%;
+}
+
+.rc-account {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+.rc-account__name {
+  color: var(--rc-text);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.rc-account__meta {
+  color: var(--rc-text-tertiary);
+  font-size: 10px;
+}
+
+/* ------------------------------------------------------------------- main -- */
+
+.rc-main {
+  background: var(--rc-bg);
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+
+.rc-tabs {
+  align-items: stretch;
+  background: var(--rc-surface);
+  border-bottom: 1px solid var(--rc-line);
+  display: flex;
+  flex: none;
+  height: 34px;
+  min-width: 0;
+  /* Above the drawer scrim: the sidebar toggle is the way back out of the
+     drawer, so the scrim must not swallow its clicks. */
+  position: relative;
+  z-index: 6;
+}
+
+.rc-tabs__scroll {
+  align-items: stretch;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.rc-tabs__scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.rc-tab {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-right: 1px solid var(--rc-line);
+  color: var(--rc-text-secondary);
+  display: flex;
+  flex: none;
+  font-size: 12px;
+  gap: 7px;
+  max-width: 240px;
+  min-width: 132px;
+  padding: 0 6px 0 10px;
+  position: relative;
+  text-align: left;
+  transition: background var(--rc-motion-micro) var(--rc-ease-out), color var(--rc-motion-micro) var(--rc-ease-out);
+}
+
+.rc-tab:hover {
+  background: var(--rc-hover);
+}
+
+.rc-tab[aria-selected="true"] {
+  background: var(--rc-bg);
+  color: var(--rc-text);
+}
+
+.rc-tab[aria-selected="true"]::after {
+  background: var(--rc-accent);
+  bottom: 0;
+  content: "";
+  height: 2px;
+  left: 0;
+  position: absolute;
+  right: 0;
+}
+
+.rc-tab__icon {
+  color: var(--rc-text-tertiary);
+  display: inline-flex;
+  flex: none;
+}
+
+.rc-tab[aria-selected="true"] .rc-tab__icon {
+  color: var(--rc-text);
+}
+
+.rc-tab__label {
+  flex: 1;
+  font-weight: 400;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rc-tab[aria-selected="true"] .rc-tab__label {
+  font-weight: 500;
+}
+
+.rc-tab__close {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  color: var(--rc-text-tertiary);
+  display: inline-flex;
+  flex: none;
+  height: 16px;
+  justify-content: center;
+  opacity: 0;
+  padding: 0;
+  /* An invisible close must not be a click target: on a narrow tab it sits under
+     the centre of the tab, so a tap meant to switch surfaces closed it instead. */
+  pointer-events: none;
+  transition: opacity var(--rc-motion-micro) var(--rc-ease-out), background var(--rc-motion-micro) var(--rc-ease-out);
+  width: 16px;
+}
+
+.rc-tab:hover .rc-tab__close,
+.rc-tab[aria-selected="true"] .rc-tab__close,
+.rc-tab__close:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.rc-tab__close:hover {
+  background: var(--rc-pressed);
+  color: var(--rc-text);
+}
+
+.rc-tab-new {
+  align-items: center;
+  align-self: center;
+  background: transparent;
+  border: 0;
+  border-radius: var(--rc-radius-control);
+  color: var(--rc-text-secondary);
+  display: inline-flex;
+  flex: none;
+  height: 26px;
+  justify-content: center;
+  margin: 0 4px;
+  width: 26px;
+}
+
+.rc-tab-new:hover {
+  background: var(--rc-hover);
+  color: var(--rc-text);
+}
+
+.rc-tabs__right {
+  align-items: center;
+  border-left: 1px solid var(--rc-line);
+  display: flex;
+  flex: none;
+  gap: 4px;
+  padding: 0 8px;
+}
+
+.rc-menu {
+  background: var(--rc-surface);
+  border: 1px solid var(--rc-line-strong);
+  border-radius: var(--rc-radius-card);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.45);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 180px;
+  padding: 4px;
+  position: absolute;
+  right: 8px;
+  top: 32px;
+  z-index: 20;
+}
+
+.rc-menu__item {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: var(--rc-radius-control);
+  color: var(--rc-text);
+  display: flex;
+  font-size: 12px;
+  gap: 8px;
+  padding: 6px 8px;
+  text-align: left;
+  width: 100%;
+}
+
+.rc-menu__item:hover {
+  background: var(--rc-hover);
+}
+
+.rc-menu__item[disabled] {
+  color: var(--rc-text-tertiary);
+  cursor: default;
+}
+
+.rc-menu__item[disabled]:hover {
+  background: transparent;
+}
+
+.rc-content-header {
+  align-items: center;
+  background: var(--rc-bg);
+  border-bottom: 1px solid var(--rc-line);
+  color: var(--rc-text-tertiary);
+  display: flex;
+  flex: none;
+  font-size: 11px;
+  gap: 6px;
+  height: 34px;
+  padding: 0 12px;
+}
+
+.rc-content-header__branch,
+.rc-content-header__path {
+  font-family: var(--rc-font-mono);
+  font-size: 11px;
+}
+
+.rc-content-header__branch {
+  color: var(--rc-text-secondary);
+}
+
+.rc-content-header__path {
+  color: var(--rc-text-tertiary);
+  direction: rtl;
+  max-width: 42ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rc-content-header__sep {
+  color: var(--rc-line-strong);
+}
+
+.rc-content-header__btn {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: var(--rc-radius-control);
+  color: var(--rc-text-secondary);
+  display: inline-flex;
+  height: 24px;
+  justify-content: center;
+  padding: 0 4px;
+  width: 24px;
+}
+
+.rc-content-header__btn:hover {
+  background: var(--rc-hover);
+  color: var(--rc-text);
+}
+
+.rc-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow: auto;
+  position: relative;
+}
+
+.rc-body__inner {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 16px;
+  margin: 0 auto;
+  max-width: 1180px;
+  min-height: 0;
+  padding: 16px 20px 24px;
+  width: 100%;
+}
+
+.rc-empty {
+  align-items: center;
+  color: var(--rc-text-tertiary);
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  justify-content: center;
+  min-height: 220px;
+  text-align: center;
+}
+
+.rc-empty__title {
+  color: var(--rc-text);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.rc-empty__hint {
+  font-size: 12px;
+  max-width: 42ch;
+}
+
+.rc-empty__button {
+  align-items: center;
+  background: var(--rc-surface-raised);
+  border: 1px solid var(--rc-line);
+  border-radius: var(--rc-radius-control);
+  color: var(--rc-text-secondary);
+  display: inline-flex;
+  height: 26px;
+  justify-content: center;
+  margin-top: 4px;
+  width: 26px;
+}
+
+.rc-empty__button:hover {
+  background: var(--rc-hover);
+  color: var(--rc-text);
+}
+
+/* ---------------------------------------------------------------- host bar -- */
+
+.rc-hostbar {
+  background: var(--rc-surface);
+  border-top: 1px solid var(--rc-line);
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  max-height: 190px;
+  overflow: auto;
+}
+
+.rc-hostbar[data-collapsed="true"] {
+  max-height: 34px;
+  overflow: hidden;
+}
+
+.rc-hostbar__head {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: var(--rc-text-tertiary);
+  display: flex;
+  flex: none;
+  font-size: 10px;
+  font-weight: 600;
+  gap: 8px;
+  height: 34px;
+  letter-spacing: 0.6px;
+  padding: 0 12px;
+  text-align: left;
+  text-transform: uppercase;
+  width: 100%;
+}
+
+.rc-hostbar__head:hover {
+  color: var(--rc-text-secondary);
+}
+
+.rc-hostbar__body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 12px 12px;
+}
+
+.rc-scrim {
+  background: rgba(0, 0, 0, 0.5);
+  bottom: 0;
+  display: none;
+  left: 0;
+  position: absolute;
+  right: 0;
+  top: 0;
+  z-index: 2;
+}
+
+/* The composer stays reachable while the transcript scrolls: without this the
+   send action sits below a long conversation. */
+[data-testid="composer"] {
+  background-color: var(--rc-surface);
+  bottom: 0;
+  position: sticky;
+  z-index: 2;
+}
+
+@media (max-width: 900px) {
+  .rc-sidebar {
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+    bottom: 0;
+    left: 0;
+    position: absolute;
+    top: 0;
+    width: min(300px, 86vw);
+  }
+
+  .rc-scrim[data-open="true"] {
+    display: block;
+  }
+}
+
+@media (max-width: 900px) {
+  .rc-content-header__path {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .rc-tab {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .rc-tab:not([aria-selected="true"]) .rc-tab__label {
+    display: none;
+  }
+
+  /* A narrow tab's close button sits under its centre, so a tap meant to switch
+     surface hit the close instead. Surface switching wins on small screens. */
+  .rc-tab__close {
+    display: none;
+  }
+}

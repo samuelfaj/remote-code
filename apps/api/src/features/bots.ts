@@ -3,6 +3,7 @@ import { mkdirSync, lstatSync } from "node:fs";
 import { dirname } from "node:path";
 import { Elysia, t } from "elysia";
 import { sessionExpiresAt, sessionTokenHash, sessionUserId } from "./auth";
+import type { LiveNotifier } from "./live";
 
 const canonicalUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const botNamePattern = /^[\x20-\x7E]{1,64}$/;
@@ -46,7 +47,7 @@ function database<T>(databasePath: string, callback: (db: Database) => T): T {
   }
 }
 
-export function botsFeature(databasePath: string) {
+export function botsFeature(databasePath: string, options?: { onChange?: LiveNotifier }) {
   function resolveOwner(request: Request): Owner {
     const userId = sessionUserId(databasePath, request);
     const tokenHash = sessionTokenHash(request);
@@ -139,6 +140,7 @@ export function botsFeature(databasePath: string) {
         ).run(id, userId, trimmedName, instructions, context, now, now);
         return id;
       });
+      options?.onChange?.({ userId, type: "bot.changed" });
       set.status = 201;
       return { id, name: trimmedName, instructions, context, hidden: false, createdAt: now, updatedAt: now, skills: [] };
     }, {
@@ -278,6 +280,7 @@ export function botsFeature(databasePath: string) {
         });
 
         if (!result) { set.status = 404; return { error: "bot_not_found" as const }; }
+        options?.onChange?.({ userId, type: "bot.changed" });
         return result;
       } catch {
         set.status = 503;
@@ -330,6 +333,7 @@ export function botsFeature(databasePath: string) {
         });
 
         if (!result) { set.status = 404; return { error: "bot_not_found" as const }; }
+        options?.onChange?.({ userId, type: "bot.changed" });
         return result;
       } catch {
         set.status = 503;
@@ -372,6 +376,7 @@ export function botsFeature(databasePath: string) {
         });
 
         if (!result) { set.status = 404; return { error: "bot_not_found" as const }; }
+        options?.onChange?.({ userId, type: "bot.changed" });
         set.status = 201;
         return result;
       } catch {
@@ -542,6 +547,7 @@ export function botsFeature(databasePath: string) {
           return { botId: params.id, windowId, pid, title: matchTarget, url, profileDir, startedAt };
         });
 
+        options?.onChange?.({ userId, type: "bot.changed" });
         set.status = 201;
         return session;
       } catch {

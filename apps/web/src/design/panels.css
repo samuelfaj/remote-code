@@ -1,0 +1,30 @@
+/* Interaction layer for the feature panels. React Native Web cannot express
+   :hover, so the affordance lives here keyed on the ARIA roles the panels
+   already render, while each panel keeps owning its own dense styling. */
+
+[role="button"]:not([disabled]):not([aria-disabled="true"]) {
+  cursor: pointer;
+}
+
+/* Brightness rather than a background swap, so an accent-filled primary button
+   and a neutral secondary button both stay recognisable while hovering. */
+[role="button"]:not([disabled]):not([aria-disabled="true"]):hover {
+  filter: brightness(1.12);
+}
+
+[role="button"][disabled],
+[role="button"][aria-disabled="true"] {
+  cursor: default;
+}
+
+[role="button"]:active:not([disabled]) {
+  filter: brightness(0.96);
+}
+
+[data-testid^="git-file-"]:hover {
+  background-color: var(--rc-hover);
+}
+
+[role="alert"] {
+  color: var(--rc-danger);
+}

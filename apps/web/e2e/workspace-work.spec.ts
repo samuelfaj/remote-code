@@ -41,6 +41,13 @@ async function backendPaths(page: import("@playwright/test").Page, workspaceId: 
   return (body.json.entries ?? []).filter((entry) => entry.type === "file").map((entry) => entry.name);
 }
 
+async function openSurface(page: import("@playwright/test").Page, title: "Workspace" | "Agent" | "Terminal" | "Files" | "Computer") {
+  const tab = page.getByRole("tab", { name: title, exact: true });
+  if (await tab.count()) { await tab.click(); return; }
+  await page.getByRole("button", { name: "Open a surface" }).click();
+  await page.getByRole("menuitemradio", { name: `Open ${title}` }).click();
+}
+
 test("edits a file, observes git status, uses terminal, and restores layout after reload", async ({ page }) => {
   await signIn(page);
 
@@ -56,12 +63,14 @@ test("edits a file, observes git status, uses terminal, and restores layout afte
   await expect(page.getByTestId("selected-workspace")).toContainText(workspaceA);
 
   // The real folder for this workspace.
+  await openSurface(page, "Files");
   const prepare = page.getByLabel("Prepare workspace folder");
   await expect(prepare).toBeVisible({ timeout: 15_000 });
   await prepare.click();
   await expect(page.getByTestId("folder-status")).toContainText("provisioned", { timeout: 20_000 });
 
   // A real repository with a real change, driven through the terminal UI.
+  await openSurface(page, "Terminal");
   const startTerminal = page.getByRole("button", { name: "Start Linux terminal" });
   await expect(startTerminal).toBeEnabled({ timeout: 15_000 });
   await startTerminal.click();
@@ -94,6 +103,7 @@ test("edits a file, observes git status, uses terminal, and restores layout afte
   expect(await backendPaths(page, workspaceAId)).toContain(fileName);
 
   // The Git view shows that file and its diff, after asking it to look again.
+  await openSurface(page, "Workspace");
   await expect(page.getByTestId("git-status")).toBeVisible({ timeout: 20_000 });
   await page.getByRole("button", { name: "Refresh git status" }).click();
   const fileRow = page.getByTestId(`git-file-${safe(fileName)}`);
@@ -110,6 +120,7 @@ test("edits a file, observes git status, uses terminal, and restores layout afte
 
   // The file editor edits the same real file. The panel's own message is not
   // the evidence: the host content read back afterwards is.
+  await openSurface(page, "Files");
   await page.getByRole("button", { name: "Refresh folder and files" }).click();
   const openFile = page.getByRole("button", { name: `Open file ${fileName}` });
   await expect(openFile).toBeVisible({ timeout: 20_000 });
@@ -128,11 +139,13 @@ test("edits a file, observes git status, uses terminal, and restores layout afte
   expect(hosted.json.content).toBe(edited);
 
   // The saved edit shows in the Git view, after asking it to look again.
+  await openSurface(page, "Workspace");
   await page.getByRole("button", { name: "Refresh git status" }).click();
   await page.getByTestId(`git-file-${safe(fileName)}`).click();
   await expect(page.getByTestId("git-diff")).toContainText("edited through the file editor", { timeout: 20_000 });
 
   // The layout is stored per workspace on the host, so it has to come back.
+  await openSurface(page, "Terminal");
   await page.getByRole("button", { name: "Save layout" }).click();
   await expect(page.getByTestId("terminal-layout-state")).toContainText("Layout saved", { timeout: 20_000 });
 
@@ -142,23 +155,29 @@ test("edits a file, observes git status, uses terminal, and restores layout afte
   await expect(page.getByTestId("workspace-list")).toContainText(workspaceB);
   await page.getByRole("button", { name: `Open workspace ${workspaceB}` }).click();
   await expect(page.getByTestId("selected-workspace")).toContainText(workspaceB);
+  await openSurface(page, "Workspace");
   await expect(page.getByTestId("git-status")).toBeVisible({ timeout: 20_000 });
   await expect(page.getByTestId(`git-file-${safe(fileName)}`)).toHaveCount(0);
+  await openSurface(page, "Terminal");
   await expect(page.getByTestId("terminal-layout-state")).toContainText("No saved layout for this workspace", { timeout: 20_000 });
 
   // Back to A, then a real reload of the page.
   await page.getByRole("button", { name: `Open workspace ${workspaceA}` }).click();
+  await openSurface(page, "Workspace");
   await expect(page.getByTestId(`git-file-${safe(fileName)}`)).toBeVisible({ timeout: 20_000 });
 
   await page.reload();
   await expect(page.getByTestId("workspace-panel")).toBeVisible();
   await page.getByRole("button", { name: `Open workspace ${workspaceA}` }).click();
   await expect(page.getByTestId("selected-workspace")).toContainText(workspaceA);
+  await openSurface(page, "Workspace");
   await expect(page.getByTestId(`git-file-${safe(fileName)}`)).toBeVisible({ timeout: 20_000 });
   // The reloaded client reads this workspace's stored layout back from the host.
+  await openSurface(page, "Terminal");
   await expect(page.getByTestId("terminal-layout-state")).toContainText("Shared tabs: 1", { timeout: 20_000 });
 
   // Every displayed git row is a path the backend reports for this workspace.
+  await openSurface(page, "Workspace");
   const rows = await page.locator("[data-testid^='git-file-']").all();
   expect(rows.length).toBeGreaterThan(0);
   const paths = (await backendPaths(page, workspaceAId)).map(safe);

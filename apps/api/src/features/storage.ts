@@ -2,6 +2,7 @@ import { Database } from "bun:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { Elysia, t } from "elysia";
+import { type LiveNotifier } from "./live";
 import { sessionUserId } from "./auth";
 
 type Workspace = { id: string; name: string; createdAt: string };
@@ -205,7 +206,7 @@ export function initializeStorage(databasePath: string) {
   }
 }
 
-export function storageFeature(databasePath: string) {
+export function storageFeature(databasePath: string, options?: { onChange?: LiveNotifier }) {
   initializeStorage(databasePath);
   return new Elysia()
     .get("/api/workspaces", ({ request, set }) => {
@@ -307,6 +308,7 @@ export function storageFeature(databasePath: string) {
       } finally {
         database.close();
       }
+      options?.onChange?.({ userId, type: "workspace.changed", workspaceId: workspace.id });
       set.status = 201;
       return workspace;
     }, { body: t.Object({ name: t.String({ minLength: 1, maxLength: 120 }), requestId: t.Optional(requestIdSchema) }) })
@@ -397,6 +399,7 @@ export function storageFeature(databasePath: string) {
           set.status = result.kind === "not_found" ? 404 : 409;
           return { error: result.kind };
         }
+        options?.onChange?.({ userId, type: "workspace.changed", workspaceId: result.workspace.id });
         return { requestId: body.requestId, kind, workspace: result.workspace };
       } finally {
         database.close();

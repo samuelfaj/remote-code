@@ -13,6 +13,13 @@ test.skip(
   "this leg needs a Linux host whose API can be restarted; set RC066_LINUX_HOST=1 (see scripts/rc066/run-windows-restart-proof.sh)",
 );
 
+async function openSurface(page: import("@playwright/test").Page, title: "Workspace" | "Agent" | "Terminal" | "Files" | "Computer") {
+  const tab = page.getByRole("tab", { name: title, exact: true });
+  if (await tab.count()) { await tab.click(); return; }
+  await page.getByRole("button", { name: "Open a surface" }).click();
+  await page.getByRole("menuitemradio", { name: `Open ${title}` }).click();
+}
+
 test("saves a file, survives an API restart and reads it back once", async ({ page }) => {
   test.setTimeout(300_000);
   const browser = process.env.RC054_BROWSER ?? "chromium";
@@ -31,6 +38,7 @@ test("saves a file, survives an API restart and reads it back once", async ({ pa
   const rowTestId = `workspace-item-${workspaceName.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
   await page.getByTestId(rowTestId).click();
   await expect(page.getByTestId("selected-workspace")).toContainText(workspaceName);
+  await openSurface(page, "Files");
   await page.getByRole("button", { name: "Prepare workspace folder" }).click();
   await expect(page.getByTestId("folder-status")).toContainText("Folder provisioned on Linux", { timeout: 60_000 });
 
@@ -77,6 +85,7 @@ test("saves a file, survives an API restart and reads it back once", async ({ pa
   await expect(page.getByTestId("connection-status")).toHaveText("Live updates connected", { timeout: 30_000 });
   await page.getByTestId(rowTestId).click();
   await expect(page.getByTestId("selected-workspace")).toContainText(workspaceName, { timeout: 20_000 });
+  await openSurface(page, "Files");
   await page.getByRole("button", { name: "Refresh folder and files" }).click();
   await page.getByRole("button", { name: `Open file ${fileName}` }).click();
   await expect(page.getByLabel("File draft")).toHaveValue(content, { timeout: 30_000 });

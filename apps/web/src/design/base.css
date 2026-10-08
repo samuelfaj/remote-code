@@ -2,7 +2,9 @@
   --rc-bg: #0f1419;
   --rc-surface: #171d24;
   --rc-surface-raised: #1b222b;
+  --rc-surface-overlay: #212a34;
   --rc-line: #2a3440;
+  --rc-line-strong: #394654;
   --rc-text: #e7edf3;
   --rc-text-secondary: #9da9b5;
   --rc-text-tertiary: #6b7785;
@@ -10,6 +12,22 @@
   --rc-on-accent: #0a0e13;
   --rc-danger: #ff8f8f;
   --rc-success: #8ee6a8;
+  --rc-warning: #ffd37a;
+  --rc-hover: rgba(255, 255, 255, 0.05);
+  --rc-pressed: rgba(255, 255, 255, 0.09);
+  --rc-selection: rgba(124, 199, 255, 0.16);
+  --rc-focus-ring: rgba(124, 199, 255, 0.65);
+  --rc-terminal-bg: #20242e;
+  --rc-terminal-fg: #f2f2f2;
+  --rc-radius-control: 5px;
+  --rc-radius-card: 7px;
+  --rc-radius-panel: 9px;
+  --rc-radius-modal: 12px;
+  --rc-font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --rc-font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --rc-motion-micro: 160ms;
+  --rc-motion-standard: 220ms;
+  --rc-ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
   color-scheme: dark;
 }
 
@@ -23,10 +41,18 @@ body,
   color: var(--rc-text);
 }
 
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
 body {
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: var(--rc-font-sans);
   font-size: 13px;
+  line-height: 1.4;
   -webkit-font-smoothing: antialiased;
+  overflow: hidden;
 }
 
 button,
@@ -42,14 +68,19 @@ textarea,
 select {
   background: var(--rc-surface-raised);
   border: 1px solid var(--rc-line);
-  border-radius: 5px;
+  border-radius: var(--rc-radius-control);
   color: var(--rc-text);
   padding: 6px 8px;
+  min-height: 30px;
 }
 
 input::placeholder,
 textarea::placeholder {
   color: var(--rc-text-tertiary);
+}
+
+button {
+  cursor: pointer;
 }
 
 :focus-visible {
@@ -69,8 +100,8 @@ a {
 }
 
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 9px;
+  height: 9px;
 }
 
 ::-webkit-scrollbar-track {
@@ -79,12 +110,14 @@ a {
 
 ::-webkit-scrollbar-thumb {
   background: #2a3440;
-  border: 2px solid var(--rc-bg);
+  border: 2px solid transparent;
+  background-clip: content-box;
   border-radius: 999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
   background: #394654;
+  background-clip: content-box;
 }
 
 ::-webkit-scrollbar-corner {
@@ -94,4 +127,15 @@ a {
 /* Terminal screen keeps the app's dark canvas. */
 .terminal-panel .terminal-screen {
   background: var(--rc-bg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

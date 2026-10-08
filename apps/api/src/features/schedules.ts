@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { Elysia, t } from "elysia";
 import { sessionExpiresAt, sessionTokenHash, sessionUserId } from "./auth";
+import type { LiveNotifier } from "./live";
 
 export function nextOccurrence(localTime: string, timezone: string, after: Date):
   { plannedAt: Date; decision: "exact" | "shifted_forward" | "deduplicated" } {
@@ -98,6 +99,7 @@ export function schedulesFeature(
     startRun: (owner: { userId: string }, input: { workspaceId: string; prompt: string; botId?: string; requestId?: string }) =>
       { kind: "ok"; run: { id: string; workspaceId: string; botId: string | null; state: string; prompt: string; createdAt: string; updatedAt: string; heartbeatAt: string | null; stopRequestedAt: string | null; stopReason: string | null; error: string | null; sessionId: string | null; handoffReason: string | null; retryAfterSeconds: number | null } } | { kind: "not_found"; what: "workspace" | "bot" } | { kind: "failed"; error: string };
     now?: () => Date;
+    onChange?: LiveNotifier;
   },
 ) {
   const now = options.now ?? (() => new Date());
@@ -321,6 +323,7 @@ export function schedulesFeature(
       });
 
       if ("notFound" in result) { set.status = 404; return { error: result.notFound === "workspace" ? "workspace_not_found" as const : "bot_not_found" as const }; }
+      if ("id" in result) options.onChange?.({ userId, type: "schedule.changed", workspaceId: result.workspaceId ?? undefined });
       set.status = 201;
       return result;
     }, { body: t.Object({
@@ -416,6 +419,7 @@ export function schedulesFeature(
         });
 
         if (!result) { set.status = 404; return { error: "not_found" as const }; }
+        options.onChange?.({ userId, type: "schedule.changed", workspaceId: result.workspaceId ?? undefined });
         return result;
       } catch {
         set.status = 503;
@@ -437,16 +441,17 @@ export function schedulesFeature(
 
       try {
         const result = db((database) => {
-          const existing = database.query<{ user_id: string }, [string]>(
-            "SELECT user_id FROM schedules WHERE id = ?",
+          const existing = database.query<{ user_id: string; workspace_id: string | null }, [string]>(
+            "SELECT user_id, workspace_id FROM schedules WHERE id = ?",
           ).get(params.id);
           if (!existing || existing.user_id !== userId) return null;
           database.query("DELETE FROM schedule_occurrences WHERE schedule_id = ?").run(params.id);
           database.query("DELETE FROM schedules WHERE id = ?").run(params.id);
-          return true;
+          return { workspaceId: existing.workspace_id };
         });
 
         if (!result) { set.status = 404; return { error: "not_found" as const }; }
+        options.onChange?.({ userId, type: "schedule.changed", workspaceId: result.workspaceId ?? undefined });
         return { deleted: true };
       } catch {
         set.status = 503;

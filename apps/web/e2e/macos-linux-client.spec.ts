@@ -21,6 +21,13 @@ async function api(page: import("@playwright/test").Page, path: string, init?: R
   }, { path, init }) as Promise<{ status: number; json: any }>;
 }
 
+async function openSurface(page: import("@playwright/test").Page, title: "Workspace" | "Agent" | "Terminal" | "Files" | "Computer") {
+  const tab = page.getByRole("tab", { name: title, exact: true });
+  if (await tab.count()) { await tab.click(); return; }
+  await page.getByRole("button", { name: "Open a surface" }).click();
+  await page.getByRole("menuitemradio", { name: `Open ${title}` }).click();
+}
+
 test("edits a file, follows a thread and takes the screen, then reconnects after a cut", async ({ page }) => {
   test.setTimeout(240_000);
   const browser = process.env.RC054_BROWSER ?? "chromium";
@@ -54,6 +61,7 @@ test("edits a file, follows a thread and takes the screen, then reconnects after
 
   // Edit a file on the host through the browser's own editor: create it, then
   // save the draft, and read the host's copy back.
+  await openSurface(page, "Files");
   await page.getByRole("button", { name: "Prepare workspace folder" }).click();
   await expect(page.getByTestId("folder-status")).toContainText("Folder provisioned on Linux", { timeout: 60_000 });
   await expect(page.getByTestId("file-status")).toContainText("Workspace folder confirmed", { timeout: 60_000 });

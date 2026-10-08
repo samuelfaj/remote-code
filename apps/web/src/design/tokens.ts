@@ -44,8 +44,30 @@ export const font = {
   mono,
 } as const;
 
-export const sidebarWidth = 280;
-export const contentMaxWidth = 1040;
+// Fixed control geometry shared by the shell and the feature panels, so every
+// dense surface uses the same row, icon and tab rhythm (macOS DS.Space/DS.Radius).
+export const size = {
+  sidebarWidth: 300,
+  sidebarRow: 38,
+  sidebarActionRow: 42,
+  sidebarSearchHeight: 30,
+  tabStripHeight: 34,
+  tabMinWidth: 132,
+  tabMaxWidth: 240,
+  iconButton: 26,
+  iconButtonTall: 22,
+  iconSm: 12,
+  iconMd: 14,
+  iconLg: 16,
+  control: 30,
+  headerHeight: 34,
+  contentMaxWidth: 1180,
+} as const;
+
+export const motion = { micro: 160, standard: 220 } as const;
+
+export const sidebarWidth = size.sidebarWidth;
+export const contentMaxWidth = size.contentMaxWidth;
 
 export const ui = StyleSheet.create({
   screen: { flex: 1, backgroundColor: color.bg },
@@ -70,6 +92,7 @@ export const ui = StyleSheet.create({
 
   title: { color: color.text, fontFamily: sans, fontSize: font.title2, fontWeight: "600" },
   heading: { color: color.text, fontFamily: sans, fontSize: font.title3, fontWeight: "600" },
+  subheading: { color: color.text, fontFamily: sans, fontSize: font.body, fontWeight: "600" },
   sectionLabel: {
     color: color.textTertiary,
     fontFamily: sans,
@@ -86,6 +109,7 @@ export const ui = StyleSheet.create({
   success: { color: color.success, fontFamily: sans, fontSize: font.body, fontWeight: "600" },
   warning: { color: color.warning, fontFamily: sans, fontSize: font.body, fontWeight: "600" },
   error: { color: color.danger, fontFamily: sans, fontSize: font.body, fontWeight: "600" },
+  emptyText: { color: color.textTertiary, fontFamily: sans, fontSize: font.body },
 
   input: {
     backgroundColor: color.surfaceRaised,
@@ -95,7 +119,7 @@ export const ui = StyleSheet.create({
     color: color.text,
     fontFamily: sans,
     fontSize: font.body,
-    minHeight: 32,
+    minHeight: size.control,
     paddingHorizontal: space.md,
     paddingVertical: space.sm,
     width: "100%",
@@ -124,7 +148,7 @@ export const ui = StyleSheet.create({
     borderRadius: radius.control,
     flexDirection: "row",
     gap: space.sm,
-    minHeight: 32,
+    minHeight: size.control,
     paddingHorizontal: space.lg,
     paddingVertical: space.xs + 2,
   },
@@ -138,7 +162,7 @@ export const ui = StyleSheet.create({
     borderRadius: radius.control,
     flexDirection: "row",
     gap: space.sm,
-    minHeight: 32,
+    minHeight: size.control,
     paddingHorizontal: space.lg,
     paddingVertical: space.xs + 2,
   },
@@ -152,7 +176,7 @@ export const ui = StyleSheet.create({
     borderRadius: radius.control,
     flexDirection: "row",
     gap: space.sm,
-    minHeight: 32,
+    minHeight: size.control,
     paddingHorizontal: space.lg,
     paddingVertical: space.xs + 2,
   },
@@ -171,4 +195,34 @@ export const ui = StyleSheet.create({
   selectionText: { color: color.accent },
 
   divider: { backgroundColor: color.line, height: 1, width: "100%" },
+
+  // Dense section used inside a surface body: a hairline-separated block with a
+  // compact header row, so panels stop stacking rounded cards.
+  section: { gap: space.sm },
+  sectionHeader: {
+    alignItems: "center",
+    borderBottomColor: color.line,
+    borderBottomWidth: 1,
+    flexDirection: "row",
+    gap: space.md,
+    minHeight: 32,
+    paddingBottom: space.sm,
+  },
+  field: { gap: space.xs },
+  fieldLabel: { color: color.textSecondary, fontFamily: sans, fontSize: font.caption, fontWeight: "500" },
+  hint: { color: color.textTertiary, fontFamily: sans, fontSize: font.caption, lineHeight: 16 },
+
+  pill: {
+    alignItems: "center",
+    alignSelf: "flex-start",
+    backgroundColor: color.surfaceOverlay,
+    borderRadius: radius.pill,
+    flexDirection: "row",
+    gap: space.xs,
+    paddingHorizontal: space.sm,
+    paddingVertical: 1,
+  },
+  pillLabel: { color: color.textSecondary, fontFamily: sans, fontSize: font.caption2, fontWeight: "600" },
+  statusRow: { alignItems: "center", flexDirection: "row", gap: space.sm },
+  dot: { borderRadius: radius.pill, height: 7, width: 7 },
 });

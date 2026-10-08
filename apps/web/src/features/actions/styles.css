@@ -18,9 +18,16 @@ input {
   box-sizing: border-box;
   width: 100%;
   border: 1px solid var(--rc-line);
-  border-radius: 10px;
+  border-radius: var(--rc-radius-control);
   background: var(--rc-surface-raised);
   color: var(--rc-text);
   font-size: 13px;
-  padding: 8px 12px;
+  min-height: 30px;
+  padding: 6px 10px;
+}
+
+.host-passphrase:focus-visible {
+  border-color: var(--rc-accent);
+  outline: 2px solid var(--rc-focus-ring);
+  outline-offset: 1px;
 }

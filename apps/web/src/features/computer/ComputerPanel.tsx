@@ -7,18 +7,20 @@ import {
   takeScreenPossession,
   type ScreenPossessionState,
 } from "@remotecode/client";
-import { color, space, font, ui } from "../../design/tokens";
+import { color, radius, space, font, ui } from "../../design/tokens";
+import { Icon } from "../shell/icons";
+import { type LiveSignals } from "../shell/live";
 
 type Props = {
   selectedWorkspaceId: string | null;
   selectedBotId: string | null;
   userId: string;
+  live?: LiveSignals;
 };
 
 const HEARTBEAT_MS = 15_000;
-const POLL_MS = 5_000;
 
-export function ComputerPanel({ selectedWorkspaceId, selectedBotId, userId }: Props) {
+export function ComputerPanel({ selectedWorkspaceId, selectedBotId, userId, live }: Props) {
   const [possession, setPossession] = useState<ScreenPossessionState | null>(null);
   const [takeError, setTakeError] = useState("");
   const possessionGeneration = useRef(0);
@@ -62,9 +64,15 @@ export function ComputerPanel({ selectedWorkspaceId, selectedBotId, userId }: Pr
   useEffect(() => {
     active.current = true;
     refreshPossession();
-    const id = setInterval(refreshPossession, POLL_MS);
-    return () => { active.current = false; clearInterval(id); };
+    return () => { active.current = false; };
   }, [selectedWorkspaceId]);
+
+  // The host bumps live.screen when possession changed; re-read it here
+  // instead of polling on a timer.
+  useEffect(() => {
+    if (live?.screen === undefined) return;
+    void refreshPossession();
+  }, [live?.screen, selectedWorkspaceId]);
 
   // Heartbeat when we are the holder
   useEffect(() => {
@@ -151,30 +159,42 @@ export function ComputerPanel({ selectedWorkspaceId, selectedBotId, userId }: Pr
   const canTake = possession?.state !== "holder" && isOnline;
   const canReturn = possession?.state === "holder" && isOnline;
 
+  const dotColor = possession?.state === "holder"
+    ? color.success
+    : possession?.state === "superseded"
+      ? color.warning
+      : possession?.state === "expired"
+        ? color.danger
+        : color.textTertiary;
+
   return (
-    <View testID="computer-panel" style={ui.panel}>
-      <Text style={ui.heading}>Computer Panel</Text>
-      {selectedBotId && <Text style={ui.body}>Bot: {selectedBotId}</Text>}
-      {selectedWorkspaceId && <Text style={ui.body}>Workspace: {selectedWorkspaceId}</Text>}
-      <View style={styles.keyValueRow}>
+    <View testID="computer-panel" style={styles.panel}>
+      <View style={ui.sectionHeader}>
+        <Icon name="monitor" size={14} />
+        <Text style={ui.sectionLabel}>Computer Panel</Text>
+      </View>
+      {selectedBotId && <Text style={ui.meta}>Bot: {selectedBotId}</Text>}
+      {selectedWorkspaceId && <Text style={ui.meta}>Workspace: {selectedWorkspaceId}</Text>}
+      <View style={ui.statusRow}>
+        <View style={[ui.dot, { backgroundColor: dotColor }]} />
         <Text testID="computer-owner" style={ui.body}>
           <Text style={ui.meta}>Owner: </Text>
           {ownerLabel}
         </Text>
+        <View style={styles.spacer} />
+        <View style={ui.pill}>
+          <Text testID="computer-connection" style={ui.pillLabel}>
+            {isOnline ? "Connected" : "Connection dropped"}
+          </Text>
+        </View>
       </View>
-      <View style={styles.keyValueRow}>
+      <View style={ui.statusRow}>
         <Text testID="computer-state" style={ui.body}>
           <Text style={ui.meta}>State: </Text>
           {possession?.state ?? "none"}
         </Text>
+        {sinceLabel ? <Text style={ui.meta}>{sinceLabel}</Text> : null}
       </View>
-      <View style={styles.keyValueRow}>
-        <Text style={ui.meta}>Connection:</Text>
-        <Text testID="computer-connection" style={ui.body}>
-          {isOnline ? "Connected" : "Connection dropped"}
-        </Text>
-      </View>
-      {sinceLabel ? <Text style={ui.body}>{sinceLabel}</Text> : null}
       {takeError ? <Text testID="computer-error" style={ui.error}>{takeError}</Text> : null}
       {returnStatus === "returned" && <Text testID="return-result" style={ui.success}>returned</Text>}
       {returnStatus === "unknown" && <Text style={ui.error}>Outcome unknown — no retry sent.</Text>}
@@ -185,30 +205,45 @@ export function ComputerPanel({ selectedWorkspaceId, selectedBotId, userId }: Pr
           {heartbeatAt ? ` (last ${new Date(heartbeatAt).toLocaleTimeString()})` : null}
         </Text>
       )}
-      <Pressable
-        testID="take-control"
-        onPress={handleTakeControl}
-        disabled={!canTake}
-        style={[ui.buttonPrimary, !canTake && ui.buttonDisabled]}
-      >
-        <Text style={ui.buttonLabelPrimary}>Take control</Text>
-      </Pressable>
-      <Pressable
-        testID="return-control"
-        onPress={handleReturnControl}
-        disabled={!canReturn || returnStatus === "returning"}
-        style={[ui.button, (!canReturn || returnStatus === "returning") && ui.buttonDisabled]}
-      >
-        <Text style={ui.buttonLabel}>Return control</Text>
-      </Pressable>
+      <View style={styles.actions}>
+        <Pressable
+          testID="take-control"
+          onPress={handleTakeControl}
+          disabled={!canTake}
+          style={[ui.buttonPrimary, !canTake && ui.buttonDisabled]}
+        >
+          <Text style={ui.buttonLabelPrimary}>Take control</Text>
+        </Pressable>
+        <Pressable
+          testID="return-control"
+          onPress={handleReturnControl}
+          disabled={!canReturn || returnStatus === "returning"}
+          style={[ui.button, (!canReturn || returnStatus === "returning") && ui.buttonDisabled]}
+        >
+          <Text style={ui.buttonLabel}>Return control</Text>
+        </Pressable>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  keyValueRow: {
+  panel: {
+    ...ui.section,
+    backgroundColor: color.surface,
+    borderColor: color.line,
+    borderRadius: radius.panel,
+    borderWidth: 1,
+    gap: space.md,
+    padding: space.lg,
+  },
+  spacer: {
+    flex: 1,
+  },
+  actions: {
+    alignItems: "center",
     flexDirection: "row",
-    alignItems: "baseline",
-    gap: space.sm,
+    flexWrap: "wrap",
+    gap: space.md,
   },
 });

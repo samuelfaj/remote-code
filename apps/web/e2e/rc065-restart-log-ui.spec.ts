@@ -18,6 +18,13 @@ async function signIn(page: import("@playwright/test").Page) {
   await expect(page.getByTestId("workspace-panel")).toBeVisible();
 }
 
+async function openSurface(page: import("@playwright/test").Page, title: "Workspace" | "Agent" | "Terminal" | "Files" | "Computer") {
+  const tab = page.getByRole("tab", { name: title, exact: true });
+  if (await tab.count()) { await tab.click(); return; }
+  await page.getByRole("button", { name: "Open a surface" }).click();
+  await page.getByRole("menuitemradio", { name: `Open ${title}` }).click();
+}
+
 async function backendWorkspaceId(page: import("@playwright/test").Page, name: string) {
   const body = await page.evaluate(async () => {
     const response = await fetch("/api/workspaces");
@@ -45,6 +52,7 @@ if (phase === "before") {
     await expect(page.getByTestId("selected-workspace")).toContainText(workspaceName);
 
     // Prepare the workspace folder.
+    await openSurface(page, "Files");
     const prepare = page.getByLabel("Prepare workspace folder");
     await expect(prepare).toBeVisible({ timeout: 15_000 });
     await prepare.click();
@@ -99,6 +107,7 @@ if (phase === "after") {
 
     // Wait for the workspace content to be fully loaded before refreshing.
     await expect(page.getByTestId("app-content")).toBeVisible({ timeout: 10_000 });
+    await openSurface(page, "Files");
     await expect(page.getByTestId("folder-status")).toContainText("provisioned", { timeout: 15_000 });
 
     // Refresh folder and open the file.

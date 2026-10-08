@@ -15,4 +15,28 @@ trap cleanup EXIT INT TERM
 
 openbox --sm-disable >/dev/null 2>&1 &
 
+# The agent runs as its own user with its own home, so the provider model it must
+# use is configured here. The credential itself is never written: `env_key` names
+# the environment variable the agent already receives. Without this the agent
+# starts unauthenticated and every run ends as a failure.
+if [ -n "${REMOTECODE_AGENT_MODEL:-}" ] && [ -n "${REMOTECODE_AGENT_HOME:-}" ]; then
+  mkdir -p "$REMOTECODE_AGENT_HOME/.distill"
+  cat > "$REMOTECODE_AGENT_HOME/.distill/config.toml" <<EOF
+[models]
+default = "remotecode-agent"
+
+[model.remotecode-agent]
+name = "${REMOTECODE_AGENT_MODEL_NAME:-RemoteCode agent}"
+model = "${REMOTECODE_AGENT_MODEL}"
+base_url = "${REMOTECODE_AGENT_MODEL_BASE_URL:-https://openrouter.ai/api/v1}"
+env_key = "${REMOTECODE_AGENT_MODEL_ENV_KEY:-OPENROUTER_API_KEY}"
+api_backend = "chat_completions"
+context_window = ${REMOTECODE_AGENT_MODEL_CONTEXT:-128000}
+EOF
+  chmod 600 "$REMOTECODE_AGENT_HOME/.distill/config.toml"
+  if [ -n "${REMOTECODE_AGENT_USER:-}" ]; then
+    chown -R "$REMOTECODE_AGENT_USER" "$REMOTECODE_AGENT_HOME/.distill" 2>/dev/null || true
+  fi
+fi
+
 exec bun apps/api/src/index.ts

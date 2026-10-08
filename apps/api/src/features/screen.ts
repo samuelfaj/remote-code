@@ -4,6 +4,7 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { Elysia, t } from "elysia";
 import { sessionExpiresAt, sessionTokenHash, sessionUserId } from "./auth";
+import type { LiveNotifier } from "./live";
 
 const canonicalUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const uuidSchema = t.Transform(t.String({ format: "uuid", minLength: 36, maxLength: 36 }))
@@ -31,6 +32,7 @@ export function screenFeature(
     previewMs?: number;
     capture?: (request: { workspaceId: string; botId: string }) => Promise<Uint8Array>;
     input?: (workspaceId: string, event: ScreenInput) => Promise<void>;
+    onChange?: LiveNotifier;
   },
 ) {
   const possessionMs = options?.possessionMs ?? Number(process.env.REMOTECODE_SCREEN_POSSESSION_MS ?? 30_000);
@@ -245,6 +247,7 @@ export function screenFeature(
 
           return { possessionId, token, epoch: newEpoch, expiresAt };
         });
+        options?.onChange?.({ userId: owner.userId, type: "screen.changed", workspaceId: params.workspaceId });
         return result;
       } catch {
         set.status = 503;
@@ -273,6 +276,7 @@ export function screenFeature(
         db((database) => database.query(
           "UPDATE screen_possessions SET expires_at = ? WHERE workspace_id = ?",
         ).run(newExpiresAt, params.workspaceId));
+        options?.onChange?.({ userId: owner.userId, type: "screen.changed", workspaceId: params.workspaceId });
         return { expiresAt: newExpiresAt };
       } catch {
         set.status = 503;
@@ -301,6 +305,7 @@ export function screenFeature(
         db((database) => database.query(
           "UPDATE screen_possessions SET released_at = ? WHERE workspace_id = ?",
         ).run(releasedAt, params.workspaceId));
+        options?.onChange?.({ userId: owner.userId, type: "screen.changed", workspaceId: params.workspaceId });
         return { releasedAt };
       } catch {
         set.status = 503;

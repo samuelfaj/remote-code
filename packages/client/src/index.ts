@@ -19,6 +19,10 @@ export { listSchedules, createSchedule, setScheduleEnabled } from "./routines";
 export type { Schedule } from "./routines";
 export type { PendingTerminalStart, TerminalReference, TerminalState, TerminalInputState, TerminalReceipt, TerminalPoll, TerminalInputAck } from "./terminals";
 export type { ActionEventState, ActionReceipt } from "./action-events";
+export { ALL_LIVE_RESOURCES, applyLiveEvent, emptyLiveEventState, resourcesForEvent } from "./live-events";
+export type { LiveEventResult, LiveEventState, LiveResource } from "./live-events";
+export { getAgentProvider } from "./agent-provider";
+export type { AgentProvider } from "./agent-provider";
 export { retryAllowed, retryDelayMs } from "./retry";
 export type { RetryPlan } from "./retry";
 export { takeScreenPossession, readScreenPossession, heartbeatScreenPossession,

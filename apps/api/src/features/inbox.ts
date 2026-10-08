@@ -3,9 +3,14 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { Elysia, t } from "elysia";
 import { sessionExpiresAt, sessionTokenHash, sessionUserId } from "./auth";
+import type { LiveNotifier } from "./live";
 import { dispatchInboxItem } from "./push";
 
 const canonicalUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+// recordInboxItem is called from the runs state machine, which does not own the
+// feature instance; the notifier registered by inboxFeature reaches it here.
+let inboxChangeNotifier: LiveNotifier | undefined;
 
 type Owner = { kind: "anonymous" } | { kind: "unavailable" } | { kind: "ok"; userId: string };
 
@@ -33,7 +38,7 @@ export function recordInboxItem(
   try {
     db.exec("PRAGMA busy_timeout = 250");
     initializeSchema(db);
-    db.query(
+    const inserted = db.query(
       "INSERT OR IGNORE INTO inbox_items (id, user_id, kind, bot_id, workspace_id, run_id, thread_id, title, destination, state, dedupe_key, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     ).run(
       id, options.userId, options.kind, options.botId ?? null,
@@ -43,6 +48,9 @@ export function recordInboxItem(
     const row = db.query<{ id: string }, [string, string]>(
       "SELECT id FROM inbox_items WHERE user_id = ? AND dedupe_key = ?",
     ).get(options.userId, options.dedupeKey);
+    if (inserted.changes > 0) {
+      inboxChangeNotifier?.({ userId: options.userId, type: "inbox.changed", workspaceId: options.workspaceId ?? undefined });
+    }
     void dispatchInboxItem(databasePath, {
       userId: options.userId,
       itemId: row!.id,
@@ -133,7 +141,8 @@ function inboxView(row: {
   };
 }
 
-export function inboxFeature(databasePath: string) {
+export function inboxFeature(databasePath: string, options?: { onChange?: LiveNotifier }) {
+  inboxChangeNotifier = options?.onChange;
   return new Elysia()
     .get("/api/inbox", ({ request, set }) => {
       const owner = resolveOwner(request, databasePath);
@@ -208,6 +217,7 @@ export function inboxFeature(databasePath: string) {
             "SELECT id, kind, bot_id, workspace_id, run_id, title, destination, state, created_at, read_at, resolved_at FROM inbox_items WHERE id = ?",
           ).get(params.id);
         });
+        options?.onChange?.({ userId: owner.userId, type: "inbox.changed", workspaceId: item!.workspace_id ?? undefined });
         return inboxView(item!);
       } catch {
         set.status = 503;
@@ -256,6 +266,7 @@ export function inboxFeature(databasePath: string) {
             "SELECT id, kind, bot_id, workspace_id, run_id, title, destination, state, created_at, read_at, resolved_at FROM inbox_items WHERE id = ?",
           ).get(params.id);
         });
+        options?.onChange?.({ userId: owner.userId, type: "inbox.changed", workspaceId: item!.workspace_id ?? undefined });
         return inboxView(item!);
       } catch {
         set.status = 503;

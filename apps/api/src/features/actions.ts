@@ -19,6 +19,10 @@ type EventsClient = {
   close(code?: number, reason?: string): void;
 };
 
+type UserNotice = { userId: string; type: string; workspaceId?: string; run?: unknown };
+
+type TerminalWindow = { userId: string; pending: UserNotice | null; timer?: ReturnType<typeof setTimeout> };
+
 function readActions(database: Database): CursorAction[] {
   const rows = database.query<unknown, []>(
     "SELECT sequence AS cursor, id, action, created_at AS createdAt FROM actions ORDER BY sequence DESC",
@@ -140,9 +144,21 @@ export function actionsFeature(databasePath: string, allowedOrigin: string) {
 
   const clients = new Map<EventsClient, { userId: string; tokenHash: string }>();
   const expiryTimers = new Map<EventsClient, ReturnType<typeof setTimeout>>();
+  const userSequences = new Map<string, number>();
+  const terminalWindows = new Map<string, TerminalWindow>();
+
+  function clearTerminalWindows(userId: string) {
+    for (const [key, window] of terminalWindows) {
+      if (window.userId !== userId) continue;
+      if (window.timer) clearTimeout(window.timer);
+      terminalWindows.delete(key);
+    }
+  }
 
   function revokeClient(client: EventsClient, reason: string) {
+    const identity = clients.get(client);
     clients.delete(client);
+    if (identity) clearTerminalWindows(identity.userId);
     const timer = expiryTimers.get(client);
     if (timer) clearTimeout(timer);
     expiryTimers.delete(client);
@@ -150,6 +166,29 @@ export function actionsFeature(databasePath: string, allowedOrigin: string) {
       client.close(4401, reason);
     } catch {
       // The connection is already unavailable.
+    }
+  }
+
+  function sendToUser(notice: UserNotice) {
+    const seq = (userSequences.get(notice.userId) ?? 0) + 1;
+    userSequences.set(notice.userId, seq);
+    const payload = JSON.stringify({
+      type: notice.type,
+      seq,
+      ...(notice.workspaceId === undefined ? {} : { workspaceId: notice.workspaceId }),
+      ...(notice.run === undefined ? {} : { run: notice.run }),
+    });
+    for (const client of clients.keys()) {
+      if (clients.get(client)?.userId !== notice.userId) continue;
+      if (!isAuthenticated(databasePath, client.data.request)) {
+        revokeClient(client, "session expired or revoked");
+      } else {
+        try {
+          client.send(payload);
+        } catch {
+          revokeClient(client, "event delivery failed");
+        }
+      }
     }
   }
 
@@ -299,7 +338,9 @@ export function actionsFeature(databasePath: string, allowedOrigin: string) {
         sendSnapshot(databasePath, client);
       },
       close(client) {
+        const identity = clients.get(client);
         clients.delete(client);
+        if (identity) clearTerminalWindows(identity.userId);
         const timer = expiryTimers.get(client);
         if (timer) clearTimeout(timer);
         expiryTimers.delete(client);
@@ -310,6 +351,28 @@ export function actionsFeature(databasePath: string, allowedOrigin: string) {
     routes,
     broadcast(payload: unknown) {
       broadcast(JSON.stringify(payload));
+    },
+    broadcastToUser(userId: string, event: { type: string; workspaceId?: string; run?: unknown }): void {
+      const notice: UserNotice = { userId, type: event.type };
+      if (event.workspaceId !== undefined) notice.workspaceId = event.workspaceId;
+      if (event.run !== undefined) notice.run = event.run;
+      if (notice.type !== "terminal.changed") {
+        sendToUser(notice);
+        return;
+      }
+      const key = `${userId}\u0000${notice.workspaceId ?? ""}`;
+      const open = terminalWindows.get(key);
+      if (open) {
+        open.pending = notice;
+        return;
+      }
+      const window: TerminalWindow = { userId, pending: null };
+      terminalWindows.set(key, window);
+      sendToUser(notice);
+      window.timer = setTimeout(() => {
+        terminalWindows.delete(key);
+        if (window.pending) sendToUser(window.pending);
+      }, 250);
     },
     revokeSessions(userId: string, tokenHash?: string) {
       for (const [client, identity] of clients) {

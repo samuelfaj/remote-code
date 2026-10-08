@@ -28,6 +28,10 @@ export default defineConfig({
         REMOTECODE_AUTH_PASSWORD: e2ePassword,
         REMOTECODE_AUTH_SESSION_TTL_MS: process.env.REMOTECODE_AUTH_SESSION_TTL_MS ?? "",
         REMOTECODE_WEB_ORIGIN: localWeb,
+        // Browser tests must never spawn the developer's real coding agent: a
+        // binary that cannot be executed makes the run fail the way an
+        // unprovisioned host does, and the suite asserts that failure is shown.
+        REMOTECODE_DISTILL_BIN: process.env.REMOTECODE_DISTILL_BIN ?? "/nonexistent/distill-e2e-agent",
       },
       reuseExistingServer: !process.env.CI,
       timeout: 30_000,

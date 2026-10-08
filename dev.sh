@@ -12,7 +12,22 @@ if [ -z "${REMOTECODE_DATA_ROOT+x}" ]; then REMOTECODE_DATA_ROOT="$DEV_DIR/data"
 if [ -z "${REMOTECODE_WEB_ORIGIN+x}" ]; then REMOTECODE_WEB_ORIGIN="http://localhost:$WEB_PORT"; fi
 if [ -z "${REMOTECODE_AUTH_PASSWORD+x}" ]; then REMOTECODE_AUTH_PASSWORD="remote-code-local-dev"; fi
 
+# The agent needs a provider model it can authenticate against. The model is
+# passed to the dev host as plain configuration; the credential comes from the
+# local shell, or from untracked local state when the shell has none. Neither
+# path prints it or writes it into the repository.
+if [ -z "${REMOTECODE_AGENT_MODEL+x}" ]; then REMOTECODE_AGENT_MODEL="openai/gpt-4o-mini"; fi
+if [ -z "${REMOTECODE_AGENT_MODEL_BASE_URL+x}" ]; then REMOTECODE_AGENT_MODEL_BASE_URL="https://openrouter.ai/api/v1"; fi
+if [ -z "${REMOTECODE_AGENT_MODEL_ENV_KEY+x}" ]; then REMOTECODE_AGENT_MODEL_ENV_KEY="OPENROUTER_API_KEY"; fi
+CREDENTIALS_FILE=""
+if [ -z "${OPENROUTER_API_KEY+x}" ] && [ -f "$DEV_DIR/openrouter.env" ]; then
+  # shellcheck disable=SC1090
+  set -a; . "$DEV_DIR/openrouter.env"; set +a
+  CREDENTIALS_FILE="$DEV_DIR/openrouter.env"
+fi
+
 export API_PORT WEB_PORT DATABASE_PATH REMOTECODE_DATA_ROOT REMOTECODE_WEB_ORIGIN REMOTECODE_AUTH_PASSWORD
+export REMOTECODE_AGENT_MODEL REMOTECODE_AGENT_MODEL_BASE_URL REMOTECODE_AGENT_MODEL_ENV_KEY
 
 if ! command -v bun >/dev/null 2>&1; then
   echo "bun is not installed. See https://bun.sh" >&2
@@ -127,6 +142,15 @@ if [ "$(uname)" = "Darwin" ]; then
 
   docker rm -f "$CONTAINER" 2>/dev/null || true
 
+  # The credential reaches the container through an env file, or inherited from
+  # this shell, so its value never appears on a command line.
+  CREDENTIAL_ARGS=""
+  if [ -n "$CREDENTIALS_FILE" ]; then
+    CREDENTIAL_ARGS="--env-file $CREDENTIALS_FILE"
+  elif [ -n "${OPENROUTER_API_KEY:-}" ]; then
+    CREDENTIAL_ARGS="-e OPENROUTER_API_KEY"
+  fi
+
   # Another RemoteCode container (a proof run, or this one under an older name)
   # can hold the API port just like a host process would, and lsof cannot see a
   # published port on macOS.
@@ -158,6 +182,12 @@ if [ "$(uname)" = "Darwin" ]; then
     -e REMOTECODE_DISTILL_BIN=distill \
     -e REMOTECODE_AGENT_USER=rcagent \
     -e REMOTECODE_AGENT_HOME=/home/rcagent \
+    -e REMOTECODE_AGENT_MODEL="$REMOTECODE_AGENT_MODEL" \
+    -e REMOTECODE_AGENT_MODEL_BASE_URL="$REMOTECODE_AGENT_MODEL_BASE_URL" \
+    -e REMOTECODE_AGENT_MODEL_ENV_KEY="$REMOTECODE_AGENT_MODEL_ENV_KEY" \
+    -e REMOTECODE_AGENT_MODEL_NAME="${REMOTECODE_AGENT_MODEL_NAME:-}" \
+    -e REMOTECODE_AGENT_MODEL_CONTEXT="${REMOTECODE_AGENT_MODEL_CONTEXT:-}" \
+    $CREDENTIAL_ARGS \
     -e REMOTECODE_TLS_CERT=/etc/remotecode/tls/cert.pem \
     -e REMOTECODE_TLS_KEY=/etc/remotecode/tls/key.pem \
     -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0='*' \

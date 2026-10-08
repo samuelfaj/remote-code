@@ -1,35 +1,39 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native-web";
-import { color, space, radius, font, ui } from "../../design/tokens";
+import { color, space, ui } from "../../design/tokens";
 import {
   createApiClient,
-  listBots,
   pendingWorkspaceFromValue,
   workspaceErrorStatus,
   workspaceDeadlineIsOpen,
   workspaceListFromValue,
   workspaceReceiptFromValue,
-  workspaceFromValue,
   workspaceGitStatus,
   workspaceGitDiff,
 } from "@remotecode/client";
-import type { Bot, GitDiff, GitStatus, PendingWorkspace, Workspace } from "@remotecode/client";
-import { FilePanel } from "../files/FilePanel";
-import { TerminalPanel } from "../terminals/TerminalPanel";
+import type { GitDiff, GitStatus, PendingWorkspace, Workspace } from "@remotecode/client";
+import { Icon } from "../shell/icons";
+import type { LiveSignals } from "../shell/live";
 
 function safeTestId(name: string) {
   return name.replace(/[^a-zA-Z0-9_-]/g, "-").replace(/-+/g, "-").replace(/(^-|-$)/g, "");
 }
 
 const deadlineMs = 10_000;
-type Props = { userId: string; onUnauthorized: () => void; selectedWorkspaceId?: string | null };
+type Props = {
+  userId: string;
+  onUnauthorized: () => void;
+  selectedWorkspaceId?: string | null;
+  live?: LiveSignals;
+  /** Bumped by the sidebar's Refresh workspaces action. */
+  refreshSignal?: number;
+};
 
 function storageKey(userId: string) {
   return `remotecode.pending-workspace:${JSON.stringify([window.location.origin, userId])}`;
 }
 
-export function WorkspacePanel({ userId, onUnauthorized, selectedWorkspaceId }: Props) {
-  const api = useMemo(() => createApiClient(window.location.origin), []);
+export function WorkspacePanel({ userId, onUnauthorized, selectedWorkspaceId, live, refreshSignal }: Props) {
   const active = useRef(true);
   const readGeneration = useRef(0);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
@@ -41,7 +45,6 @@ export function WorkspacePanel({ userId, onUnauthorized, selectedWorkspaceId }: 
   }, [selectedWorkspaceId]);
   const [name, setName] = useState("");
   const [rename, setRename] = useState("");
-  const [botName, setBotName] = useState("");
   const [pending, setPending] = useState<PendingWorkspace | null>(null);
   const [busy, setBusy] = useState(false);
   const [readError, setReadError] = useState("");
@@ -151,51 +154,6 @@ export function WorkspacePanel({ userId, onUnauthorized, selectedWorkspaceId }: 
     }
   }
 
-  async function openWorkspace(workspace: Workspace) {
-    const generation = ++readGeneration.current;
-    setSelectedId(workspace.id);
-    setReadError("");
-    try {
-      const { data, error } = await api.api
-        .workspaces({ workspaceId: workspace.id })
-        .get();
-      if (!active.current || generation !== readGeneration.current) return;
-      if (error) {
-        if (workspaceErrorStatus(error) === 401) onUnauthorized();
-        if (workspaceErrorStatus(error) === 404) {
-          setSelectedId(null);
-          setReadError(
-            "This workspace is gone. It may have been deleted; refresh the list.",
-          );
-          return;
-        }
-        setReadError(
-          "Could not open this workspace. Refresh the list and try again.",
-        );
-        return;
-      }
-      const confirmed = workspaceFromValue(data);
-      if (!confirmed) {
-        setReadError(
-          "Could not open this workspace. Refresh the list and try again.",
-        );
-        return;
-      }
-      if (confirmed.id !== workspace.id) {
-        setReadError("Host returned invalid workspace metadata.");
-        return;
-      }
-      setWorkspaces((items) =>
-        items.map((item) => (item.id === confirmed.id ? confirmed : item)),
-      );
-    } catch {
-      if (active.current && generation === readGeneration.current)
-        setReadError(
-          "Could not open this workspace. Refresh the list and try again.",
-        );
-    }
-  }
-
   useEffect(() => {
     active.current = true;
     setWorkspaces([]);
@@ -221,7 +179,31 @@ export function WorkspacePanel({ userId, onUnauthorized, selectedWorkspaceId }: 
     return () => {
       active.current = false;
     };
-  }, [api, userId]);
+  }, [userId]);
+
+  // A live signal is a bumped counter, not data: when the host reports that
+  // workspaces changed, re-read the authoritative list rather than trusting it.
+  const liveWorkspaces = live?.workspaces;
+  useEffect(() => {
+    if (liveWorkspaces === undefined) return;
+    void refresh(deadlineMs);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveWorkspaces]);
+
+  // The sidebar's Refresh workspaces action renegotiates the host capability too,
+  // because the create button is gated on it.
+  useEffect(() => {
+    if (!refreshSignal) return;
+    void refresh(deadlineMs, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshSignal]);
+
+  // A files signal re-reads git status; gitReload already drives that read.
+  const liveFiles = live?.files;
+  useEffect(() => {
+    if (liveFiles === undefined) return;
+    setGitReload((count) => count + 1);
+  }, [liveFiles]);
 
   useEffect(() => {
     if (!selected) {
@@ -490,216 +472,171 @@ export function WorkspacePanel({ userId, onUnauthorized, selectedWorkspaceId }: 
     }
   }
 
-  async function createBot() {
-    if (!botName.trim() || !selectedId) return;
-    setBusy(true);
-    try {
-      const result = await api.api.bots.post({
-        name: botName.trim(),
-        instructions: undefined,
-        context: undefined,
-      });
-      if (result.error) throw new Error("Bot creation failed");
-      setBotName("");
-      await refresh(deadlineMs, true);
-    } catch (e) {
-      if (active.current)
-        setMessage(e instanceof Error ? e.message : "Bot creation failed");
-    } finally {
-      if (active.current) setBusy(false);
-    }
-  }
-
   const createDisabled =
     busy || Boolean(pending) || capability === "unsupported" || !storageReady || !name.trim();
 
   return (
-    <View style={styles.card} testID="workspace-panel">
-      <Text accessibilityRole="header" style={styles.heading}>
-        Workspaces
-      </Text>
-      <TextInput
-        accessibilityLabel="Workspace name"
-        value={name}
-        onChangeText={setName}
-        placeholder="Workspace name"
-        style={styles.input}
-      />
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Create workspace"
-        disabled={
-          createDisabled
-        }
-        onPress={() => void mutate("create")}
-        style={[styles.button, createDisabled && styles.buttonDisabled]}
-      >
-        <Text style={styles.buttonText}>Create workspace</Text>
-      </Pressable>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Refresh workspaces"
-        disabled={busy}
-        onPress={() => void refresh(deadlineMs, true)}
-        style={styles.secondary}
-      >
-        <Text>Refresh workspaces</Text>
-      </Pressable>
-      <View style={styles.createRow}>
-        <TextInput
-          accessibilityLabel="New bot name"
-          placeholder="New bot name"
-          value={botName}
-          onChangeText={setBotName}
-          style={styles.input}
-        />
-        <Pressable
-          accessibilityRole="button"
-          testID="new-bot"
-          onPress={createBot}
-          disabled={busy || !botName.trim() || !selectedId}
-          style={[styles.smallButton, (busy || !botName.trim() || !selectedId) && styles.smallButtonDisabled]}
-        >
-          <Text style={styles.smallButtonText}>Create bot</Text>
-        </Pressable>
-      </View>
-      {capability === "unsupported" ? (
-        <Text testID="workspace-unsupported">
-          This host does not support workspace-metadata-v1. Writes are disabled.
-        </Text>
-      ) : null}
-      {workspaces.length === 0 && !readError ? (
-        <Text>No workspaces yet.</Text>
-      ) : null}
-      {workspaces.map((workspace) => (
-        <View
-          key={workspace.id}
-          style={[
-            styles.row,
-            workspace.id === selectedId && styles.listItemSelected,
-          ]}
-        >
-          <Text style={workspace.id === selectedId && styles.selectedText}>
-            {workspace.name}
-            {workspace.archived ? " (archived, read-only)" : ""}
+    <View style={styles.panel} testID="workspace-panel">
+      <View style={ui.section}>
+        <View style={ui.sectionHeader}>
+          <Icon name="folder" size={12} />
+          <Text accessibilityRole="header" style={ui.sectionLabel}>
+            Workspaces
           </Text>
+        </View>
+        <View style={ui.field}>
+          <Text style={ui.fieldLabel}>Workspace name</Text>
+          <TextInput
+            accessibilityLabel="Workspace name"
+            value={name}
+            onChangeText={setName}
+            placeholder="Workspace name"
+            style={styles.input}
+          />
+        </View>
+        <View style={ui.row}>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={`Open workspace ${workspace.name}`}
-            disabled={busy}
-            onPress={() => void openWorkspace(workspace)}
+            accessibilityLabel="Create workspace"
+            disabled={createDisabled}
+            onPress={() => void mutate("create")}
+            style={[styles.button, createDisabled && styles.buttonDisabled]}
           >
-            <Text>Open</Text>
+            <Text style={styles.buttonText}>Create workspace</Text>
           </Pressable>
         </View>
-      ))}
+        {capability === "unsupported" ? (
+          <View style={ui.statusRow}>
+            <View style={[ui.dot, styles.dotWarning]} />
+            <Text testID="workspace-unsupported" style={ui.warning}>
+              This host does not support workspace-metadata-v1. Writes are disabled.
+            </Text>
+          </View>
+        ) : null}
+      </View>
       {selected ? (
         <View style={styles.selected} testID="selected-workspace">
-          <Text>Selected: {selected.name}</Text>
+          <View style={ui.sectionHeader}>
+            <Icon name="check" size={12} />
+            <Text style={ui.sectionLabel}>Selected workspace</Text>
+          </View>
+          <Text style={ui.body}>Selected: {selected.name}</Text>
           {!selected.archived ? (
             <>
-              <TextInput
-                accessibilityLabel="New workspace name"
-                value={rename}
-                onChangeText={setRename}
-                placeholder="New workspace name"
-                style={styles.input}
-              />
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Rename workspace"
-                disabled={
-                  busy ||
-                  Boolean(pending) ||
-                  capability === "unsupported" ||
-                  !storageReady ||
-                  !rename.trim()
-                }
-                onPress={() => void mutate("rename", selected)}
-                style={styles.button}
-              >
-                <Text style={styles.buttonText}>Rename workspace</Text>
-              </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Archive workspace"
-                disabled={
-                  busy ||
-                  Boolean(pending) ||
-                  capability === "unsupported" ||
-                  !storageReady
-                }
-                onPress={() => void mutate("archive", selected)}
-                style={styles.secondary}
-              >
-                <Text>Archive workspace</Text>
-              </Pressable>
+              <View style={ui.field}>
+                <Text style={ui.fieldLabel}>New workspace name</Text>
+                <TextInput
+                  accessibilityLabel="New workspace name"
+                  value={rename}
+                  onChangeText={setRename}
+                  placeholder="New workspace name"
+                  style={styles.input}
+                />
+              </View>
+              <View style={ui.row}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Rename workspace"
+                  disabled={
+                    busy ||
+                    Boolean(pending) ||
+                    capability === "unsupported" ||
+                    !storageReady ||
+                    !rename.trim()
+                  }
+                  onPress={() => void mutate("rename", selected)}
+                  style={styles.button}
+                >
+                  <Text style={styles.buttonText}>Rename workspace</Text>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Archive workspace"
+                  disabled={
+                    busy ||
+                    Boolean(pending) ||
+                    capability === "unsupported" ||
+                    !storageReady
+                  }
+                  onPress={() => void mutate("archive", selected)}
+                  style={styles.secondary}
+                >
+                  <Text style={ui.buttonLabel}>Archive workspace</Text>
+                </Pressable>
+              </View>
             </>
           ) : (
-            <Text>Archived workspaces are read-only.</Text>
+            <Text style={ui.emptyText}>Archived workspaces are read-only.</Text>
           )}
         </View>
       ) : null}
       {pending ? (
         <View style={styles.pending}>
-          <Text>
+          <View style={ui.sectionHeader}>
+            <Icon name="clock" size={12} />
+            <Text style={ui.sectionLabel}>Pending confirmation</Text>
+          </View>
+          <Text style={ui.hint}>
             Workspace operation awaits confirmation. Check its receipt; it will
             not be resent.
           </Text>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Check workspace receipt"
-            disabled={busy}
-            onPress={() => void loadReceipt()}
-            style={styles.button}
-          >
-            <Text style={styles.buttonText}>Check workspace receipt</Text>
-          </Pressable>
+          <View style={ui.row}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Check workspace receipt"
+              disabled={busy}
+              onPress={() => void loadReceipt()}
+              style={styles.button}
+            >
+              <Text style={styles.buttonText}>Check workspace receipt</Text>
+            </Pressable>
+          </View>
         </View>
       ) : null}
       {readError ? (
-        <Text accessibilityRole="alert" testID="workspace-read-error">
+        <Text accessibilityRole="alert" testID="workspace-read-error" style={ui.error}>
           {readError}
         </Text>
       ) : null}
-      {message ? <Text testID="workspace-status">{message}</Text> : null}
-      <FilePanel
-        userId={userId}
-        workspace={selected}
-        blocked={busy || Boolean(pending) || Boolean(readError)}
-        onUnauthorized={onUnauthorized}
-      />
-      <TerminalPanel
-        userId={userId}
-        workspace={selected}
-        blocked={busy || Boolean(pending) || Boolean(readError)}
-        onUnauthorized={onUnauthorized}
-      />
+      {message ? (
+        <View style={ui.statusRow}>
+          <View style={[ui.dot, styles.dotNeutral]} />
+          <Text testID="workspace-status" style={ui.meta}>{message}</Text>
+        </View>
+      ) : null}
       {selected ? (
         <View style={styles.gitPanel} testID="git-status">
-          <Text accessibilityRole="header" style={styles.subheading}>
-            Git
-          </Text>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Refresh git status"
-            testID="refresh-git-status"
-            onPress={() => setGitReload((count) => count + 1)}
-            style={styles.gitRefresh}
-          >
-            <Text>Refresh git status</Text>
-          </Pressable>
+          <View style={ui.sectionHeader}>
+            <Icon name="branch" size={12} />
+            <Text accessibilityRole="header" style={ui.sectionLabel}>
+              Git
+            </Text>
+          </View>
+          <View style={ui.row}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Refresh git status"
+              testID="refresh-git-status"
+              onPress={() => setGitReload((count) => count + 1)}
+              style={styles.secondary}
+            >
+              <Text style={ui.buttonLabel}>Refresh git status</Text>
+            </Pressable>
+          </View>
           {gitError ? (
-            <Text>{gitError}</Text>
+            <Text style={ui.error}>{gitError}</Text>
           ) : gitStatus ? (
             <>
-              <Text>
-                Branch: {gitStatus.branch ?? "unknown"}{" "}
-                {gitStatus.clean ? "(clean)" : "(dirty)"}
-              </Text>
+              <View style={ui.statusRow}>
+                <View style={[ui.dot, gitStatus.clean ? styles.dotSuccess : styles.dotWarning]} />
+                <Text style={ui.meta}>
+                  Branch: {gitStatus.branch ?? "unknown"}{" "}
+                  {gitStatus.clean ? "(clean)" : "(dirty)"}
+                </Text>
+              </View>
               {gitStatus.changed.length > 0 && (
                 <>
-                  <Text style={styles.gitSectionHeading}>Changed</Text>
+                  <Text style={[ui.sectionLabel, styles.subLabel]}>Changed</Text>
                   {gitStatus.changed.map((path) => (
                     <Pressable
                       key={path}
@@ -712,6 +649,7 @@ export function WorkspacePanel({ userId, onUnauthorized, selectedWorkspaceId }: 
                         gitSelectedFile === path ? styles.gitFileRowSelected : undefined,
                       ]}
                     >
+                      <Icon name="file" size={12} />
                       <Text style={styles.gitFilePath}>{path}</Text>
                     </Pressable>
                   ))}
@@ -719,7 +657,7 @@ export function WorkspacePanel({ userId, onUnauthorized, selectedWorkspaceId }: 
               )}
               {gitStatus.untracked.length > 0 && (
                 <>
-                  <Text style={styles.gitSectionHeading}>Untracked</Text>
+                  <Text style={[ui.sectionLabel, styles.subLabel]}>Untracked</Text>
                   {gitStatus.untracked.map((path) => (
                     <Pressable
                       key={path}
@@ -732,29 +670,30 @@ export function WorkspacePanel({ userId, onUnauthorized, selectedWorkspaceId }: 
                         gitSelectedFile === path ? styles.gitFileRowSelected : undefined,
                       ]}
                     >
+                      <Icon name="file" size={12} />
                       <Text style={styles.gitFilePath}>{path}</Text>
                     </Pressable>
                   ))}
                 </>
               )}
               {gitStatus.changed.length === 0 && gitStatus.untracked.length === 0 && (
-                <Text>No changed or untracked files.</Text>
+                <Text style={ui.emptyText}>No changed or untracked files.</Text>
               )}
               {gitDiff ? (
-                <View style={styles.gitDiff}>
-                  <Text testID="git-diff">{gitDiff.diff}</Text>
+                <View style={ui.card}>
+                  <Text testID="git-diff" style={ui.mono}>{gitDiff.diff}</Text>
                   {gitDiff.truncated && (
-                    <Text>Diff truncated.</Text>
+                    <Text style={ui.hint}>Diff truncated.</Text>
                   )}
                 </View>
               ) : null}
               {gitSelectedFile && !gitDiff && !gitLoading && !gitError ? (
-                <Text>Select a file to view its diff.</Text>
+                <Text style={ui.hint}>Select a file to view its diff.</Text>
               ) : null}
-              {gitLoading ? <Text>Loading diff…</Text> : null}
+              {gitLoading ? <Text style={ui.hint}>Loading diff…</Text> : null}
             </>
           ) : (
-            <Text>Loading git status…</Text>
+            <Text style={ui.hint}>Loading git status…</Text>
           )}
         </View>
       ) : null}
@@ -763,11 +702,8 @@ export function WorkspacePanel({ userId, onUnauthorized, selectedWorkspaceId }: 
 }
 
 const styles = StyleSheet.create({
-  card: {
-    ...ui.panel,
-  },
-  heading: {
-    ...ui.title,
+  panel: {
+    gap: space.md,
   },
   input: {
     ...ui.input,
@@ -784,75 +720,49 @@ const styles = StyleSheet.create({
   secondary: {
     ...ui.button,
   },
-  createRow: {
-    flexDirection: "row",
-    gap: space.md,
-    alignItems: "center",
-  },
-  smallButton: {
-    ...ui.button,
-  },
-  smallButtonDisabled: {
-    ...ui.buttonDisabled,
-  },
-  smallButtonText: {
-    ...ui.buttonLabel,
-  },
-  row: {
-    ...ui.listItem,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    flexShrink: 1,
-    minWidth: 0,
-  },
-  listItemSelected: {
-    ...ui.listItemSelected,
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  selectedText: {
-    color: color.accent,
-  },
   selected: {
+    ...ui.section,
     borderTopWidth: 1,
     borderTopColor: color.line,
-    gap: space.md,
     paddingTop: space.md,
   },
   pending: {
-    backgroundColor: color.surfaceRaised,
-    gap: space.md,
-    padding: space.md,
-  },
-  gitRefresh: {
-    ...ui.button,
-    alignSelf: "flex-start",
-    paddingVertical: space.sm,
-    paddingHorizontal: space.md,
-  },
-  gitPanel: {
-    ...ui.card,
+    ...ui.section,
     borderTopWidth: 1,
     borderTopColor: color.line,
-    gap: space.md,
     paddingTop: space.md,
   },
-  subheading: {
-    ...ui.heading,
+  gitPanel: {
+    ...ui.section,
+    borderTopWidth: 1,
+    borderTopColor: color.line,
+    paddingTop: space.md,
   },
-  gitSectionHeading: {
-    ...ui.sectionLabel,
+  subLabel: {
+    paddingTop: space.xs,
   },
   gitFileRow: {
     ...ui.listItem,
+    alignItems: "center",
+    flexDirection: "row",
+    gap: space.sm,
+    minHeight: 28,
   },
   gitFileRowSelected: {
     ...ui.listItemSelected,
   },
   gitFilePath: {
     ...ui.mono,
+    flexShrink: 1,
+    minWidth: 0,
   },
-  gitDiff: {
-    ...ui.card,
+  dotNeutral: {
+    backgroundColor: color.textTertiary,
+  },
+  dotSuccess: {
+    backgroundColor: color.success,
+  },
+  dotWarning: {
+    backgroundColor: color.warning,
   },
 });

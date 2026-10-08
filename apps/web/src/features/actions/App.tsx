@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native-web";
-import { actionReceiptFromResponse, isDefinitiveActionRejection, isUnknownOutcomeError, applyActionEvent, CLIENT_VERSION, createApiClient, emptyActionEventState, retryAllowed, retryDelayMs, workspacePanelUserId } from "@remotecode/client";
-import type { ActionEventState } from "@remotecode/client";
+import { actionReceiptFromResponse, isDefinitiveActionRejection, isUnknownOutcomeError, applyActionEvent, ALL_LIVE_RESOURCES, applyLiveEvent, CLIENT_VERSION, createApiClient, emptyActionEventState, emptyLiveEventState, retryAllowed, retryDelayMs, workspacePanelUserId } from "@remotecode/client";
+import type { ActionEventState, LiveEventState, LiveResource } from "@remotecode/client";
 import { getWebHealth } from "../health/api";
 import { NavigationShell } from "../navigation/NavigationShell";
-import { color, space, radius, font, ui } from "../../design/tokens";
+import { Icon } from "../shell/icons";
+import { color, space, radius, font, size, ui } from "../../design/tokens";
 
 // Bounded post-timeout receipt reads: two attempts, the second after an
 // increasing, jittered wait, both inside the ten-second window.
@@ -89,14 +90,21 @@ function HostHealth() {
   }[status];
 
   return (
-    <View style={styles.card}>
-      <Text accessibilityRole="text" aria-live="polite" testID="host-health-status">{label}</Text>
-      <Pressable accessibilityRole="button" onPress={() => setAttempt((value) => value + 1)} style={ui.button}>
-        <Text style={ui.buttonLabel}>Refresh host health</Text>
+    <View style={ui.statusRow}>
+      <Text accessibilityRole="text" aria-live="polite" testID="host-health-status" style={styles.healthText}>{label}</Text>
+      <Pressable
+        accessibilityLabel="Refresh host health"
+        accessibilityRole="button"
+        onPress={() => setAttempt((value) => value + 1)}
+        style={styles.iconButton}
+      >
+        <Icon name="refresh" size={size.iconSm} />
       </Pressable>
     </View>
   );
 }
+
+export type LiveSignals = Partial<Record<LiveResource, number>>;
 
 export function App() {
   const api = useMemo(() => createApiClient(window.location.origin), []);
@@ -105,6 +113,8 @@ export function App() {
   const [action, setAction] = useState("Verify shared Linux backend");
   const [eventState, setEventState] = useState<ActionEventState>(emptyActionEventState);
   const eventStateRef = useRef(eventState);
+  const liveEventStateRef = useRef<LiveEventState>(emptyLiveEventState());
+  const [liveSignals, setLiveSignals] = useState<LiveSignals>({});
   const actions = eventState.actions;
   const receipt = eventState.actions[0] ?? null;
   const [authenticated, setAuthenticated] = useState(false);
@@ -132,6 +142,20 @@ export function App() {
   const authEpoch = useRef(0);
   const connectionGeneration = useRef(0);
   const socketRef = useRef<WebSocket | null>(null);
+
+  function bumpLiveSignals(resources: LiveResource[]) {
+    if (!resources.length) return;
+    setLiveSignals((current) => {
+      const next = { ...current };
+      for (const resource of resources) next[resource] = (next[resource] ?? 0) + 1;
+      return next;
+    });
+  }
+
+  function resetLiveEvents() {
+    liveEventStateRef.current = emptyLiveEventState();
+    setLiveSignals({});
+  }
 
   function recoveryKey(userId: string) {
     return `remotecode.pending-action:${userId}`;
@@ -276,6 +300,7 @@ export function App() {
       setRecoveryMessage("");
       eventStateRef.current = emptyActionEventState();
       setEventState(eventStateRef.current);
+      resetLiveEvents();
       socket.close(4000, "snapshot timeout");
     }
 
@@ -292,6 +317,7 @@ export function App() {
       setRecoveryMessage("");
       eventStateRef.current = emptyActionEventState();
       setEventState(eventStateRef.current);
+      resetLiveEvents();
       if (event.code === 4401) {
         authEpoch.current += 1;
         setReconnecting(false);
@@ -322,8 +348,22 @@ export function App() {
         setRecoveryMessage("");
         eventStateRef.current = emptyActionEventState();
         setEventState(eventStateRef.current);
+        resetLiveEvents();
         setError("The host sent an invalid live update.");
         socket.close(4002, "invalid event");
+        return;
+      }
+      // Live-event protocol messages are handled first; the action reducer only
+      // sees snapshots and action receipts, so a well-formed live update is
+      // never treated as an invalid message.
+      const live = applyLiveEvent(liveEventStateRef.current, input);
+      if (live.handled) {
+        if (live.state !== liveEventStateRef.current) liveEventStateRef.current = live.state;
+        bumpLiveSignals(live.invalidate);
+        if (live.resync) {
+          bumpLiveSignals(ALL_LIVE_RESOURCES);
+          socket.send(JSON.stringify({ type: "sync" }));
+        }
         return;
       }
       const result = applyActionEvent(eventStateRef.current, input);
@@ -335,6 +375,7 @@ export function App() {
         setRecoveryMessage("");
         eventStateRef.current = emptyActionEventState();
         setEventState(eventStateRef.current);
+        resetLiveEvents();
         setError("The host sent an invalid live update.");
         socket.close(4002, "invalid event");
         return;
@@ -345,6 +386,8 @@ export function App() {
         setConnected(true);
         setConnectionFailed(false);
         setError("");
+        // A snapshot is authoritative: every surface re-reads its route.
+        bumpLiveSignals(ALL_LIVE_RESOURCES);
       }
       if (result.state !== eventStateRef.current) {
         eventStateRef.current = result.state;
@@ -382,6 +425,7 @@ export function App() {
     setActionPhase(null);
     eventStateRef.current = emptyActionEventState();
     setEventState(eventStateRef.current);
+    resetLiveEvents();
   }
 
   async function confirmLogin(operation: PendingAuth, epoch: number, deadline = Infinity) {
@@ -609,6 +653,7 @@ export function App() {
       setConnectionFailed(false);
       eventStateRef.current = emptyActionEventState();
       setEventState(eventStateRef.current);
+      resetLiveEvents();
       setError(requestErrorMessage(requestError, "The host session expired or was revoked."));
       return;
     }
@@ -798,18 +843,20 @@ export function App() {
   if (!authenticated) {
     return (
       <ScrollView contentContainerStyle={styles.page}>
-        <View style={styles.shell}>
-          <Text style={styles.eyebrow}>REMOTE CODE HOST</Text>
-          <Text accessibilityRole="header" style={styles.title}>Sign in to your host</Text>
+        <View style={styles.loginShell}>
           <View style={ui.panel}>
-            <Text style={ui.sectionLabel}>Host passphrase</Text>
-            <input
-              aria-label="Host passphrase"
-              className="host-passphrase"
-              onChange={(event) => setPassword(event.currentTarget.value)}
-              type="password"
-              value={password}
-            />
+            <Text style={ui.sectionLabel}>REMOTE CODE HOST</Text>
+            <Text accessibilityRole="header" style={ui.title}>Sign in to your host</Text>
+            <View style={ui.field}>
+              <Text style={ui.fieldLabel}>Host passphrase</Text>
+              <input
+                aria-label="Host passphrase"
+                className="host-passphrase"
+                onChange={(event) => setPassword(event.currentTarget.value)}
+                type="password"
+                value={password}
+              />
+            </View>
             <Pressable
               accessibilityRole="button"
               accessibilityState={{ disabled: authWorking || Boolean(pendingAuth) || !authStorageReady || !authCompatible }}
@@ -819,8 +866,8 @@ export function App() {
             >
               <Text style={ui.buttonLabelPrimary}>Sign in</Text>
             </Pressable>
-            {pendingAuth ? <View style={styles.recovery}>
-              <Text style={styles.empty}>An auth operation is awaiting confirmation. Checking does not resend it.</Text>
+            {pendingAuth ? <View style={styles.authRecovery}>
+              <Text style={ui.hint}>An auth operation is awaiting confirmation. Checking does not resend it.</Text>
               <Pressable accessibilityRole="button" disabled={authWorking || !authStorageReady} accessibilityState={{ disabled: authWorking || !authStorageReady }} onPress={() => void checkAuthReceipt()} style={ui.button}>
                 <Text style={ui.buttonLabel}>{authWorking ? "Checking auth…" : "Check auth receipt"}</Text>
               </Pressable>
@@ -828,7 +875,7 @@ export function App() {
                 <Text style={ui.buttonLabel}>Revoke old login</Text>
               </Pressable> : null}
             </View> : null}
-            {authMessage ? <Text testID="auth-recovery-status" aria-live="polite" style={styles.empty}>{authMessage}</Text> : null}
+            {authMessage ? <Text testID="auth-recovery-status" aria-live="polite" style={ui.hint}>{authMessage}</Text> : null}
             {error ? <Text accessibilityRole="text" aria-live="assertive" style={styles.error}>{error}</Text> : null}
           </View>
         </View>
@@ -840,24 +887,14 @@ export function App() {
 
   const hostDiagnostics = (
     <View style={styles.diagnostics}>
-      <Text style={styles.eyebrow}>HOST DIAGNOSTICS</Text>
-      <Text accessibilityRole="header" style={styles.title}>One backend, two browsers</Text>
-      <Text style={styles.intro}>
-        This React Native Web screen records actions through the Elysia service running in the Linux container.
-      </Text>
-
-      <HostHealth />
-
-      <Pressable accessibilityRole="button" disabled={authWorking || !authStorageReady || !authCompatible} accessibilityState={{ disabled: authWorking || !authStorageReady || !authCompatible }} onPress={() => void mutateAuth("logout")} style={ui.button}>
-        <Text style={ui.buttonLabel}>Sign out</Text>
-      </Pressable>
-
-      {authMessage ? <Text testID="auth-recovery-status" aria-live="polite" style={styles.empty}>{authMessage}</Text> : null}
       <View style={styles.statusRow}>
-        <View style={[styles.dot, connected ? styles.online : styles.offline]} />
-        <Text accessibilityRole="text" aria-live="polite" testID="connection-status" style={styles.status}>
-          {connected ? "Live updates connected" : connectionFailed ? "Live updates disconnected" : "Synchronizing with Linux backend…"}
-        </Text>
+        <Text accessibilityRole="header" style={styles.barTitle}>One backend, two browsers</Text>
+        <View style={ui.statusRow}>
+          <View style={[ui.dot, connected ? styles.online : styles.offline]} />
+          <Text accessibilityRole="text" aria-live="polite" testID="connection-status" style={styles.status}>
+            {connected ? "Live updates connected" : connectionFailed ? "Live updates disconnected" : "Synchronizing with Linux backend…"}
+          </Text>
+        </View>
         {connectionFailed ? (
           <Pressable
             accessibilityRole="button"
@@ -869,15 +906,21 @@ export function App() {
             <Text style={ui.buttonLabel}>{reconnecting ? "Checking session…" : "Reconnect live updates"}</Text>
           </Pressable>
         ) : null}
+        <HostHealth />
+        <View style={styles.grow} />
+        <Pressable accessibilityRole="button" disabled={authWorking || !authStorageReady || !authCompatible} accessibilityState={{ disabled: authWorking || !authStorageReady || !authCompatible }} onPress={() => void mutateAuth("logout")} style={ui.button}>
+          <Text style={ui.buttonLabel}>Sign out</Text>
+        </Pressable>
       </View>
 
-      <View style={styles.card}>
-        <Text style={ui.sectionLabel}>Action sent to the backend</Text>
+      {authMessage ? <Text testID="auth-recovery-status" aria-live="polite" style={ui.hint}>{authMessage}</Text> : null}
+
+      <View style={styles.actionRow}>
         <TextInput
           accessibilityLabel="Action description"
           onChangeText={setAction}
           placeholder="Describe the action"
-          style={ui.input}
+          style={[ui.input, styles.actionInput]}
           value={action}
         />
         <Pressable
@@ -885,47 +928,50 @@ export function App() {
           accessibilityState={{ disabled: submitting || !connected || Boolean(pendingRequestId) || !recoveryStorageReady }}
           disabled={submitting || !connected || Boolean(pendingRequestId) || !recoveryStorageReady}
           onPress={recordAction}
-          style={({ pressed }) => [ui.button, pressed && styles.pressed, (submitting || !connected || Boolean(pendingRequestId) || !recoveryStorageReady) && styles.disabled]}
+          style={({ pressed }) => [ui.buttonPrimary, pressed && styles.pressed, (submitting || !connected || Boolean(pendingRequestId) || !recoveryStorageReady) && styles.disabled]}
         >
-          <Text style={ui.buttonLabel}>{actionPhase === "sending" ? "Saving…" : "Write backend receipt"}</Text>
+          <Text style={ui.buttonLabelPrimary}>{actionPhase === "sending" ? "Saving…" : "Write backend receipt"}</Text>
         </Pressable>
-        {pendingRequestId ? (
-          <View testID="pending-action" style={styles.recovery}>
-            <Text style={styles.empty}>An action is awaiting confirmation. Check its receipt; this will not resend it.</Text>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityState={{ disabled: submitting || !connected }}
-              disabled={submitting || !connected}
-              onPress={() => void checkActionReceipt()}
-              style={[ui.button, (submitting || !connected) && styles.disabled]}
-            >
-              <Text style={ui.buttonLabel}>{actionPhase === "checking" ? "Checking receipt…" : "Check action receipt"}</Text>
-            </Pressable>
-          </View>
-        ) : null}
-        {recoveryMessage ? <Text testID="action-recovery-status" accessibilityRole="text" aria-live="polite" style={styles.empty}>{recoveryMessage}</Text> : null}
-        {error ? <Text accessibilityRole="text" aria-live="assertive" style={styles.error}>{error}</Text> : null}
       </View>
 
-      <View style={styles.card}>
-        <Text style={ui.sectionLabel}>Confirmed backend receipt</Text>
-        {receipt ? (
-          <View testID="latest-receipt">
-            <Text style={styles.receiptAction}>{receipt.action}</Text>
-            <Text selectable style={styles.receiptId}>Receipt {receipt.id}</Text>
-            <Text style={styles.timestamp}>{String(receipt.createdAt)}</Text>
-          </View>
-        ) : <Text style={styles.empty}>No action has been recorded in this session.</Text>}
-      </View>
+      {receipt ? (
+        <View testID="latest-receipt" style={styles.receiptRow}>
+          <Text style={styles.receiptAction}>{receipt.action}</Text>
+          <Text selectable style={styles.receiptId}>Receipt {receipt.id}</Text>
+          <Text style={styles.timestamp}>{String(receipt.createdAt)}</Text>
+        </View>
+      ) : <Text style={styles.empty}>No action has been recorded in this session.</Text>}
 
-      <View style={styles.card}>
+      {pendingRequestId ? (
+        <View testID="pending-action" style={styles.pendingRow}>
+          <Text style={styles.empty}>An action is awaiting confirmation. Check its receipt; this will not resend it.</Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ disabled: submitting || !connected }}
+            disabled={submitting || !connected}
+            onPress={() => void checkActionReceipt()}
+            style={[ui.button, (submitting || !connected) && styles.disabled]}
+          >
+            <Text style={ui.buttonLabel}>{actionPhase === "checking" ? "Checking receipt…" : "Check action receipt"}</Text>
+          </Pressable>
+        </View>
+      ) : null}
+
+      {recoveryMessage ? <Text testID="action-recovery-status" accessibilityRole="text" aria-live="polite" style={ui.hint}>{recoveryMessage}</Text> : null}
+      {error ? <Text accessibilityRole="text" aria-live="assertive" style={styles.error}>{error}</Text> : null}
+
+      <View style={styles.historySection}>
         <Text style={ui.sectionLabel}>Shared action history</Text>
-        {actions.length ? actions.map((item) => (
-          <View key={item.id} style={styles.historyRow}>
-            <Text style={styles.historyAction}>{item.action}</Text>
-            <Text selectable style={styles.historyId}>{item.id}</Text>
-          </View>
-        )) : <Text style={styles.empty}>The backend has no receipts yet.</Text>}
+        {actions.length ? (
+          <ScrollView style={styles.historyList}>
+            {actions.map((item) => (
+              <View key={item.id} style={styles.historyRow}>
+                <Text style={styles.historyAction}>{item.action}</Text>
+                <Text selectable style={styles.historyId}>{item.id}</Text>
+              </View>
+            ))}
+          </ScrollView>
+        ) : <Text style={styles.empty}>The backend has no receipts yet.</Text>}
       </View>
     </View>
   );
@@ -944,6 +990,7 @@ export function App() {
         userId={panelUserId}
         onUnauthorized={hideSession}
         eventCursor={eventState.cursor}
+        live={liveSignals}
         footer={hostDiagnostics}
       />
     </View>
@@ -952,36 +999,46 @@ export function App() {
 
 const styles = StyleSheet.create({
   page: { alignItems: "center", backgroundColor: color.bg, flexGrow: 1, justifyContent: "center", padding: space.xxl },
-  shell: { gap: space.lg, maxWidth: 520, width: "100%" },
+  loginShell: { maxWidth: 380, width: "100%" },
+  shell: { gap: space.lg, maxWidth: 720, width: "100%" },
   appShell: { backgroundColor: color.bg, flex: 1, height: "100vh", overflow: "hidden" },
-  diagnostics: {
-    backgroundColor: color.surface,
-    borderColor: color.line,
-    borderRadius: radius.panel,
-    borderWidth: 1,
-    gap: space.md,
-    padding: space.lg,
-  },
-  eyebrow: { color: color.accent, fontSize: font.caption, fontWeight: "600", letterSpacing: 1.5 },
-  title: { color: color.text, fontSize: font.title, fontWeight: "600", letterSpacing: -0.5 },
-  intro: { color: color.textSecondary, fontSize: font.body, lineHeight: 20, maxWidth: 640 },
-  statusRow: { alignItems: "center", flexDirection: "row", gap: space.sm, paddingVertical: space.xs },
-  dot: { borderRadius: radius.control, height: 10, width: 10 },
+  diagnostics: { gap: space.md },
+  statusRow: { alignItems: "center", flexDirection: "row", flexWrap: "wrap", gap: space.md },
+  barTitle: { color: color.textSecondary, fontSize: font.body, fontWeight: "600" },
+  grow: { flex: 1 },
   online: { backgroundColor: color.success },
   offline: { backgroundColor: color.warning },
-  status: { color: color.textSecondary, fontSize: font.body, fontWeight: "600" },
-  card: { ...ui.card },
-  input: ui.input,
-  button: ui.button,
-  pressed: { opacity: 0.84 },
-  disabled: { opacity: 0.55 },
-  error: { color: color.danger, fontSize: font.body },
-  recovery: { gap: space.md },
-  receiptAction: { color: color.text, fontSize: font.title3, fontWeight: "600" },
+  status: { color: color.textSecondary, fontSize: font.bodyDense, fontWeight: "600" },
+  healthText: { color: color.textSecondary, fontSize: font.bodyDense },
+  iconButton: {
+    alignItems: "center",
+    borderColor: color.line,
+    borderRadius: radius.control,
+    borderWidth: 1,
+    height: size.iconButton,
+    justifyContent: "center",
+    width: size.iconButton,
+  },
+  actionRow: { alignItems: "center", flexDirection: "row", gap: space.md },
+  actionInput: { flex: 1, minWidth: 0 },
+  receiptRow: { alignItems: "baseline", flexDirection: "row", flexWrap: "wrap", gap: space.sm },
+  receiptAction: { color: color.text, fontSize: font.bodyDense, fontWeight: "600" },
   receiptId: { color: color.textSecondary, fontFamily: font.mono, fontSize: font.caption },
   timestamp: { color: color.textTertiary, fontSize: font.caption },
-  empty: { color: color.textTertiary, fontSize: font.body },
-  historyRow: { borderTopColor: color.line, borderTopWidth: 1, gap: space.xs, paddingTop: space.md },
-  historyAction: { color: color.text, fontSize: font.body, fontWeight: "600" },
+  empty: { color: color.textTertiary, fontSize: font.bodyDense },
+  error: { color: color.danger, fontSize: font.bodyDense },
+  pendingRow: { alignItems: "center", flexDirection: "row", flexWrap: "wrap", gap: space.md },
+  authRecovery: { gap: space.sm },
+  pressed: { opacity: 0.84 },
+  disabled: { opacity: 0.55 },
+  historySection: {
+    borderTopColor: color.line,
+    borderTopWidth: 1,
+    gap: space.xs,
+    paddingTop: space.sm,
+  },
+  historyList: { maxHeight: 120 },
+  historyRow: { alignItems: "baseline", borderTopColor: color.line, borderTopWidth: 1, flexDirection: "row", gap: space.sm, minHeight: 24, paddingVertical: space.xs },
+  historyAction: { color: color.text, flex: 1, fontSize: font.bodyDense },
   historyId: { color: color.textSecondary, fontFamily: font.mono, fontSize: font.caption },
 });
